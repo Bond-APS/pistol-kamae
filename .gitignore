@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # Claude Code（個人の設定）
 .claude/
+
+# 動作確認用の一時ファイル
+apps/web/public/_test/
