@@ -1,0 +1,7 @@
+node_modules
+dist
+package-lock.json
+apps/web/public/models
+apps/web/public/mediapipe
+docs
+*.md
