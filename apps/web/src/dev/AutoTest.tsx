@@ -48,6 +48,8 @@ const fmt = (v: number | null | undefined, d = 2) => (v == null ? '—' : v.toFi
 export default function AutoTest() {
   const [report, setReport] = useState<AutoTestReport | null>(null);
   const [progress, setProgress] = useState('準備中…');
+  const [sent, setSent] = useState<'none' | 'ok' | 'failed'>('none');
+  const [finished, setFinished] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
 
@@ -63,6 +65,11 @@ export default function AutoTest() {
       start !== null || end !== null
         ? { startSec: Number(start ?? 0), endSec: end !== null ? Number(end) : Infinity }
         : undefined;
+    const reportToServer = params.has('report');
+    const label = params.get('label') ?? 'run';
+    const nextUrl = params.get('next');
+    // 同じ端末の 1 本目と 2 本目の結果を結び付けるための番号（時刻から作る）
+    const sessionId = params.get('session') ?? Date.now().toString(36);
     const requested = params.get('backends')?.split(',') as BackendChoice[] | undefined;
     const backends = requested?.filter((b) => BACKEND_CHOICES.includes(b)) ?? BACKEND_CHOICES;
 
@@ -76,6 +83,16 @@ export default function AutoTest() {
     const publish = () => {
       window.__autotest = { ...current, results: [...current.results] };
       setReport(window.__autotest);
+      if (!reportToServer) return;
+      // 開発サーバ（同じ Wi-Fi 内の Mac）へ数値だけを送る。動画とランドマークは含まない
+      void fetch('/__autotest/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, sessionId, ...window.__autotest }),
+      }).then(
+        (r) => setSent(r.ok ? 'ok' : 'failed'),
+        () => setSent('failed'),
+      );
     };
 
     void (async () => {
@@ -131,13 +148,31 @@ export default function AutoTest() {
       }
       current.done = true;
       publish();
+      if (nextUrl && nextUrl.startsWith('/') && !current.fatal) {
+        setProgress('1 本目が完了。2 本目へ進みます…');
+        const sep = nextUrl.includes('?') ? '&' : '?';
+        setTimeout(() => window.location.assign(`${nextUrl}${sep}session=${sessionId}`), 1500);
+        return;
+      }
       setProgress('完了');
+      setFinished(true);
     })();
   }, []);
 
   return (
     <section>
       <h2>自動テスト（開発サーバ限定）</h2>
+      {finished ? (
+        <p className="autotest-done">
+          すべて完了しました。{sent === 'ok' ? '結果は Mac に届きました。' : ''}
+          この画面は閉じて構いません。
+        </p>
+      ) : (
+        <p>自動で進みます。画面を消さず、このままお待ちください（数分）。</p>
+      )}
+      {sent === 'failed' && (
+        <p className="danger">結果を Mac に送れませんでした。この画面を撮影して送ってください。</p>
+      )}
       <p data-testid="autotest-progress">{progress}</p>
       <div ref={boxRef} />
       {report?.fatal && <p className="danger">{report.fatal}</p>}
