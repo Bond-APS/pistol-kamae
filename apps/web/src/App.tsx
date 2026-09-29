@@ -1,6 +1,7 @@
 import type { Handedness } from '@pistol-kamae/engine';
 import { useState } from 'react';
 import type { AnalysisResult } from './analysis/runAnalysis';
+import { DevErrorBanner } from './components/DevErrorBanner';
 import { DEFAULT_BACKEND, type BackendChoice } from './config/backends';
 import { ja } from './i18n/ja';
 import { LoadScreen } from './screens/LoadScreen';
@@ -20,6 +21,8 @@ export function App() {
         <h1>{ja.app.title}</h1>
         <p className="muted small">{ja.app.stageNote}</p>
       </header>
+
+      <DevErrorBanner />
 
       <nav className="tabs">
         <button className={tab === 'load' ? 'tab active' : 'tab'} onClick={() => setTab('load')}>

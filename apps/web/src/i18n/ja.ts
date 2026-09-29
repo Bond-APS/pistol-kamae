@@ -7,12 +7,17 @@ export const ja = {
     subtitle: 'AP 射撃姿勢解析',
     stageNote: '段階①：動画読込・姿勢推定・骨格重ね描き・静止ノイズ測定（検証用画面）',
   },
+  devErrors: {
+    title: '開発サーバ限定：画面内エラー表示',
+    clear: '消す',
+  },
   tabs: {
     load: '動画読込',
     noise: 'ノイズ測定',
   },
   load: {
     pickVideo: '動画ファイルを選ぶ',
+    loadingVideo: '動画を読み込んでいます…（フレームレートの推定に数秒かかります）',
     trimHint:
       '動画は事前に短くトリミングすることを推奨します（全長に姿勢推定をかけるため、長いほど時間がかかります）。',
     formatHint:

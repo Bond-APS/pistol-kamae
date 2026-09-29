@@ -179,6 +179,19 @@ button.primary {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.dev-errors {
+  border: 2px solid var(--color-danger);
+  border-radius: 8px;
+  padding: var(--space-2);
+  margin: var(--space-2) 0;
+  font-size: var(--font-size-small);
+}
+.dev-errors pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: var(--space-1) 0;
+}
+
 .textarea {
   width: 100%;
   font-family: ui-monospace, Menlo, monospace;

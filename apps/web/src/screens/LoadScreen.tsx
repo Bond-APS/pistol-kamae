@@ -7,6 +7,7 @@ import { ja } from '../i18n/ja';
 import { estimateFrameRate } from '../video/seek';
 
 const FALLBACK_FPS = 30;
+const METADATA_TIMEOUT_MS = 30_000;
 
 interface Props {
   backend: BackendChoice;
@@ -43,8 +44,26 @@ async function loadVideo(file: File): Promise<HTMLVideoElement> {
   v.preload = 'auto';
   v.src = URL.createObjectURL(file);
   await new Promise<void>((resolve, reject) => {
-    v.addEventListener('loadedmetadata', () => resolve(), { once: true });
-    v.addEventListener('error', () => reject(new Error('unsupported')), { once: true });
+    // iOS Safari はメタ情報の読込がいつまでも終わらないことがあるため、時間切れを設ける
+    const timer = setTimeout(() => reject(new Error('metadata timeout')), METADATA_TIMEOUT_MS);
+    v.addEventListener(
+      'loadedmetadata',
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    v.addEventListener(
+      'error',
+      () => {
+        clearTimeout(timer);
+        reject(new Error('unsupported'));
+      },
+      { once: true },
+    );
+    // 一部のブラウザ（iOS Safari）は明示的に load() を呼ばないと読み始めない
+    v.load();
   });
   if (v.videoWidth === 0 || v.videoHeight === 0) throw new Error('unsupported');
   return v;
@@ -140,6 +159,7 @@ export function LoadScreen(props: Props) {
         />
       </label>
 
+      {status.kind === 'loading' && <p>{ja.load.loadingVideo}</p>}
       {status.kind === 'unsupported' && <p className="danger">{ja.load.unsupported}</p>}
       {info && (
         <p className="muted small">{ja.load.videoInfo(info.w, info.h, info.sec, info.fps)}</p>
