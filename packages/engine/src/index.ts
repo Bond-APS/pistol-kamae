@@ -26,6 +26,24 @@ export {
   type MetricValues,
 } from './metrics/types';
 export { computeMetrics, type MetricOptions } from './metrics/compute';
+export {
+  metricsAtFrame,
+  metricsAtTime,
+  type FrameMetrics,
+  type FrameMetricsInput,
+} from './metrics/atFrame';
+
+export { frameIndexAt } from './landmarks/frames';
+
+export { SHOT_MARK_ID, type Mark, type MarkKind } from './marks/types';
+export {
+  addCustomMark,
+  nextMarkId,
+  normalizeMarkLabel,
+  removeMark,
+  setShotMark,
+  shotMarkOf,
+} from './marks/operations';
 
 export { computeNoiseStats, seriesStats, type NoiseStats, type SeriesStats } from './noise/stats';
 
