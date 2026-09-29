@@ -63,6 +63,11 @@ export const ja = {
     speedTitle: '処理速度',
     speed: (frames: number, totalSec: number, fps: number, inferMs: number, seekMs: number) =>
       `${frames} フレームを ${totalSec.toFixed(1)} 秒で処理（${fps.toFixed(1)} フレーム/秒）。推定 ${inferMs.toFixed(0)} ms/フレーム、フレーム取り出し ${seekMs.toFixed(0)} ms/フレーム`,
+    rangeStart: '区間の開始（秒）',
+    rangeEnd: '区間の終了（秒）',
+    rangeDevNote: '※ 開発サーバ限定の検証用。空欄なら全フレーム',
+    rangeLabel: (start: number, end: number) =>
+      `集計区間：${start.toFixed(1)} 〜 ${Number.isFinite(end) ? end.toFixed(1) : '末尾'} 秒`,
     detected: (detected: number, total: number) =>
       `人物を検出できたフレーム：${detected} / ${total}`,
     columns: {

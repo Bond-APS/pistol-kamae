@@ -1,6 +1,6 @@
 import { METRIC_IDS, METRIC_UNITS, type Handedness } from '@pistol-kamae/engine';
 import { useMemo, useState } from 'react';
-import { noiseStatsOf } from '../analysis/metrics';
+import { noiseStatsOf, type TimeRange } from '../analysis/metrics';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { ja } from '../i18n/ja';
 
@@ -12,11 +12,25 @@ interface Props {
 const fmt = (v: number | null, digits: number): string =>
   v === null ? ja.noise.na : v.toFixed(digits);
 
+// 区間指定は開発サーバ（npm run dev）でのみ表示する検証用の機能。公開ビルドには含めない。
+const DEV_RANGE_ENABLED = import.meta.env.DEV;
+
 export function NoiseScreen({ result, handedness }: Props) {
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'failed'>('idle');
+  const [rangeText, setRangeText] = useState({ start: '', end: '' });
+  const range = useMemo((): TimeRange | undefined => {
+    if (!DEV_RANGE_ENABLED) return undefined;
+    const start = Number(rangeText.start);
+    const end = Number(rangeText.end);
+    if (rangeText.start === '' && rangeText.end === '') return undefined;
+    return {
+      startSec: Number.isFinite(start) ? start : 0,
+      endSec: rangeText.end === '' || !Number.isFinite(end) ? Infinity : end,
+    };
+  }, [rangeText]);
   const stats = useMemo(
-    () => (result ? noiseStatsOf(result, handedness) : null),
-    [result, handedness],
+    () => (result ? noiseStatsOf(result, handedness, range) : null),
+    [result, handedness, range],
   );
 
   if (!result || !stats) {
@@ -62,6 +76,7 @@ export function NoiseScreen({ result, handedness }: Props) {
     `userAgent: ${navigator.userAgent}`,
     speedText,
     ja.noise.detected(detected, frames),
+    range ? ja.noise.rangeLabel(range.startSec, range.endSec) : '',
     '',
     [
       ja.noise.columns.metric,
@@ -92,6 +107,32 @@ export function NoiseScreen({ result, handedness }: Props) {
       <h3>{ja.noise.speedTitle}</h3>
       <p>{speedText}</p>
       <p className="muted small">{ja.noise.detected(detected, frames)}</p>
+
+      {DEV_RANGE_ENABLED && (
+        <div className="row">
+          <label className="field">
+            <span>{ja.noise.rangeStart}</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={rangeText.start}
+              onChange={(e) => setRangeText({ ...rangeText, start: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>{ja.noise.rangeEnd}</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={rangeText.end}
+              onChange={(e) => setRangeText({ ...rangeText, end: e.target.value })}
+            />
+          </label>
+          <span className="muted small">{ja.noise.rangeDevNote}</span>
+        </div>
+      )}
 
       <table className="table">
         <thead>
