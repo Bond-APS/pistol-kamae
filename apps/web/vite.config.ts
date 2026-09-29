@@ -17,6 +17,8 @@ export default defineConfig(({ command }) => ({
     },
   },
   server: {
+    // 同じ Wi-Fi の iPhone から Mac の IP アドレスで開けるようにする
+    host: true,
     fs: {
       // npm workspaces で packages/engine のソースを直接読むため
       allow: ['../..'],
