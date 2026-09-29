@@ -139,6 +139,15 @@ button.primary {
   height: 12px;
 }
 
+/* 画面の中身とプレイヤーの並び。マーク画面ではプレイヤーを先頭に出す */
+.screens {
+  display: flex;
+  flex-direction: column;
+}
+.player-first {
+  order: -1;
+}
+
 .player {
   margin-top: var(--space-3);
 }

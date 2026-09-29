@@ -1,7 +1,6 @@
 import type { Handedness } from '@pistol-kamae/engine';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
-import { VideoPlayer } from '../components/VideoPlayer';
 import { poseBackendConfig } from '../config/backends';
 import { ja } from '../i18n/ja';
 import { loadVideo, releaseVideo } from '../video/load';
@@ -10,10 +9,8 @@ import { estimateFrameRate } from '../video/seek';
 const FALLBACK_FPS = 30;
 
 interface Props {
-  /** video 要素の置き場所。マーク画面と共有する */
+  /** video 要素の置き場所。プレイヤー（App が 1 つだけ置く）と共有する */
   videoRef: MutableRefObject<HTMLVideoElement | null>;
-  /** この画面が表示中か。隠れている間はプレイヤーを外し、video 要素を他の画面に譲る */
-  active: boolean;
   handedness: Handedness;
   onHandednessChange: (h: Handedness) => void;
   result: AnalysisResult | null;
@@ -167,8 +164,6 @@ export function LoadScreen(props: Props) {
       )}
       {status.kind === 'cancelled' && <p>{ja.load.cancelled}</p>}
       {status.kind === 'error' && <p className="danger">{ja.load.error(status.message)}</p>}
-
-      {props.result && props.active && <VideoPlayer videoRef={videoRef} result={props.result} />}
     </section>
   );
 }

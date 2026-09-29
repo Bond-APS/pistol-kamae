@@ -2,7 +2,13 @@
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/marktest.mjs webkit   … Safari と同じ描画エンジン
 //   node apps/web/e2e/marktest.mjs chromium … Chrome と同じ描画エンジン
-// 動画は apps/web/e2e/videos/static.mp4（据銃区間の切り出し）を使う。VIDEO=… で変更できる。
+// 動画は apps/web/e2e/videos/static0.mp4（据銃区間の切り出し）を使う。VIDEO=… で変更できる。
+// どちらも先頭フレームが 0 秒から始まるように切り出す（0.033 秒始まりだと先頭付近の絵がブラウザごとに変わる）
+//   static0.mp4 … 撃発フレームの角度を段階①の実測と照合する
+//     作り方：motion.mp4 と同じで、区間を -ss 4.7 -to 8.5、画質を -crf 16 にする
+//   motion.mp4 … 腕を上げる動きのある切り出し。画面の絵がフレームに合わせて変わるかを確かめる
+//     作り方：ffmpeg -ss 1.0 -to 5.0 -i sample.mov -vf "setpts=PTS-STARTPTS,fps=30" \
+//             -c:v libx264 -bf 0 -crf 18 -pix_fmt yuv420p -an motion.mp4
 // 結果は apps/web/e2e/results/mark-<ブラウザ名>.json / .png に保存する（git 管理外）。
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -13,7 +19,8 @@ import { chromium, webkit } from 'playwright';
 const here = dirname(fileURLToPath(import.meta.url));
 const [browserName = 'webkit'] = process.argv.slice(2);
 const base = process.env.BASE_URL ?? 'http://localhost:5173';
-const videoPath = process.env.VIDEO ?? join(here, 'videos', 'static.mp4');
+const videoPath = process.env.VIDEO ?? join(here, 'videos', 'static0.mp4');
+const hasMotion = videoPath.endsWith('motion.mp4');
 
 // 段階①で測った据銃区間の平均値（MediaPipe full・動画モード、Mac）。
 // 1 フレームの値は平均から SD の数倍は外れうるので、許容幅は ±1.5° とする
@@ -41,9 +48,12 @@ const tid = (id) => page.locator(`[data-testid=${id}]`);
 const frameIndex = async () => Number(await tid('frame-label').getAttribute('data-frame-index'));
 const waitFrame = (index) =>
   page.waitForFunction(
-    (i) =>
-      document.querySelector('[data-testid=frame-label]')?.getAttribute('data-frame-index') ===
-      String(i),
+    (i) => {
+      const label = document.querySelector('[data-testid=frame-label]');
+      const video = document.querySelector('.video-box video');
+      // 番号が合うだけでなく、動画のシーク（指定時刻への移動）が終わっていること
+      return label?.getAttribute('data-frame-index') === String(i) && video && !video.seeking;
+    },
     index,
     { timeout: 10_000 },
   );
@@ -66,6 +76,15 @@ const marks = () =>
       name: li.querySelector('strong')?.textContent ?? '',
     })),
   );
+/** 骨格の線を隠して、動画の絵だけを撮る（画面に実際に出ている絵を確かめるため） */
+const pictureAt = async (index) => {
+  await slideTo(index);
+  await page.waitForTimeout(400);
+  await page.addStyleTag({ content: '.video-box .overlay { visibility: hidden !important; }' });
+  const png = await page.locator('.video-box').screenshot();
+  await page.evaluate(() => document.head.lastElementChild?.remove());
+  return png;
+};
 const table = async () => {
   if ((await tid('shot-table').count()) === 0) return null;
   const frame = Number(await tid('shot-table').getAttribute('data-frame-index'));
@@ -123,6 +142,22 @@ try {
   await tid('next-frame').click();
   await page.waitForTimeout(500);
   check('最後のフレームより先へは進まない', (await frameIndex()) === last, await frameIndex());
+
+  // A：骨格だけでなく、動画の絵そのものがフレームに合わせて変わる。
+  // 動きのある動画（motion.mp4）のときだけ確かめる（静止した動画では絵の違いが出ない）
+  const pictures = hasMotion ? [10, 20, 30] : [];
+  const pics = [];
+  for (const i of pictures) pics.push(await pictureAt(i));
+  if (hasMotion) {
+    check(
+      'スライダーを動かすと動画の絵が変わる',
+      !pics[0].equals(pics[1]) && !pics[1].equals(pics[2]) && !pics[0].equals(pics[2]),
+    );
+    check('同じフレームに戻ると同じ絵に戻る', pics[0].equals(await pictureAt(10)));
+    pictures.forEach((i, n) =>
+      writeFileSync(join(here, 'results', `mark-${browserName}-picture-${i}.png`), pics[n]),
+    );
+  }
 
   // A：再生・一時停止
   await slideTo(0);
@@ -196,7 +231,8 @@ try {
   summary.shotTable = tableB?.rows;
 
   // E：①の実測値と照合
-  for (const [id, expected] of Object.entries(EXPECTED)) {
+  // 据銃区間の動画（static.mp4）のときだけ照合する
+  for (const [id, expected] of videoPath.endsWith('static0.mp4') ? Object.entries(EXPECTED) : []) {
     const v = tableB?.rows.find((r) => r.id === id)?.value;
     check(
       `${id} が①の平均 ${expected}° の ±${TOLERANCE_DEG}° 以内`,
@@ -244,8 +280,12 @@ try {
 
   // 画面を切り替えてもマークが残り、動画も戻ってくる
   await tid('tab-load').click();
-  check('読込画面に動画が戻る', await page.locator('.video-box video').isVisible());
+  check('読込画面でも動画が表示されている', await page.locator('.video-box video').isVisible());
+  await tid('next-frame').click();
+  await waitFrame(customEarly + 1);
+  check('読込画面でもコマ送りできる', (await frameIndex()) === customEarly + 1);
   await tid('tab-noise').click();
+  check('ノイズ測定画面では動画が隠れる', !(await page.locator('.video-box video').isVisible()));
   await tid('tab-mark').click();
   await tid('frame-slider').waitFor();
   list = await marks();
@@ -253,6 +293,15 @@ try {
   check('戻ったあとも動画が表示されている', await page.locator('.video-box video').isVisible());
   await slideTo(shotA);
   check('戻ったあともスライダーで動かせる', (await frameIndex()) === shotA);
+  if (hasMotion) {
+    const back = [];
+    for (const i of pictures) back.push(await pictureAt(i));
+    check('戻ったあとも動画の絵が変わる', !back[0].equals(back[2]));
+    check(
+      '戻る前と同じ絵が出る',
+      back.every((png, n) => png.equals(pics[n])),
+    );
+  }
 
   await page.screenshot({ path: join(here, 'results', `mark-${browserName}.png`), fullPage: true });
 
@@ -273,6 +322,24 @@ try {
   );
 } catch (e) {
   fatal = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  const state = await page
+    .evaluate(async () => {
+      const v = document.querySelector('.video-box video');
+      const label = document.querySelector('[data-testid=frame-label]');
+      // 描画の更新回数（1 秒あたり）。ウィンドウが他のウィンドウに隠れると 0 に近づく
+      const raf = await new Promise((resolve) => {
+        let n = 0;
+        const tick = () => {
+          n++;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        setTimeout(() => resolve(n), 1000);
+      });
+      return `raf=${raf}/s focus=${document.hasFocus()} frame=${label?.getAttribute('data-frame-index')} t=${v?.currentTime} seeking=${v?.seeking} ready=${v?.readyState} paused=${v?.paused} visibility=${document.visibilityState}`;
+    })
+    .catch(() => 'unknown');
+  fatal += ` / ${state}`;
   await page
     .screenshot({ path: join(here, 'results', `mark-${browserName}-error.png`), fullPage: true })
     .catch(() => {});
@@ -290,6 +357,10 @@ await browser.close();
 
 console.log(`saved ${outFile}`);
 if (fatal) console.log(`FATAL: ${fatal}`);
+// テスト用ウィンドウが他のウィンドウに隠れると、ブラウザが描画の更新を止めてテストが進まなくなる。
+// アプリの不具合ではないので、区別できるよう終了コードを変える（2 なら再実行する）
+const hiddenWindow = Boolean(fatal?.includes('raf=0/s'));
+if (hiddenWindow) console.log('テスト用ウィンドウが隠れて描画が止まりました。再実行してください。');
 if (logs.length) console.log(`console: ${logs.length} 件（結果ファイル参照）`);
 console.log(`${checks.length - failed.length} / ${checks.length} 合格`);
-process.exit(fatal || failed.length ? 1 : 0);
+process.exit(hiddenWindow ? 2 : fatal || failed.length ? 1 : 0);

@@ -13,15 +13,16 @@ import {
   type Mark,
   type MetricId,
 } from '@pistol-kamae/engine';
-import { useCallback, useMemo, useState, type RefObject } from 'react';
+import { useMemo, useState, type RefObject } from 'react';
 import type { AnalysisResult } from '../analysis/runAnalysis';
-import { VideoPlayer } from '../components/VideoPlayer';
 import { ja } from '../i18n/ja';
 import { showFrame } from '../video/showFrame';
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>;
   result: AnalysisResult | null;
+  /** プレイヤーが表示中のフレーム番号 */
+  frameIndex: number;
   handedness: Handedness;
   marks: Mark[];
   onMarksChange: (marks: Mark[]) => void;
@@ -33,10 +34,9 @@ function formatValue(id: MetricId, value: number): string {
   return value.toFixed(2);
 }
 
-export function MarkScreen({ videoRef, result, handedness, marks, onMarksChange }: Props) {
-  const [frameIndex, setFrameIndex] = useState(0);
+export function MarkScreen(props: Props) {
+  const { videoRef, result, frameIndex, handedness, marks, onMarksChange } = props;
   const [labelText, setLabelText] = useState('');
-  const onFrameIndex = useCallback((i: number) => setFrameIndex(i), []);
 
   const shot = shotMarkOf(marks);
   const shotMetrics = useMemo(
@@ -79,8 +79,6 @@ export function MarkScreen({ videoRef, result, handedness, marks, onMarksChange 
     <section>
       <h2>{ja.mark.title}</h2>
       <p className="muted small">{ja.mark.intro}</p>
-
-      <VideoPlayer videoRef={videoRef} result={result} onFrameIndex={onFrameIndex} />
 
       <h3>{ja.mark.addTitle}</h3>
       <div className="row">
