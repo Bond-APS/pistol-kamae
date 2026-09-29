@@ -17,6 +17,13 @@ export default tseslint.config(
     },
   },
   {
+    // 自動テストの実行役（Node で動き、ページ内で動かす関数も含む）
+    files: ['apps/web/e2e/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+  {
     files: ['apps/web/src/**/*.{ts,tsx}'],
     plugins: {
       'react-hooks': reactHooks,

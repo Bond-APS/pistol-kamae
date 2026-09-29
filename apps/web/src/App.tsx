@@ -1,5 +1,5 @@
 import type { Handedness } from '@pistol-kamae/engine';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import type { AnalysisResult } from './analysis/runAnalysis';
 import { DevErrorBanner } from './components/DevErrorBanner';
 import { DEFAULT_BACKEND, type BackendChoice } from './config/backends';
@@ -9,11 +9,27 @@ import { NoiseScreen } from './screens/NoiseScreen';
 
 type Tab = 'load' | 'noise';
 
+// 開発サーバ限定の自動テストモード（?autotest=1）。公開ビルドでは読み込まない
+const AutoTest = import.meta.env.DEV ? lazy(() => import('./dev/AutoTest')) : null;
+const autoTestRequested =
+  import.meta.env.DEV && new URLSearchParams(window.location.search).has('autotest');
+
 export function App() {
   const [tab, setTab] = useState<Tab>('load');
   const [backend, setBackend] = useState<BackendChoice>(DEFAULT_BACKEND);
   const [handedness, setHandedness] = useState<Handedness>('right');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+
+  if (AutoTest && autoTestRequested) {
+    return (
+      <main className="app">
+        <DevErrorBanner />
+        <Suspense fallback={null}>
+          <AutoTest />
+        </Suspense>
+      </main>
+    );
+  }
 
   return (
     <main className="app">

@@ -145,33 +145,56 @@ export function snapFrameRate(fps: number): number {
 }
 
 /**
+ * 「フレームが切り替わった時刻」の並びから fps を求める。
+ * 静止した映像では隣り合うフレームが同じ絵になり、切り替わりを見落とすことがある。
+ * 回数を数えると見落としの分だけ低く出るので、間隔の中央値を基準にし、
+ * 見落としで長くなった間隔（中央値の 1.5 倍超）を除いた平均から求める。
+ */
+export function frameRateFromChangeTimes(times: ReadonlyArray<number>): number | null {
+  if (times.length < 3) return null;
+  const intervals: number[] = [];
+  for (let i = 1; i < times.length; i++) {
+    const d = times[i]! - times[i - 1]!;
+    if (d > 0) intervals.push(d);
+  }
+  if (intervals.length < 2) return null;
+  const sorted = [...intervals].sort((a, b) => a - b);
+  const median = sorted[sorted.length >> 1]!;
+  const kept = intervals.filter((d) => d <= median * 1.5);
+  const mean = kept.reduce((s, d) => s + d, 0) / kept.length;
+  const fps = 1 / mean;
+  return Number.isFinite(fps) && fps > 0 ? snapFrameRate(fps) : null;
+}
+
+/**
  * フレームレートを推定する。HTML video は fps を教えてくれないので、
- * 先頭 0.5 秒を 1/120 秒刻みでシークし、絵が変わった回数を数える。
+ * 先頭 1 秒を 1/120 秒刻みでシークし、フレームが切り替わった時刻を集める。
  * 判定できなければ null（呼び出し側で既定値を使う）。
  */
 export async function estimateFrameRate(video: HTMLVideoElement): Promise<number | null> {
-  const span = Math.min(0.5, video.duration);
+  const span = Math.min(1, video.duration);
   if (!(span > 0)) return null;
   const step = 1 / 120;
   const sig = new FrameSignature();
   const session = new SeekSession();
   const exactTimes = new Set<number>();
+  const changeTimes: number[] = [];
   let prev: Uint8ClampedArray | null = null;
-  let distinct = 0;
   let allExact = true;
 
   for (let t = 0; t < span; t += step) {
     const r = await session.seek(video, t);
-    if (r.exact) exactTimes.add(Math.round(r.timeSec * 1e4));
+    if (r.exact) exactTimes.add(Math.round(r.timeSec * 1e5) / 1e5);
     else allExact = false;
     const s = sig.of(video);
-    if (!FrameSignature.same(prev, s)) distinct++;
+    if (!FrameSignature.same(prev, s)) changeTimes.push(t);
     prev = s;
   }
 
   // 正確な時刻が全部そろっていればそれを優先する
-  const count = allExact && exactTimes.size >= 2 ? exactTimes.size : distinct;
-  if (count < 2) return null;
-  const fps = count / span;
-  return Number.isFinite(fps) && fps > 0 ? snapFrameRate(fps) : null;
+  if (allExact && exactTimes.size >= 3) {
+    const exact = frameRateFromChangeTimes([...exactTimes].sort((a, b) => a - b));
+    if (exact) return exact;
+  }
+  return frameRateFromChangeTimes(changeTimes);
 }

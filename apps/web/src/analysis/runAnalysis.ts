@@ -6,6 +6,10 @@ export interface AnalysisTiming {
   totalMs: number;
   /** 推定（Worker 内）にかかった時間の合計 */
   inferenceMs: number;
+  /** 1 フレームあたりの推定時間の中央値（初回の準備時間の影響を受けにくい） */
+  inferenceMedianMs: number;
+  /** 最初の 1 フレームの推定時間（モデルの初回準備を含む） */
+  firstInferenceMs: number;
   /** シークと画像取り出しにかかった時間の合計 */
   seekMs: number;
 }
@@ -36,6 +40,12 @@ class AbortedError extends Error {
     super('aborted');
     this.name = 'AbortedError';
   }
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[sorted.length >> 1]!;
 }
 
 export const isAborted = (e: unknown): boolean => e instanceof AbortedError;
@@ -77,6 +87,7 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
     const total = Math.ceil(duration * fps);
     const frames: LandmarkFrame[] = [];
     let inferenceMs = 0;
+    const inferenceTimes: number[] = [];
     let seekMs = 0;
     let lastExactTime = -1;
     const session = new SeekSession();
@@ -102,6 +113,7 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       const timeSec = seek.exact ? seek.timeSec : nominalTime;
       const result = await client.estimate(bitmap, timeSec * 1000);
       inferenceMs += result.inferenceMs;
+      inferenceTimes.push(result.inferenceMs);
       frames.push({ timeSec, landmarks: result.landmarks });
       opts.onProgress(frames.length, total);
     }
@@ -113,7 +125,13 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       fps,
       durationSec: duration,
       frames,
-      timing: { totalMs: performance.now() - started, inferenceMs, seekMs },
+      timing: {
+        totalMs: performance.now() - started,
+        inferenceMs,
+        inferenceMedianMs: median(inferenceTimes),
+        firstInferenceMs: inferenceTimes[0] ?? 0,
+        seekMs,
+      },
       notes,
     };
   } finally {
