@@ -1,5 +1,5 @@
 import type { Handedness } from '@pistol-kamae/engine';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { poseBackendConfig } from '../config/backends';
@@ -10,6 +10,10 @@ import { estimateFrameRate } from '../video/seek';
 const FALLBACK_FPS = 30;
 
 interface Props {
+  /** video 要素の置き場所。マーク画面と共有する */
+  videoRef: MutableRefObject<HTMLVideoElement | null>;
+  /** この画面が表示中か。隠れている間はプレイヤーを外し、video 要素を他の画面に譲る */
+  active: boolean;
   handedness: Handedness;
   onHandednessChange: (h: Handedness) => void;
   result: AnalysisResult | null;
@@ -36,7 +40,7 @@ type Status =
 
 export function LoadScreen(props: Props) {
   // video 要素は React の管理外（DOM を直接いじる）なので ref で持つ
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const { videoRef } = props;
   const [info, setInfo] = useState<VideoInfo | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
@@ -47,7 +51,7 @@ export function LoadScreen(props: Props) {
       abortRef.current?.abort();
       releaseVideo(videoRef.current);
     };
-  }, []);
+  }, [videoRef]);
 
   const onPick = async (file: File | undefined) => {
     if (!file) return;
@@ -110,6 +114,7 @@ export function LoadScreen(props: Props) {
         <span>{ja.load.pickVideo}</span>
         <input
           type="file"
+          data-testid="video-file"
           accept="video/*"
           disabled={busy}
           onChange={(e) => void onPick(e.target.files?.[0])}
@@ -136,7 +141,12 @@ export function LoadScreen(props: Props) {
       </div>
 
       <div className="row">
-        <button className="primary" disabled={!info || busy} onClick={() => void run()}>
+        <button
+          className="primary"
+          data-testid="run-analysis"
+          disabled={!info || busy}
+          onClick={() => void run()}
+        >
           {ja.load.run}
         </button>
         {busy && <button onClick={() => abortRef.current?.abort()}>{ja.load.cancel}</button>}
@@ -150,7 +160,7 @@ export function LoadScreen(props: Props) {
         </div>
       )}
       {status.kind === 'done' && (
-        <p>
+        <p data-testid="analysis-done">
           {ja.load.done(status.frames, status.sec)}
           {status.notes.includes('gpuFallback') ? `（${ja.load.gpuFallback}）` : ''}
         </p>
@@ -158,7 +168,7 @@ export function LoadScreen(props: Props) {
       {status.kind === 'cancelled' && <p>{ja.load.cancelled}</p>}
       {status.kind === 'error' && <p className="danger">{ja.load.error(status.message)}</p>}
 
-      {props.result && <VideoPlayer videoRef={videoRef} result={props.result} />}
+      {props.result && props.active && <VideoPlayer videoRef={videoRef} result={props.result} />}
     </section>
   );
 }

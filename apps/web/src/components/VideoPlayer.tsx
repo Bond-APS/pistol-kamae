@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
-import { seekTimeForFrame } from '../analysis/frames';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { ja } from '../i18n/ja';
+import { showFrame } from '../video/showFrame';
 import { SkeletonOverlay } from './SkeletonOverlay';
 
 interface Props {
   /** 読込画面が作った video 要素。React の管理外なので ref で受け取る */
   videoRef: RefObject<HTMLVideoElement | null>;
   result: AnalysisResult;
+  /** 表示中のフレーム番号が変わったときに知らせる */
+  onFrameIndex?: (index: number) => void;
 }
 
-/** 推定結果を重ねた動画プレイヤー。再生・一時停止・1 コマ送り */
-export function VideoPlayer({ videoRef, result }: Props) {
+/** 推定結果を重ねた動画プレイヤー。再生・一時停止・1 コマ送り・スライダー */
+export function VideoPlayer({ videoRef, result, onFrameIndex }: Props) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [frameIndex, setFrameIndex] = useState(0);
@@ -33,6 +35,7 @@ export function VideoPlayer({ videoRef, result }: Props) {
     return () => {
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
+      video.pause();
       video.remove();
     };
   }, [container, videoRef]);
@@ -44,15 +47,18 @@ export function VideoPlayer({ videoRef, result }: Props) {
     else video.pause();
   };
 
-  const stepFrame = (delta: number) => {
+  const goTo = (index: number) => {
     const video = videoRef.current;
-    if (!video) return;
-    video.pause();
-    const next = Math.min(Math.max(frameIndex + delta, 0), result.frames.length - 1);
-    if (result.frames[next]) video.currentTime = seekTimeForFrame(result.frames, next, result.fps);
+    if (video) showFrame(video, result, index);
   };
 
-  const onFrameIndex = useCallback((i: number) => setFrameIndex(i), []);
+  const onIndex = useCallback(
+    (i: number) => {
+      setFrameIndex(i);
+      onFrameIndex?.(i);
+    },
+    [onFrameIndex],
+  );
   const current = result.frames[frameIndex];
 
   return (
@@ -67,15 +73,32 @@ export function VideoPlayer({ videoRef, result }: Props) {
           frames={result.frames}
           width={result.width}
           height={result.height}
-          onFrameIndex={onFrameIndex}
+          onFrameIndex={onIndex}
         />
       </div>
+      <input
+        type="range"
+        className="slider"
+        aria-label={ja.player.slider}
+        data-testid="frame-slider"
+        min={0}
+        max={Math.max(result.frames.length - 1, 0)}
+        step={1}
+        value={Math.max(frameIndex, 0)}
+        onChange={(e) => goTo(Number(e.target.value))}
+      />
       <div className="row">
-        <button onClick={() => stepFrame(-1)}>{ja.player.prevFrame}</button>
-        <button onClick={togglePlay}>{playing ? ja.player.pause : ja.player.play}</button>
-        <button onClick={() => stepFrame(1)}>{ja.player.nextFrame}</button>
+        <button data-testid="prev-frame" onClick={() => goTo(frameIndex - 1)}>
+          {ja.player.prevFrame}
+        </button>
+        <button data-testid="toggle-play" onClick={togglePlay}>
+          {playing ? ja.player.pause : ja.player.play}
+        </button>
+        <button data-testid="next-frame" onClick={() => goTo(frameIndex + 1)}>
+          {ja.player.nextFrame}
+        </button>
       </div>
-      <p className="muted small">
+      <p className="muted small" data-testid="frame-label" data-frame-index={frameIndex}>
         {current ? ja.player.frameLabel(frameIndex, result.frames.length, current.timeSec) : ''}
         {current && !current.landmarks ? ` — ${ja.player.noPerson}` : ''}
       </p>

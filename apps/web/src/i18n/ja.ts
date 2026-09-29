@@ -5,7 +5,7 @@ export const ja = {
   app: {
     title: 'Pistol Kamae',
     subtitle: 'AP 射撃姿勢解析',
-    stageNote: '開発中の検証用画面（段階①まで完了）',
+    stageNote: '開発中の検証用画面（段階②を確認中）',
   },
   devErrors: {
     title: '開発サーバ限定：画面内エラー表示',
@@ -13,7 +13,8 @@ export const ja = {
   },
   tabs: {
     load: '画面 1：動画を読み込む',
-    noise: '画面 2：ノイズ測定の結果',
+    mark: '画面 2：マークを付ける',
+    noise: '画面 3：ノイズ測定の結果',
   },
   load: {
     pickVideo: '手順 1：下のボタンを押して動画を選ぶ',
@@ -44,16 +45,52 @@ export const ja = {
     pause: '一時停止',
     prevFrame: '◀ 1 コマ',
     nextFrame: '1 コマ ▶',
+    slider: '表示するフレーム（つまみを動かして選ぶ）',
     frameLabel: (index: number, total: number, sec: number) =>
       `${index + 1} / ${total} フレーム（${sec.toFixed(3)} 秒）`,
     noPerson: '人物を検出できませんでした',
     legend: '緑：見えている点、灰：visibility が閾値未満（計測から除外）',
   },
+  mark: {
+    title: 'マーク付け',
+    intro:
+      '動画を撃発の瞬間まで動かし、「撃発マークを付ける」を押します。撃発の瞬間の角度が下の表に出ます。',
+    noResult:
+      'まだ処理済みの動画がありません。「画面 1：動画を読み込む」で姿勢推定を実行してください。',
+    addTitle: '表示中のフレームにマークを付ける',
+    setShot: '撃発マークを付ける',
+    resetShot: '撃発マークをここに付け直す',
+    customLabel: '任意マークの名前',
+    customPlaceholder: '例：振り上げ開始',
+    addCustom: '任意マークを追加',
+    listTitle: 'マーク一覧（押すとそのフレームへ移動）',
+    listEmpty: 'マークはまだありません。',
+    shotRequired: '撃発マークがまだ付いていません（必須）。',
+    shotName: '撃発',
+    position: (index: number, sec: number) => `${index + 1} フレーム目（${sec.toFixed(3)} 秒）`,
+    remove: '削除',
+    removeAria: (name: string) => `マーク「${name}」を削除`,
+    tableTitle: '撃発フレームの角度',
+    tableNoShot: '撃発マークを付けると、その瞬間の角度がここに表示されます。',
+    tableFrame: (index: number, sec: number) =>
+      `撃発フレーム：${index + 1} フレーム目（${sec.toFixed(3)} 秒）`,
+    tableNoPerson: 'このフレームでは人物を検出できなかったため、計測できません。',
+    tableLegend:
+      '符号：銃側へ傾く・上がる＝正（+）。「—」は関節が十分に見えず計測できなかった項目。水平・鉛直はカメラの向きが基準（水平校正は段階④）。',
+    columns: {
+      metric: '項目（基準）',
+      value: '値',
+      unit: '単位',
+    },
+    na: '—',
+    notSaved: '※ マークはまだ保存されません。ページを閉じる・再読込すると消えます（保存は段階③）。',
+  },
   noise: {
     title: '静止ノイズ測定',
     intro:
-      '三脚固定・射手が静止した動画（10 秒以上を推奨）を「動画読込」で処理してから、ここで各項目のばらつき（標準偏差）を確認します。',
-    noResult: 'まだ処理済みの動画がありません。「動画読込」で姿勢推定を実行してください。',
+      '三脚固定・射手が静止した動画（10 秒以上を推奨）を「画面 1：動画を読み込む」で処理してから、ここで各項目のばらつき（標準偏差）を確認します。',
+    noResult:
+      'まだ処理済みの動画がありません。「画面 1：動画を読み込む」で姿勢推定を実行してください。',
     passLine: '合格ライン：肩線の傾き (a) と体軸の傾き (c) の SD が 1° 以内',
     speedTitle: '処理速度',
     speed: (frames: number, totalSec: number, fps: number, inferMs: number, seekMs: number) =>
