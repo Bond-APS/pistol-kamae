@@ -12,11 +12,11 @@ export const ja = {
     clear: '消す',
   },
   tabs: {
-    load: '動画読込',
-    noise: 'ノイズ測定',
+    load: '画面 1：動画を読み込む',
+    noise: '画面 2：ノイズ測定の結果',
   },
   load: {
-    pickVideo: '動画ファイルを選ぶ',
+    pickVideo: '手順 1：下のボタンを押して動画を選ぶ',
     loadingVideo: '動画を読み込んでいます…（フレームレートの推定に数秒かかります）',
     trimHint:
       '動画は事前に短くトリミングすることを推奨します（全長に姿勢推定をかけるため、長いほど時間がかかります）。',
@@ -31,7 +31,7 @@ export const ja = {
     handedness: '利き手',
     right: '右',
     left: '左',
-    run: '姿勢推定を実行',
+    run: '手順 2：姿勢推定を実行',
     cancel: '中断',
     progress: (done: number, total: number) => `処理中… ${done} / 約 ${total} フレーム`,
     preparing: 'モデルを読み込んでいます…',
