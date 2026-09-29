@@ -6,7 +6,6 @@ export {
   type MediaPipeBackendConfig,
   type MediaPipeModel,
   type MediaPipeRunningMode,
-  type MoveNetBackendConfig,
   type PoseBackendConfig,
 } from './config';
 export { createBackend } from './createBackend';

@@ -2,7 +2,6 @@
 // 使い方：http://localhost:5173/?autotest=1&video=/_test/sample.mov&start=4.7&end=8.5
 //   video     同じ開発サーバ上の動画の場所（既定 /_test/sample.mov）
 //   start/end ノイズを集計する区間（秒）。省略すれば全フレーム
-//   backends  カンマ区切りのモデル名。省略すれば全モデル
 // 動画の読込から各モデルでの姿勢推定・ノイズ集計までを順番に実行し、結果を画面と
 // window.__autotest に出す。文言は検証用のため i18n には入れていない。
 
@@ -10,7 +9,7 @@ import { METRIC_IDS, type NoiseStats } from '@pistol-kamae/engine';
 import { useEffect, useRef, useState } from 'react';
 import { noiseStatsOf, type TimeRange } from '../analysis/metrics';
 import { runAnalysis, type AnalysisTiming } from '../analysis/runAnalysis';
-import { BACKEND_CHOICES, backendConfigOf, type BackendChoice } from '../config/backends';
+import { poseBackendConfig } from '../config/backends';
 import { loadVideo } from '../video/load';
 import { estimateFrameRate } from '../video/seek';
 
@@ -70,8 +69,10 @@ export default function AutoTest() {
     const nextUrl = params.get('next');
     // 同じ端末の 1 本目と 2 本目の結果を結び付けるための番号（時刻から作る）
     const sessionId = params.get('session') ?? Date.now().toString(36);
-    const requested = params.get('backends')?.split(',') as BackendChoice[] | undefined;
-    const backends = requested?.filter((b) => BACKEND_CHOICES.includes(b)) ?? BACKEND_CHOICES;
+    // モデルは 1 種類に固定。繰り返し回数だけ指定できる（結果の再現性を見るため）
+    const repeat = Math.max(1, Math.min(5, Number(params.get('repeat') ?? 1) || 1));
+    const config = poseBackendConfig();
+    const backends = Array.from({ length: repeat }, (_, i) => `run${i + 1}`);
 
     const current: AutoTestReport = {
       done: false,
@@ -120,7 +121,7 @@ export default function AutoTest() {
           try {
             const result = await runAnalysis({
               video,
-              config: backendConfigOf(backend),
+              config,
               fps: fps ?? 30,
               signal: new AbortController().signal,
               onPreparing: () => setProgress(`${backend}：モデルを読込中…`),

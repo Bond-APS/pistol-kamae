@@ -149,5 +149,5 @@ vite.config.ts.timestamp-*
 .claude/
 
 # 動作確認用の一時ファイル
-apps/web/public/_test/
+apps/web/e2e/videos/
 apps/web/e2e/results/

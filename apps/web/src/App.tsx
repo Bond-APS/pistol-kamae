@@ -2,7 +2,6 @@ import type { Handedness } from '@pistol-kamae/engine';
 import { lazy, Suspense, useState } from 'react';
 import type { AnalysisResult } from './analysis/runAnalysis';
 import { DevErrorBanner } from './components/DevErrorBanner';
-import { DEFAULT_BACKEND, type BackendChoice } from './config/backends';
 import { ja } from './i18n/ja';
 import { LoadScreen } from './screens/LoadScreen';
 import { NoiseScreen } from './screens/NoiseScreen';
@@ -16,7 +15,6 @@ const autoTestRequested =
 
 export function App() {
   const [tab, setTab] = useState<Tab>('load');
-  const [backend, setBackend] = useState<BackendChoice>(DEFAULT_BACKEND);
   const [handedness, setHandedness] = useState<Handedness>('right');
   const [result, setResult] = useState<AnalysisResult | null>(null);
 
@@ -52,8 +50,6 @@ export function App() {
       {/* 読込画面は隠すだけにして、動画と処理状態を保つ */}
       <div hidden={tab !== 'load'}>
         <LoadScreen
-          backend={backend}
-          onBackendChange={setBackend}
           handedness={handedness}
           onHandednessChange={setHandedness}
           result={result}

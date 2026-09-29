@@ -2,11 +2,11 @@ import type { CommonLandmarks } from '../landmarks/types';
 
 /**
  * 姿勢推定バックエンドの差し替え口。
- * MediaPipe・MoveNet など、どのモデルもこの約束事に従って実装する。
+ * どのモデルもこの約束事に従って実装する。
  * 出力は必ず共通ランドマーク形式（画素座標）。
  */
 export interface PoseBackend {
-  /** 識別子（例：'mediapipe-full'、'movenet-thunder'） */
+  /** 識別子（例：'mediapipe-full-video'） */
   readonly id: string;
 
   /** モデルの読込など、最初に 1 回だけ行う準備 */

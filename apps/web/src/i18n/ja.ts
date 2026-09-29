@@ -5,7 +5,7 @@ export const ja = {
   app: {
     title: 'Pistol Kamae',
     subtitle: 'AP 射撃姿勢解析',
-    stageNote: '段階①：動画読込・姿勢推定・骨格重ね描き・静止ノイズ測定（検証用画面）',
+    stageNote: '開発中の検証用画面（段階①まで完了）',
   },
   devErrors: {
     title: '開発サーバ限定：画面内エラー表示',
@@ -27,7 +27,6 @@ export const ja = {
       'この動画はこのブラウザで再生できません。iPhone なら「設定 → カメラ → フォーマット → 互換性優先」で撮り直すか、別のブラウザで開いてください。',
     videoInfo: (w: number, h: number, sec: number, fps: number | null) =>
       `${w}×${h}、${sec.toFixed(1)} 秒${fps ? `、推定 ${fps.toFixed(0)} fps` : ''}`,
-    backend: '姿勢推定モデル',
     handedness: '利き手',
     right: '右',
     left: '左',
@@ -39,15 +38,6 @@ export const ja = {
     error: (msg: string) => `エラー：${msg}`,
     gpuFallback: 'GPU が使えなかったため CPU で実行しました',
     done: (frames: number, sec: number) => `完了：${frames} フレームを ${sec.toFixed(1)} 秒で処理`,
-  },
-  backends: {
-    mediapipeLiteVideo: 'MediaPipe lite（動画モード）',
-    mediapipeFullVideo: 'MediaPipe full（動画モード）',
-    mediapipeHeavyVideo: 'MediaPipe heavy（動画モード）',
-    mediapipeLiteImage: 'MediaPipe lite（画像モード・平滑化なし）',
-    mediapipeFullImage: 'MediaPipe full（画像モード・平滑化なし）',
-    mediapipeHeavyImage: 'MediaPipe heavy（画像モード・平滑化なし）',
-    movenetThunder: 'MoveNet Thunder（平滑化なし）',
   },
   player: {
     play: '再生',

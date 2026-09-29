@@ -11,9 +11,5 @@ export async function createBackend(config: PoseBackendConfig): Promise<PoseBack
       const { MediaPipeBackend } = await import('./mediapipe/MediaPipeBackend');
       return new MediaPipeBackend(config);
     }
-    case 'movenet': {
-      const { MoveNetBackend } = await import('./movenet/MoveNetBackend');
-      return new MoveNetBackend(config);
-    }
   }
 }

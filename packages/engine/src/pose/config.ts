@@ -29,20 +29,10 @@ export interface MediaPipeBackendConfig {
   modelAssetPath: string;
 }
 
-export interface MoveNetBackendConfig {
-  kind: 'movenet';
-  /** model.json の URL */
-  modelUrl: string;
-  /** 内部の時間方向の平滑化。既定 false（生のノイズを測るため） */
-  enableSmoothing?: boolean;
-}
-
-export type PoseBackendConfig = MediaPipeBackendConfig | MoveNetBackendConfig;
+/** 将来バックエンドを増やすときは、ここに設定の型を足す（kind で区別する） */
+export type PoseBackendConfig = MediaPipeBackendConfig;
 
 /** 設定から識別子（例：'mediapipe-full-video'）を作る */
 export function backendIdOf(config: PoseBackendConfig): string {
-  if (config.kind === 'mediapipe') {
-    return `mediapipe-${config.model}-${config.runningMode}`;
-  }
-  return `movenet-thunder${config.enableSmoothing ? '-smoothed' : ''}`;
+  return `mediapipe-${config.model}-${config.runningMode}`;
 }

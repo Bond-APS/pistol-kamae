@@ -2,7 +2,7 @@ import type { Handedness } from '@pistol-kamae/engine';
 import { useEffect, useRef, useState } from 'react';
 import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
 import { VideoPlayer } from '../components/VideoPlayer';
-import { BACKEND_CHOICES, backendConfigOf, type BackendChoice } from '../config/backends';
+import { poseBackendConfig } from '../config/backends';
 import { ja } from '../i18n/ja';
 import { loadVideo, releaseVideo } from '../video/load';
 import { estimateFrameRate } from '../video/seek';
@@ -10,8 +10,6 @@ import { estimateFrameRate } from '../video/seek';
 const FALLBACK_FPS = 30;
 
 interface Props {
-  backend: BackendChoice;
-  onBackendChange: (b: BackendChoice) => void;
   handedness: Handedness;
   onHandednessChange: (h: Handedness) => void;
   result: AnalysisResult | null;
@@ -79,7 +77,7 @@ export function LoadScreen(props: Props) {
     try {
       const result = await runAnalysis({
         video,
-        config: backendConfigOf(props.backend),
+        config: poseBackendConfig(),
         fps: info.fps ?? FALLBACK_FPS,
         signal: controller.signal,
         onPreparing: () => setStatus({ kind: 'preparing' }),
@@ -125,20 +123,6 @@ export function LoadScreen(props: Props) {
       )}
 
       <div className="row">
-        <label className="field">
-          <span>{ja.load.backend}</span>
-          <select
-            value={props.backend}
-            disabled={busy}
-            onChange={(e) => props.onBackendChange(e.target.value as BackendChoice)}
-          >
-            {BACKEND_CHOICES.map((c) => (
-              <option key={c} value={c}>
-                {ja.backends[c]}
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="field">
           <span>{ja.load.handedness}</span>
           <select

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fromMediaPipe } from '../src/landmarks/fromMediaPipe';
-import { fromCoco17 } from '../src/landmarks/fromMoveNet';
+import { fromCoco17 } from '../src/landmarks/fromCoco17';
 
 describe('fromMediaPipe', () => {
   it('正規化座標を画素座標に変換し、決められた番号の点を拾う', () => {
