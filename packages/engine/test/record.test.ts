@@ -9,7 +9,13 @@ import {
 import { formatScore, isValidScore, parseScore } from '../src/record/score';
 import { hasShooterName, normalizeShooterName } from '../src/record/shooter';
 import { RECORD_FORMAT_VERSION, type ShotRecord } from '../src/record/types';
-import { checkShotRecord, shotMetricsOfRecord } from '../src/record/validate';
+import {
+  checkShotRecord,
+  hasUsableLevel,
+  shotMetricsOfRecord,
+  tiltDegOfRecord,
+  upgradeShotRecord,
+} from '../src/record/validate';
 
 const p = (x: number, y: number, visibility = 1): Point => ({ x, y, visibility });
 
@@ -48,6 +54,7 @@ function record(): ShotRecord {
       frames,
     },
     marks: addCustomMark(setShotMark([], 1 / 30), { id: 'c1', label: '振り上げ開始', timeSec: 0 }),
+    level: null,
     meta: {
       shotAt: '2026-09-30T14:05',
       shooterName: '山田',
@@ -200,7 +207,8 @@ describe('保存形式の検査', () => {
   });
 
   it('版番号が違えば unsupportedVersion', () => {
-    expect(checkShotRecord({ ...record(), formatVersion: 2 })).toBe('unsupportedVersion');
+    expect(checkShotRecord({ ...record(), formatVersion: 1 })).toBe('unsupportedVersion');
+    expect(checkShotRecord({ ...record(), formatVersion: 3 })).toBe('unsupportedVersion');
     expect(checkShotRecord({ ...record(), formatVersion: undefined })).toBe('unsupportedVersion');
   });
 
@@ -234,6 +242,46 @@ describe('保存形式の検査', () => {
     const dup = record();
     dup.marks = [...dup.marks, { id: 'c1', kind: 'custom', label: '別の名前', timeSec: 0 }];
     expect(checkShotRecord(dup)).toBe('invalidMarks');
+  });
+
+  it('水平校正の線は、なし（null）か、2 点の形であること', () => {
+    // 画像は 1000×1000。長さ 600、傾き約 1.9° の線
+    const ok = { ...record(), level: { x1: 200, y1: 900, x2: 800, y2: 920 } };
+    expect(checkShotRecord(ok)).toBeNull();
+    // 項目そのものがない（版 1 の形のまま）
+    const missing: Partial<ShotRecord> = record();
+    delete missing.level;
+    expect(checkShotRecord(missing)).toBe('invalidLevel');
+    expect(checkShotRecord({ ...record(), level: { x1: 0, y1: 0 } })).toBe('invalidLevel');
+  });
+
+  it('長さや傾きの基準に合わない線は、記録は開けるが補正には使わない', () => {
+    // 短すぎる線（長さ 100 は長い辺の 20% 未満）と、傾きすぎの線（約 27°）
+    for (const level of [
+      { x1: 0, y1: 0, x2: 100, y2: 0 },
+      { x1: 0, y1: 0, x2: 600, y2: 300 },
+    ]) {
+      const r: ShotRecord = { ...record(), level };
+      expect(checkShotRecord(r)).toBeNull();
+      expect(hasUsableLevel(r)).toBe(false);
+      expect(tiltDegOfRecord(r)).toBe(0);
+    }
+    expect(hasUsableLevel(record())).toBe(false);
+    expect(hasUsableLevel({ ...record(), level: { x1: 200, y1: 900, x2: 800, y2: 920 } })).toBe(
+      true,
+    );
+  });
+
+  it('版 1 の記録は、水平校正の線を「なし」として版 2 に直せる', () => {
+    const v1: Record<string, unknown> = { ...record(), formatVersion: 1 };
+    delete v1.level;
+    expect(checkShotRecord(v1)).toBe('unsupportedVersion');
+    const upgraded = upgradeShotRecord(v1);
+    expect(checkShotRecord(upgraded)).toBeNull();
+    expect(upgraded).toEqual(record());
+    // 今の版はそのまま
+    expect(upgradeShotRecord(record())).toEqual(record());
+    expect(upgradeShotRecord(null)).toBeNull();
   });
 
   it('メタ情報が不正なら invalidMeta', () => {
@@ -271,5 +319,19 @@ describe('記録の撃発フレームの角度', () => {
     const r = record();
     r.marks = [];
     expect(shotMetricsOfRecord(r)).toBeNull();
+  });
+
+  it('水平校正の線があれば、カメラの傾きの分だけ補正した角度が出る', () => {
+    const r = record();
+    // 右下がり 3° の線（水平なものが右下がりに写っている）
+    const rad = (3 * Math.PI) / 180;
+    r.level = { x1: 200, y1: 900, x2: 200 + 600 * Math.cos(rad), y2: 900 + 600 * Math.sin(rad) };
+    expect(tiltDegOfRecord(r)).toBeCloseTo(3, 6);
+    // 肩線は、非銃側（画面右）が下がって写っている分だけ銃側が上がって見えていた → 補正で 3° 減る
+    expect(shotMetricsOfRecord(r)?.values?.shoulderTilt).toBeCloseTo(5.71 - 3, 2);
+    // 左利きとして扱うと符号が逆
+    r.meta.handedness = 'left';
+    expect(shotMetricsOfRecord(r)?.values?.shoulderTilt).toBeCloseTo(-(5.71 - 3), 2);
+    expect(tiltDegOfRecord(record())).toBe(0);
   });
 });

@@ -5,9 +5,13 @@
 import type { LandmarkFrame } from '../landmarks/types';
 import type { Mark } from '../marks/types';
 import type { Handedness } from '../normalize/handedness';
+import type { LevelLine } from '../normalize/level';
 
-/** 保存形式の版番号。形式を変えたら上げ、古い版を読むときの変換を足す */
-export const RECORD_FORMAT_VERSION = 1;
+/**
+ * 保存形式の版番号。形式を変えたら上げ、古い版を読むときの変換を足す。
+ * 1：段階③。2：段階④で水平校正の線（level）を追加
+ */
+export const RECORD_FORMAT_VERSION = 2;
 
 /** 姿勢推定の結果（動画 1 本分） */
 export interface RecordAnalysis {
@@ -40,5 +44,7 @@ export interface ShotRecord {
   analysis: RecordAnalysis;
   /** 撃発マーク（必須）と任意マーク */
   marks: Mark[];
+  /** 水平校正の線（元の動画の画素座標）。引いていなければ null */
+  level: LevelLine | null;
   meta: RecordMeta;
 }

@@ -19,6 +19,32 @@ export { DEFAULT_VISIBILITY_THRESHOLD, isPointUsable, type ImageSize } from './l
 export { mirrorX, toSided, type Handedness, type SidedLandmarks } from './normalize/handedness';
 
 export {
+  IDENTITY,
+  applyAffine,
+  composeAffine,
+  mirroringX,
+  rotationAbout,
+  scalingAbout,
+  translation,
+  type Affine,
+  type Vec2,
+} from './normalize/affine';
+export {
+  LEVEL_MAX_TILT_DEG,
+  LEVEL_MIN_LENGTH_RATIO,
+  applyLevel,
+  checkLevelLine,
+  levelInfo,
+  levelTiltDeg,
+  type LevelInfo,
+  type LevelKind,
+  type LevelLine,
+  type LevelProblem,
+} from './normalize/level';
+export { alignToAnchor, bodyAnchor, transformAnchor, type BodyAnchor } from './normalize/align';
+
+export {
+  METRIC_DECIMALS,
   METRIC_IDS,
   METRIC_UNITS,
   type MetricId,
@@ -32,6 +58,16 @@ export {
   type FrameMetrics,
   type FrameMetricsInput,
 } from './metrics/atFrame';
+
+export {
+  DEFAULT_DIFF_FACTORS,
+  DEFAULT_NOISE_WIDTHS,
+  compareMetrics,
+  roundMetric,
+  type DiffLevel,
+  type DiffOptions,
+  type MetricDiff,
+} from './metrics/diff';
 
 export { frameIndexAt } from './landmarks/frames';
 
@@ -48,7 +84,15 @@ export {
 
 export { computeNoiseStats, seriesStats, type NoiseStats, type SeriesStats } from './noise/stats';
 
-export { coverRect, expandRect, personBounds, type Rect } from './landmarks/bounds';
+export {
+  coverRect,
+  expandRect,
+  padRect,
+  personBounds,
+  transformedBounds,
+  unionRect,
+  type Rect,
+} from './landmarks/bounds';
 
 export {
   RECORD_FORMAT_VERSION,
@@ -76,6 +120,13 @@ export {
   normalizeShooterName,
   type Shooter,
 } from './record/shooter';
-export { checkShotRecord, shotMetricsOfRecord, type RecordProblem } from './record/validate';
+export {
+  checkShotRecord,
+  hasUsableLevel,
+  shotMetricsOfRecord,
+  tiltDegOfRecord,
+  upgradeShotRecord,
+  type RecordProblem,
+} from './record/validate';
 
 export type { PoseBackend } from './pose/PoseBackend';

@@ -1,5 +1,6 @@
 // 人物が写っている範囲。静止画を人物に寄せて表示する・一覧用に切り抜くのに使う。
 
+import { applyAffine, type Affine } from '../normalize/affine';
 import { LANDMARK_NAMES, type CommonLandmarks } from './types';
 import { DEFAULT_VISIBILITY_THRESHOLD, isPointUsable, type ImageSize } from './usable';
 
@@ -89,4 +90,42 @@ export function coverRect(rect: Rect, aspect: number, imageSize: ImageSize): Rec
   const x = Math.min(Math.max(cx - width / 2, 0), imageSize.width - width);
   const y = Math.min(Math.max(cy - height / 2, 0), imageSize.height - height);
   return { x, y, width, height };
+}
+
+/** 2 つの長方形をどちらも含む最小の長方形 */
+export function unionRect(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    width: Math.max(a.x + a.width, b.x + b.width) - x,
+    height: Math.max(a.y + a.height, b.y + b.height) - y,
+  };
+}
+
+/** 長方形を四方に広げる。余白は長い辺の marginRatio 倍。画像からはみ出してもよい（切り落とさない） */
+export function padRect(rect: Rect, marginRatio: number): Rect {
+  const margin = Math.max(rect.width, rect.height) * marginRatio;
+  return {
+    x: rect.x - margin,
+    y: rect.y - margin,
+    width: rect.width + margin * 2,
+    height: rect.height + margin * 2,
+  };
+}
+
+/** 長方形を移し替えたあとの四隅をすべて含む最小の長方形（回転すると少し大きくなる） */
+export function transformedBounds(rect: Rect, m: Affine): Rect {
+  const corners = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x, y: rect.y + rect.height },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+  ].map((p) => applyAffine(m, p));
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }

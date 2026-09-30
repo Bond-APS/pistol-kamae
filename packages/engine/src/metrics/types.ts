@@ -30,5 +30,8 @@ export const METRIC_UNITS: Record<MetricId, MetricUnit> = {
   wristFaceDistance: 'ratio',
 };
 
+/** 表示するときの小数の桁数（角度は 0.1° 刻み、比は 0.01 刻み） */
+export const METRIC_DECIMALS: Record<MetricUnit, number> = { deg: 1, ratio: 2 };
+
 /** 1 フレーム分の計測値。visibility 不足などで計測できない項目は null。 */
 export type MetricValues = Record<MetricId, number | null>;

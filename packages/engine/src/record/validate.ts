@@ -4,6 +4,7 @@ import { LANDMARK_NAMES, type LandmarkFrame, type Point } from '../landmarks/typ
 import { shotMarkOf } from '../marks/operations';
 import type { Mark } from '../marks/types';
 import { metricsAtTime, type FrameMetrics } from '../metrics/atFrame';
+import { checkLevelLine, levelTiltDeg, type LevelLine } from '../normalize/level';
 import { parseLocalDateTime } from './dateTime';
 import { isValidScore } from './score';
 import { normalizeShooterName } from './shooter';
@@ -20,6 +21,7 @@ export type RecordProblem =
   | 'invalidAnalysis'
   | 'invalidMarks'
   | 'noShotMark'
+  | 'invalidLevel'
   | 'invalidMeta';
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -61,6 +63,16 @@ function isMark(v: unknown): v is Mark {
   );
 }
 
+function isLevelLine(v: unknown): v is LevelLine {
+  return (
+    isObject(v) &&
+    isFiniteNumber(v.x1) &&
+    isFiniteNumber(v.y1) &&
+    isFiniteNumber(v.x2) &&
+    isFiniteNumber(v.y2)
+  );
+}
+
 function isMeta(v: unknown): v is RecordMeta {
   return (
     isObject(v) &&
@@ -84,11 +96,35 @@ export function checkShotRecord(value: unknown): RecordProblem | null {
   const marks = value.marks as Mark[];
   if (marks.filter((m) => m.kind === 'shot').length !== 1) return 'noShotMark';
   if (new Set(marks.map((m) => m.id)).size !== marks.length) return 'invalidMarks';
+  // 線は形だけを検査する。長さや傾きの閾値は将来変えることがあり、閾値に合わない線は
+  // levelTiltDeg が「補正しない」として扱うので、記録が開けなくなることはない
+  if (value.level !== null && !isLevelLine(value.level)) return 'invalidLevel';
   if (!isMeta(value.meta)) return 'invalidMeta';
   return null;
 }
 
-/** 記録の撃発フレームの計測値。撃発マークがなければ null */
+/**
+ * 古い版の記録を今の版に直す。直せない形なら、そのまま返す（あとの検査で落ちる）。
+ * 版 1 → 2：水平校正の線を「なし」として足す。
+ */
+export function upgradeShotRecord(value: unknown): unknown {
+  if (isObject(value) && value.formatVersion === 1) {
+    return { ...value, formatVersion: 2, level: null };
+  }
+  return value;
+}
+
+/** 記録のカメラの傾き（度）。水平校正の線がない、または使えない線なら 0 */
+export function tiltDegOfRecord(record: ShotRecord): number {
+  return levelTiltDeg(record.level, record.analysis);
+}
+
+/** 記録の水平校正の線が、今の基準（長さ・傾き）で使えるか。線がなければ false */
+export function hasUsableLevel(record: ShotRecord): boolean {
+  return record.level !== null && checkLevelLine(record.level, record.analysis) === null;
+}
+
+/** 記録の撃発フレームの計測値（水平校正の線があれば補正済み）。撃発マークがなければ null */
 export function shotMetricsOfRecord(record: ShotRecord): FrameMetrics | null {
   const shot = shotMarkOf(record.marks);
   if (!shot) return null;
@@ -98,6 +134,7 @@ export function shotMetricsOfRecord(record: ShotRecord): FrameMetrics | null {
       handedness: record.meta.handedness,
       imageWidth: record.analysis.width,
       imageHeight: record.analysis.height,
+      tiltDeg: tiltDegOfRecord(record),
     },
     shot.timeSec,
   );

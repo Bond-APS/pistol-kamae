@@ -1,6 +1,7 @@
 import { frameIndexAt } from '../landmarks/frames';
 import type { LandmarkFrame } from '../landmarks/types';
 import { toSided, type Handedness } from '../normalize/handedness';
+import { applyLevel } from '../normalize/level';
 import { computeMetrics, type MetricOptions } from './compute';
 import type { MetricValues } from './types';
 
@@ -20,6 +21,11 @@ export interface FrameMetricsInput {
   imageWidth: number;
   /** 動画の高さ（画素）。幅と合わせて、画面の外にある点を計測から外すのに使う */
   imageHeight: number;
+  /**
+   * カメラの傾き（度。水平校正の線から求めたもの）。0 以外なら、この分だけ関節の位置を回してから計算する。
+   * 省略時は 0（補正しない）
+   */
+  tiltDeg?: number;
   /** 閾値など。imageSize は上の幅・高さから自動で入る */
   options?: MetricOptions;
 }
@@ -28,12 +34,21 @@ export interface FrameMetricsInput {
 export function metricsAtFrame(input: FrameMetricsInput, frameIndex: number): FrameMetrics | null {
   const frame = input.frames[frameIndex];
   if (!Number.isInteger(frameIndex) || !frame) return null;
-  const values = frame.landmarks
-    ? computeMetrics(toSided(frame.landmarks, input.handedness, input.imageWidth), {
-        imageSize: { width: input.imageWidth, height: input.imageHeight },
-        ...input.options,
-      })
-    : null;
+  const imageSize = { width: input.imageWidth, height: input.imageHeight };
+  const tiltDeg = input.tiltDeg ?? 0;
+  let values: MetricValues | null = null;
+  if (frame.landmarks && tiltDeg !== 0) {
+    // 画面の外にある点は applyLevel が先に外すので、回したあとの座標では画面の内外を調べない
+    const leveled = applyLevel(frame.landmarks, tiltDeg, imageSize);
+    const options = { ...input.options };
+    delete options.imageSize;
+    values = computeMetrics(toSided(leveled, input.handedness, input.imageWidth), options);
+  } else if (frame.landmarks) {
+    values = computeMetrics(toSided(frame.landmarks, input.handedness, input.imageWidth), {
+      imageSize,
+      ...input.options,
+    });
+  }
   return { frameIndex, timeSec: frame.timeSec, values };
 }
 
