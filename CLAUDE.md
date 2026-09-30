@@ -22,7 +22,7 @@ AP（エアピストル）射撃姿勢解析 Web アプリ。正面から撮っ�
 - 動画本体はブラウザ内に保存しない（保存するのはランドマーク時系列・マーク・メタ情報・静止画数枚のみ）。
 - 姿勢推定と角度計算は画面（UI）から切り離した独立部品（`packages/engine`）として実装し、UI に依存させない。将来別アプリに組み込むため。
 - engine の中核は「共通ランドマーク形式」（鼻・両耳・両肩・両腰・両手首・両足首、各 x, y, visibility）。姿勢推定モデルの出力はすべてこの形式に変換してから角度計算に渡す。角度計算・比較・保存・書き出しは特定のモデルに依存させない。
-- 姿勢推定バックエンドは差し替え可能にする（インターフェース `PoseBackend` を定義し、MediaPipe を既定、MoveNet Thunder を段階①の比較用に実装）。
+- 姿勢推定バックエンドは差し替え可能にする（インターフェース `PoseBackend` を定義）。使用するのは MediaPipe full・動画モードの 1 種類で、利用者には選ばせない。
 - 端末内完結の唯一の例外は段階⑧の Mac 用 Python 変換ツール（条件付き）。着手は開発者の指示があったときのみ。
 - 文言はソースに直書きせず `src/i18n/ja.ts` に集約する（v1 は日本語のみ、英語化を容易にするため）。
 - ライセンスは MIT。依存ライブラリを追加するときはライセンスを確認し、MIT と両立しないもの（GPL 系）は入れない。
@@ -33,11 +33,11 @@ AP（エアピストル）射撃姿勢解析 Web アプリ。正面から撮っ�
 |---|---|
 | 画面 | React 18 + TypeScript |
 | ビルド | Vite |
-| 姿勢推定（既定） | `@mediapipe/tasks-vision`（Pose Landmarker、既定モデル full、lite／heavy を設定で切替） |
-| 姿勢推定（比較用） | `@tensorflow-models/pose-detection`（MoveNet Thunder、TensorFlow.js） |
+| 姿勢推定 | `@mediapipe/tasks-vision`（Pose Landmarker、モデルは full・動画モードに固定） |
 | グラフ | Chart.js |
 | 保存 | Dexie（IndexedDB のラッパ） |
 | テスト | Vitest |
+| 自動テスト（開発用） | Playwright（実際の画面をブラウザで自動操作する。公開アプリには含まれない） |
 | 整形・静的検査 | Prettier + ESLint |
 | 公開 | GitHub Pages（GitHub Actions で `main` から自動デプロイ） |
 
@@ -53,18 +53,21 @@ pistol-kamae/
     engine/                   姿勢推定・角度計算（UI 非依存の独立部品）
       src/
         landmarks/            共通ランドマーク形式の型定義と各モデルからの変換
-        pose/                 PoseBackend インターフェース、mediapipe/、movenet/
+        pose/                 PoseBackend インターフェース、mediapipe/
         metrics/              角度・距離の計算（要件 6 章）
         normalize/            正規化・水平校正・利き手反転
         noise/                静止ノイズ測定
+        marks/                マーク（撃発・任意）の型と操作
         index.ts
       test/
   apps/
     web/                      React アプリ
+      e2e/                    自動テスト（Playwright）、テスト動画と結果（git 管理外）
       src/
         screens/              初回、読込、マーク、ライブラリ、比較、設定、ノイズ測定
         components/
         db/                   Dexie スキーマ
+        dev/                  開発サーバ限定の自動テストモード（公開ビルドに含めない）
         export/               JSON / CSV / PNG
         i18n/ja.ts
         main.tsx
@@ -100,7 +103,7 @@ pistol-kamae/
 5. 角度時系列グラフ＋同期点選択
 6. JSON / CSV / PNG 書き出し、JSON 読込
 7. PWA 化、文言分離の仕上げ
-8. （条件付き）Mac 用 Python 変換ツール `tools/pose-hires/`。RTMPose から始め、共通ランドマーク形式の JSON を出力する。①で MediaPipe・MoveNet ともにノイズが合格ラインに届かない場合にのみ、開発者の指示で着手
+8. （条件付き）Mac 用 Python 変換ツール `tools/pose-hires/`。RTMPose から始め、共通ランドマーク形式の JSON を出力する。友人の動画でノイズが合格ラインに届かない場合にのみ、開発者の指示で着手
 
 各段階の着手時に「この段階で作るもの・作らないもの・確認方法」を提示して承認を得る。
 
@@ -110,7 +113,8 @@ pistol-kamae/
 - コミット：小さく、日本語のメッセージ。形式は `段階①: 動画読込画面の骨組み` のように段階番号を先頭に付ける。コミット前に `npm run lint` と `npm test` を通す。
 - ブランチ：`main` に直接コミットしてよい（個人開発）。`push` は開発者の指示があったときのみ。
 - テスト：`packages/engine` の角度計算・正規化・反転は必ず単体テストを書く（既知の座標を入れて期待する角度が出るか）。UI は手動確認を基本とする。
-- 実機確認：開発者が行う。確認手順（どの画面で何を操作し、何が見えれば合格か）を箇条書きで渡す。
+- 確認：Claude が自動テストで行う。開発者には、実機を触るなど Claude にできないことだけを頼む。頼むときは確認手順（どの画面で何を操作し、何が見えれば合格か）を箇条書きで渡す。
+- 動画表示に手を入れたら、動きのある動画で絵が変わることを自動テストで確かめる（フレーム番号だけでなく、画面に出ている絵を見る）。
 - ドキュメント：仕様に影響する変更を加えたら `docs/` の要件定義に追記を提案する（勝手に書き換えない）。
 - 新規ファイル名は原則 `YYMMDD_descriptive-name.拡張子`。ただしソースコードやフレームワークの慣習で固定名があるものはそちらを優先。
 
