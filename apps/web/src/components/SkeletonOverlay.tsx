@@ -1,8 +1,12 @@
-import { LANDMARK_NAMES, SKELETON_EDGES, type LandmarkFrame } from '@pistol-kamae/engine';
+import {
+  DEFAULT_VISIBILITY_THRESHOLD,
+  isPointUsable,
+  LANDMARK_NAMES,
+  SKELETON_EDGES,
+  type LandmarkFrame,
+} from '@pistol-kamae/engine';
 import { useEffect, useRef, type RefObject } from 'react';
 import { frameIndexAt } from '../analysis/frames';
-
-const VISIBILITY_THRESHOLD = 0.5;
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -18,7 +22,9 @@ function draw(ctx: CanvasRenderingContext2D, frame: LandmarkFrame, w: number, h:
   const lm = frame.landmarks;
   if (!lm) return;
   const scale = Math.max(w, h) / 1000;
-  const ok = (name: (typeof LANDMARK_NAMES)[number]) => lm[name].visibility >= VISIBILITY_THRESHOLD;
+  // 計測に使わない点（visibility が低い、または画面の外）は灰色で描く
+  const ok = (name: (typeof LANDMARK_NAMES)[number]) =>
+    isPointUsable(lm[name], DEFAULT_VISIBILITY_THRESHOLD, { width: w, height: h });
 
   ctx.lineWidth = 3 * scale;
   for (const [a, b] of SKELETON_EDGES) {

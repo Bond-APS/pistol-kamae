@@ -18,6 +18,9 @@ export interface FrameMetricsInput {
   handedness: Handedness;
   /** 動画の幅（画素）。左利きの左右反転に使う */
   imageWidth: number;
+  /** 動画の高さ（画素）。幅と合わせて、画面の外にある点を計測から外すのに使う */
+  imageHeight: number;
+  /** 閾値など。imageSize は上の幅・高さから自動で入る */
   options?: MetricOptions;
 }
 
@@ -26,7 +29,10 @@ export function metricsAtFrame(input: FrameMetricsInput, frameIndex: number): Fr
   const frame = input.frames[frameIndex];
   if (!Number.isInteger(frameIndex) || !frame) return null;
   const values = frame.landmarks
-    ? computeMetrics(toSided(frame.landmarks, input.handedness, input.imageWidth), input.options)
+    ? computeMetrics(toSided(frame.landmarks, input.handedness, input.imageWidth), {
+        imageSize: { width: input.imageWidth, height: input.imageHeight },
+        ...input.options,
+      })
     : null;
   return { frameIndex, timeSec: frame.timeSec, values };
 }

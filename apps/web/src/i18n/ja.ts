@@ -49,7 +49,7 @@ export const ja = {
     frameLabel: (index: number, total: number, sec: number) =>
       `${index + 1} / ${total} フレーム（${sec.toFixed(3)} 秒）`,
     noPerson: '人物を検出できませんでした',
-    legend: '緑：見えている点、灰：visibility が閾値未満（計測から除外）',
+    legend: '緑：見えている点、灰：よく見えない点・画面の外にある点（計測から除外）',
   },
   mark: {
     title: 'マーク付け',
@@ -78,7 +78,7 @@ export const ja = {
       `撃発フレーム：${index + 1} フレーム目（${sec.toFixed(3)} 秒）`,
     tableNoPerson: 'このフレームでは人物を検出できなかったため、計測できません。',
     tableLegend:
-      '符号：銃側へ傾く・上がる＝正（+）。「—」は関節が十分に見えず計測できなかった項目。水平・鉛直はカメラの向きが基準（水平校正は段階④）。',
+      '符号：銃側へ傾く・上がる＝正（+）。「—」は関節が十分に見えない、または画面の外にあって計測できなかった項目。水平・鉛直はカメラの向きが基準（水平校正は段階④）。',
     columns: {
       metric: '項目（基準）',
       value: '値',

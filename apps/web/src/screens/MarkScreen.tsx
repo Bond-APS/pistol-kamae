@@ -44,7 +44,12 @@ export function MarkScreen(props: Props) {
     () =>
       result && shot
         ? metricsAtTime(
-            { frames: result.frames, handedness, imageWidth: result.width },
+            {
+              frames: result.frames,
+              handedness,
+              imageWidth: result.width,
+              imageHeight: result.height,
+            },
             shot.timeSec,
           )
         : null,

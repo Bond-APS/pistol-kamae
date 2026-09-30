@@ -116,6 +116,43 @@ describe('computeMetrics', () => {
     expect(m.armElevation).toBeCloseTo(0, 6);
   });
 
+  it('画面の外にある点は、visibility が高くても計測から外す', () => {
+    // 高さ 700 の動画で足首（y=800）が下にはみ出している
+    const m = computeMetrics(upright(), { imageSize: { width: 1000, height: 700 } });
+    expect(m.hipLateralOffset).toBeNull();
+    expect(m.stanceWidth).toBeNull();
+    expect(m.shoulderTilt).toBeCloseTo(0, 6);
+    expect(m.wristFaceDistance).toBeCloseTo(2, 6);
+    // 足首が画面の中（高さ 800 に対して y=701 と 800）なら計測できる：hypot(200, 99) ÷ 200
+    const one = computeMetrics(upright({ offAnkle: p(600, 701) }), {
+      imageSize: { width: 1000, height: 800 },
+    });
+    expect(one.stanceWidth).toBeCloseTo(Math.hypot(200, 99) / 200, 6);
+    // 片方の足首だけがはみ出していても計測から外す
+    const out = computeMetrics(upright({ offAnkle: p(600, 801) }), {
+      imageSize: { width: 1000, height: 800 },
+    });
+    expect(out.stanceWidth).toBeNull();
+  });
+
+  it('画面の左右・上にはみ出した点も外す。端ちょうどは画面の中とみなす', () => {
+    const size = { imageSize: { width: 1000, height: 1000 } };
+    expect(computeMetrics(upright({ gunWrist: p(-1, 200) }), size).armElevation).toBeNull();
+    expect(computeMetrics(upright({ gunWrist: p(0, 200) }), size).armElevation).toBeCloseTo(0, 6);
+    expect(computeMetrics(upright({ gunWrist: p(100, -1) }), size).armElevation).toBeNull();
+    expect(computeMetrics(upright({ offShoulder: p(1001, 200) }), size).shoulderTilt).toBeNull();
+  });
+
+  it('耳が画面の外なら鼻で代替する', () => {
+    const size = { imageSize: { width: 1000, height: 1000 } };
+    // 耳 (400,-5) は画面の上にはみ出し → 鼻 (500,100) を使う → 0°
+    expect(computeMetrics(upright({ gunEar: p(400, -5) }), size).neckTilt).toBeCloseTo(0, 6);
+  });
+
+  it('動画の大きさを渡さなければ、画面の内外は調べない', () => {
+    expect(computeMetrics(upright({ gunWrist: p(-50, 200) })).armElevation).toBeCloseTo(0, 6);
+  });
+
   it('体幹が見えなければ体幹長を使う比率はすべて null', () => {
     const m = computeMetrics(upright({ gunHip: p(440, 400, 0) }));
     expect(m.trunkTilt).toBeNull();

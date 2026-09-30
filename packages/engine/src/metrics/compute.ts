@@ -1,13 +1,14 @@
 import type { Point } from '../landmarks/types';
+import { DEFAULT_VISIBILITY_THRESHOLD, isPointUsable, type ImageSize } from '../landmarks/usable';
 import type { SidedLandmarks } from '../normalize/handedness';
 import type { MetricValues } from './types';
 
 export interface MetricOptions {
   /** この値未満の visibility の点は計測から外す（既定 0.5） */
   visibilityThreshold?: number;
+  /** 動画の大きさ。渡すと、画面の外にある点も計測から外す */
+  imageSize?: ImageSize;
 }
-
-const DEFAULT_VISIBILITY_THRESHOLD = 0.5;
 
 const toDeg = (rad: number): number => (rad * 180) / Math.PI;
 
@@ -27,13 +28,14 @@ const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y
  */
 export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}): MetricValues {
   const th = options.visibilityThreshold ?? DEFAULT_VISIBILITY_THRESHOLD;
-  const ok = (...points: Point[]): boolean => points.every((p) => p.visibility >= th);
+  const usable = (p: Point): boolean => isPointUsable(p, th, options.imageSize);
+  const ok = (...points: Point[]): boolean => points.every(usable);
 
   const shoulderCenter = midpoint(lm.gunShoulder, lm.offShoulder);
   const hipCenter = midpoint(lm.gunHip, lm.offHip);
   const ankleCenter = midpoint(lm.gunAnkle, lm.offAnkle);
   // 顔：銃側の耳。見えなければ鼻で代替（要件 6.1）
-  const face = lm.gunEar.visibility >= th ? lm.gunEar : lm.nose;
+  const face = usable(lm.gunEar) ? lm.gunEar : lm.nose;
 
   const trunkOk = ok(lm.gunShoulder, lm.offShoulder, lm.gunHip, lm.offHip);
   const trunkLength = trunkOk ? distance(hipCenter, shoulderCenter) : null;
@@ -56,7 +58,7 @@ export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}):
   const trunkTilt = trunkOk ? tiltFromVertical(hipCenter, shoulderCenter) : null;
 
   const neckTilt =
-    ok(lm.gunShoulder, lm.offShoulder) && face.visibility >= th
+    ok(lm.gunShoulder, lm.offShoulder) && usable(face)
       ? tiltFromVertical(shoulderCenter, face)
       : null;
 
@@ -80,9 +82,7 @@ export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}):
       : null;
 
   const wristFaceDistance =
-    trunkUsable && ok(lm.gunWrist) && face.visibility >= th
-      ? (face.x - lm.gunWrist.x) / trunkLength
-      : null;
+    trunkUsable && ok(lm.gunWrist) && usable(face) ? (face.x - lm.gunWrist.x) / trunkLength : null;
 
   return {
     shoulderTilt,

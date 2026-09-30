@@ -14,6 +14,7 @@ export {
   type Point,
 } from './landmarks/types';
 export { fromMediaPipe, type MediaPipeLandmark } from './landmarks/fromMediaPipe';
+export { DEFAULT_VISIBILITY_THRESHOLD, isPointUsable, type ImageSize } from './landmarks/usable';
 
 export { mirrorX, toSided, type Handedness, type SidedLandmarks } from './normalize/handedness';
 

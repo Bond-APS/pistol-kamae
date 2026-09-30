@@ -6,6 +6,7 @@ import { metricsAtFrame, metricsAtTime } from '../src/metrics/atFrame';
 const p = (x: number, y: number, visibility = 1): Point => ({ x, y, visibility });
 
 const WIDTH = 1000;
+const HEIGHT = 1000;
 
 /**
  * まっすぐ立った右利き射手（射手自身の左右で指定）。
@@ -54,7 +55,7 @@ const frames: LandmarkFrame[] = [
   { timeSec: 2 / 30, landmarks: null },
   { timeSec: 3 / 30, landmarks: rightHanded(220) },
 ];
-const input = { frames, handedness: 'right' as const, imageWidth: WIDTH };
+const input = { frames, handedness: 'right' as const, imageWidth: WIDTH, imageHeight: HEIGHT };
 
 describe('metricsAtFrame', () => {
   it('指定したフレームの角度を返す', () => {
@@ -86,6 +87,7 @@ describe('metricsAtFrame', () => {
         frames: [{ timeSec: 0, landmarks: leftHanded(180) }],
         handedness: 'left',
         imageWidth: WIDTH,
+        imageHeight: HEIGHT,
       },
       0,
     );
@@ -104,12 +106,46 @@ describe('metricsAtFrame', () => {
   it('visibility の閾値を渡せる', () => {
     const lm = rightHanded();
     lm.rightWrist = p(100, 200, 0.3);
-    const one = { frames: [{ timeSec: 0, landmarks: lm }], handedness: 'right' as const };
-    expect(metricsAtFrame({ ...one, imageWidth: WIDTH }, 0)?.values?.armElevation).toBeNull();
+    const one = {
+      frames: [{ timeSec: 0, landmarks: lm }],
+      handedness: 'right' as const,
+      imageWidth: WIDTH,
+      imageHeight: HEIGHT,
+    };
+    expect(metricsAtFrame(one, 0)?.values?.armElevation).toBeNull();
     expect(
-      metricsAtFrame({ ...one, imageWidth: WIDTH, options: { visibilityThreshold: 0.2 } }, 0)
-        ?.values?.armElevation,
+      metricsAtFrame({ ...one, options: { visibilityThreshold: 0.2 } }, 0)?.values?.armElevation,
     ).toBeCloseTo(0, 6);
+  });
+
+  it('画面の外にある点（足首が切れた動画）を使う項目は null、他の項目は変わらない', () => {
+    // 高さ 700 の動画。足首（y=800）は画面の下にはみ出していて、モデルの推測で visibility は高い
+    const cropped = { ...input, imageHeight: 700 };
+    const full = metricsAtFrame(input, 1)!.values!;
+    const m = metricsAtFrame(cropped, 1)!.values!;
+    expect(m.hipLateralOffset).toBeNull();
+    expect(m.stanceWidth).toBeNull();
+    // 足首間 200 ÷ 体幹長 210（肩中心 y=190 → 腰中心 y=400）
+    expect(full.stanceWidth).toBeCloseTo(200 / 210, 6);
+    expect(m.shoulderTilt).toBeCloseTo(5.71, 2);
+    expect(m.trunkTilt).toBe(full.trunkTilt);
+    expect(m.armElevation).toBe(full.armElevation);
+    expect(m.wristFaceDistance).toBe(full.wristFaceDistance);
+  });
+
+  it('左利きでも、反転後の座標で画面の内外を判定する', () => {
+    // 銃側の手首が画面の端（反転前 x=900、幅 1000）にあるのは画面の中
+    const left = metricsAtFrame(
+      {
+        frames: [{ timeSec: 0, landmarks: leftHanded() }],
+        handedness: 'left',
+        imageWidth: WIDTH,
+        imageHeight: HEIGHT,
+      },
+      0,
+    );
+    expect(left?.values?.armElevation).toBeCloseTo(0, 6);
+    expect(left?.values?.stanceWidth).toBeCloseTo(1, 6);
   });
 });
 

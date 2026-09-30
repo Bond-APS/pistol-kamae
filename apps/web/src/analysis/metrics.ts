@@ -24,7 +24,11 @@ export function metricSeries(
   for (const frame of result.frames) {
     if (!frame.landmarks) continue;
     if (range && (frame.timeSec < range.startSec || frame.timeSec > range.endSec)) continue;
-    series.push(computeMetrics(toSided(frame.landmarks, handedness, result.width)));
+    series.push(
+      computeMetrics(toSided(frame.landmarks, handedness, result.width), {
+        imageSize: { width: result.width, height: result.height },
+      }),
+    );
   }
   return series;
 }
