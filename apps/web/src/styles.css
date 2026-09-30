@@ -4,18 +4,33 @@
   --color-fg: #1a1a1a;
   --color-muted: #6b6b6b;
   --color-border: #d9d9d9;
+  --color-border-strong: #8a8a8a; /* 入力欄の枠。白地でも見分けられる濃さ */
   --color-accent: #0a66c2;
   --color-accent-fg: #ffffff;
+  --color-accent-soft: #e6f0fa; /* 選択中のチップなど */
   --color-danger: #c62828;
+  --color-danger-fg: #ffffff;
+  --color-danger-soft: #fdecea;
+  --color-success: #1b7a3d;
+  --color-success-soft: #e8f5ec;
+  --color-fav: #b26a00; /* お気に入りの ★ */
   --color-warn: #f9a825;
   --color-surface: #f4f4f4;
+  --color-scrim: rgba(0, 0, 0, 0.5); /* ダイアログの背後 */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 16px;
   --space-4: 24px;
+  --space-5: 32px; /* 削除など取り消せない操作との間隔 */
   --font-size-base: 16px;
   --font-size-small: 14px;
+  --font-size-large: 20px;
+  --font-size-score: 28px;
+  --radius-s: 8px;
+  --radius-l: 16px;
+  --radius-pill: 999px;
   --tap-size: 44px; /* 指で押しやすい最小サイズ */
+  --tap-size-primary: 52px; /* 主ボタン */
   color-scheme: light dark;
 }
 
@@ -25,9 +40,16 @@
     --color-fg: #ededed;
     --color-muted: #9a9a9a;
     --color-border: #3a3a3a;
+    --color-border-strong: #7a7a7a;
     --color-accent: #6cb4ff;
     --color-accent-fg: #0a0a0a;
+    --color-accent-soft: #16324d;
     --color-danger: #ff6b6b;
+    --color-danger-fg: #0a0a0a;
+    --color-danger-soft: #3a1c1c;
+    --color-success: #5fd38a;
+    --color-success-soft: #163222;
+    --color-fav: #ffc940;
     --color-surface: #1e1e1e;
   }
 }
@@ -59,15 +81,15 @@ body {
 }
 
 h1 {
-  font-size: 1.4rem;
-  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-base);
+  margin: 0;
 }
 h2 {
-  font-size: 1.2rem;
+  font-size: var(--font-size-large);
   margin: var(--space-3) 0 var(--space-2);
 }
 h3 {
-  font-size: 1rem;
+  font-size: var(--font-size-base);
   margin: var(--space-3) 0 var(--space-1);
 }
 
@@ -80,41 +102,210 @@ h3 {
 .danger {
   color: var(--color-danger);
 }
+.num {
+  font-variant-numeric: tabular-nums;
+}
 
-button,
-select,
-input[type='file'],
-input[type='text'],
-input[type='number'] {
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ボタン 4 種：主（.primary、画面に 1 つ）・副（無印）・危険（.danger）・アイコン（.icon） */
+button {
   min-height: var(--tap-size);
-  font-size: var(--font-size-base);
+  font: inherit;
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   background: var(--color-surface);
   color: var(--color-fg);
 }
 button:disabled {
   opacity: 0.5;
 }
+button:active:not(:disabled) {
+  filter: brightness(0.92);
+}
 button.primary {
+  min-height: var(--tap-size-primary);
   background: var(--color-accent);
   color: var(--color-accent-fg);
   border-color: var(--color-accent);
+  font-weight: 700;
+}
+button.danger {
+  background: var(--color-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+/* 赤い塗りは、確認の窓の「実行」だけに使う */
+button.danger-fill {
+  min-height: var(--tap-size-primary);
+  background: var(--color-danger);
+  color: var(--color-danger-fg);
+  border-color: var(--color-danger);
+  font-weight: 700;
+}
+button.icon {
+  width: var(--tap-size);
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+}
+.full {
+  display: block;
+  width: 100%;
+}
+.fav-on {
+  color: var(--color-fav);
+}
+.fav-off {
+  color: var(--color-muted);
 }
 
+/* 入力欄：白地に濃い枠にして、ボタンと見分けられるようにする。文字は 16px 以上（iPhone の自動拡大を防ぐ） */
+select,
+textarea,
+input[type='file'],
+input[type='text'],
+input[type='number'],
+input[type='datetime-local'] {
+  min-height: var(--tap-size);
+  font: inherit;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-s);
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+input[type='file'] {
+  padding: var(--space-2);
+}
+textarea {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+}
+.input-error {
+  border-color: var(--color-danger) !important;
+}
+
+/* 選択チップ（いくつかの中から 1 つ選ぶ、または入・切を切り替える） */
+button.chip {
+  border-radius: var(--radius-pill);
+  border-color: var(--color-border-strong);
+  background: var(--color-bg);
+  font-size: var(--font-size-small);
+}
+button.chip[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 700;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 2 つのうち 1 つを選ぶ切替 */
+.seg {
+  display: flex;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.seg.spaced {
+  margin: var(--space-2) 0;
+}
+.seg button {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-bg);
+  font-size: var(--font-size-small);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* 案内の帯。色だけに頼らず、記号と文で示す */
+.notice {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  background: var(--color-surface);
+  padding: 12px;
+  margin: 12px 0;
+}
+.notice > :first-child {
+  margin-top: 0;
+}
+.notice > :last-child {
+  margin-bottom: 0;
+}
+.notice p {
+  margin: var(--space-1) 0;
+}
+.notice.ok {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+}
+.notice.ok strong {
+  color: var(--color-success);
+}
+.notice.err {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+}
+.notice.err strong {
+  color: var(--color-danger);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.status-dot {
+  color: var(--color-danger);
+}
+.gap-action {
+  height: var(--space-3);
+}
+.gap-destructive {
+  height: var(--space-5);
+}
+
+/* タブ：選択中は下線で示す（主ボタンと同じ見た目にしない） */
 .tabs {
   display: flex;
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+  margin: var(--space-2) calc(-1 * var(--space-3)) var(--space-3);
+  padding: 0 var(--space-2);
 }
 .tab {
   flex: 1;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: 700;
+  white-space: nowrap;
 }
 .tab.active {
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
-  border-color: var(--color-accent);
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
 
 .row {
@@ -124,11 +315,23 @@ button.primary {
   align-items: center;
   margin: var(--space-2) 0;
 }
+.row.nowrap {
+  flex-wrap: nowrap;
+}
+.row.tight {
+  margin: 0;
+}
+.row.align-end {
+  align-items: flex-end;
+}
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   margin: var(--space-2) 0;
+}
+.field.tight {
+  margin: 0;
 }
 .field > span {
   font-size: var(--font-size-small);
@@ -151,13 +354,22 @@ button.primary {
 .player {
   margin-top: var(--space-3);
 }
+.player-first .player {
+  margin-top: 0;
+}
 .video-box {
   position: relative;
   width: 100%;
   max-height: 70vh;
   background: #000;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   overflow: hidden;
+}
+/* マーク画面では、動画・つまみ・コマ送り・撃発ボタンが 1 画面に入るよう、動画の高さを抑える。
+   dvh は、ブラウザのバーを除いた実際に見えている高さ */
+.player-first .video-box {
+  max-height: max(240px, min(70vh, calc(100vh - 300px)));
+  max-height: max(240px, min(70dvh, calc(100dvh - 300px)));
 }
 .video-box .video,
 .video-box .overlay {
@@ -180,13 +392,20 @@ button.primary {
 
 .grow {
   flex: 1;
+  min-width: 0;
+}
+.row > .field.grow {
   min-width: 12em;
 }
 .row > .field + button {
   align-self: flex-end;
   margin-bottom: var(--space-2);
 }
+.row > .field.tight + button {
+  margin-bottom: 0;
+}
 
+/* 一覧（マーク一覧など）：大きな行ボタン＋右に小さいボタン */
 .mark-list {
   list-style: none;
   padding: 0;
@@ -237,9 +456,206 @@ button.primary {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* 角度表：2 列。項目は名称と基準の 2 行、値は単位付きで右寄せ */
+.metric-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-1) 0 var(--space-2);
+}
+.metric-table th {
+  text-align: left;
+  font-size: var(--font-size-small);
+  color: var(--color-muted);
+  padding: 12px 0 var(--space-1);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.metric-table td {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.metric-table td small {
+  display: block;
+  font-size: var(--font-size-small);
+  color: var(--color-muted);
+}
+.metric-table td.value {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.metric-table tr.unavailable td {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+/* ダイアログ（窓）。入力用（.sheet）は iPhone では全画面、確認用（.confirm）は中央の小窓 */
+dialog.dialog {
+  width: min(480px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-3));
+  max-height: calc(100dvh - 2 * var(--space-3));
+  padding: 20px;
+  border: 0;
+  border-radius: var(--radius-l);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  overflow-y: auto;
+}
+dialog.dialog::backdrop {
+  background: var(--color-scrim);
+}
+dialog.dialog h2 {
+  margin-top: 0;
+}
+@media (max-width: 599px) {
+  dialog.dialog.sheet {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    padding: var(--space-3);
+    padding-top: calc(var(--space-3) + env(safe-area-inset-top));
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+}
+.dialog-target {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: var(--space-2) 0;
+}
+.dialog-target p {
+  margin: 0;
+}
+details.fold > summary {
+  min-height: var(--tap-size);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+details.fold[open] > summary {
+  margin-bottom: var(--space-2);
+}
+details.fold {
+  margin: 12px 0;
+}
+
+/* ライブラリの一覧：影や枠は付けず、行の下線で区切る */
+.lib-month {
+  font-size: var(--font-size-small);
+  font-weight: 700;
+  color: var(--color-muted);
+  margin: var(--space-3) 0 0;
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+.lib-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lib-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+button.lib-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+.thumb {
+  display: block;
+  width: 60px;
+  height: 80px;
+  flex: none;
+  border-radius: var(--radius-s);
+  background: #3d444d;
+  object-fit: cover;
+}
+.lib-main {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+.lib-line1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.score {
+  font-size: var(--font-size-large);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.score.big {
+  font-size: var(--font-size-score);
+}
+.score small {
+  font-size: var(--font-size-small);
+  font-weight: 400;
+  margin-left: 2px;
+}
+.score.none {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+.lib-line2 {
+  display: block;
+  font-size: var(--font-size-small);
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 開いた記録の静止画＋骨格 */
+.still-box {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+  border-radius: var(--radius-s);
+}
+.detail-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.detail-head h2 {
+  flex: 1;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.memo {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .dev-errors {
   border: 2px solid var(--color-danger);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   padding: var(--space-2);
   margin: var(--space-2) 0;
   font-size: var(--font-size-small);

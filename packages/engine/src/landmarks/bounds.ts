@@ -12,8 +12,10 @@ export interface Rect {
 }
 
 /**
- * 計測に使える点（よく見えていて画面の中にある点）をすべて含む最小の長方形。
- * 使える点が 2 つ未満、または面積が 0 なら null。
+ * よく見えている点（visibility が閾値以上）をすべて含む最小の長方形。
+ * 画面の外にある点は、画面の端に寄せて含める（足首が画面の下に切れていれば、長方形は下端まで届く）。
+ * 計測とは違い、ここでは「人物がどこまで写っているか」を知りたいので、画面外の点も手がかりにする。
+ * よく見えている点が 2 つ未満、または面積が 0 なら null。
  */
 export function personBounds(
   landmarks: CommonLandmarks,
@@ -27,12 +29,14 @@ export function personBounds(
   let count = 0;
   for (const name of LANDMARK_NAMES) {
     const p = landmarks[name];
-    if (!isPointUsable(p, visibilityThreshold, imageSize)) continue;
+    if (!isPointUsable(p, visibilityThreshold)) continue;
     count++;
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
+    const x = Math.min(Math.max(p.x, 0), imageSize.width);
+    const y = Math.min(Math.max(p.y, 0), imageSize.height);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
   }
   if (count < 2 || maxX <= minX || maxY <= minY) return null;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };

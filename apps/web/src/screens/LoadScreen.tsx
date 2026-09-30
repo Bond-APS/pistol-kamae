@@ -1,20 +1,31 @@
-import type { Handedness } from '@pistol-kamae/engine';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
+import { ConfirmDialog } from '../components/Dialog';
+import { ShooterDialog } from '../components/ShooterDialog';
 import { poseBackendConfig } from '../config/backends';
+import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import { loadVideo, releaseVideo } from '../video/load';
 import { estimateFrameRate } from '../video/seek';
 
 const FALLBACK_FPS = 30;
+/** 射手の選択肢のうち「新しい射手を登録」を表す値 */
+const ADD_SHOOTER = 'add';
 
 interface Props {
   /** video 要素の置き場所。プレイヤー（App が 1 つだけ置く）と共有する */
   videoRef: MutableRefObject<HTMLVideoElement | null>;
-  handedness: Handedness;
-  onHandednessChange: (h: Handedness) => void;
+  shooters: ShooterRow[];
+  /** 選択中の射手。まだ誰も登録されていなければ null */
+  shooter: ShooterRow | null;
+  onShooterChange: (shooterId: number) => void;
+  onShootersChanged: () => Promise<void>;
   result: AnalysisResult | null;
-  onResult: (r: AnalysisResult | null) => void;
+  /** fileDate は動画ファイルの更新日時（撮影日時の初期値に使う） */
+  onResult: (r: AnalysisResult | null, fileDate: Date | null) => void;
+  /** 保存していないマークがあるか。あれば、動画を選び直す前に確認する */
+  hasUnsaved: boolean;
+  onGoMark: () => void;
 }
 
 interface VideoInfo {
@@ -37,10 +48,17 @@ type Status =
 
 export function LoadScreen(props: Props) {
   // video 要素は React の管理外（DOM を直接いじる）なので ref で持つ
-  const { videoRef } = props;
+  const { videoRef, shooters, shooter, result, hasUnsaved } = props;
   const [info, setInfo] = useState<VideoInfo | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const [shooterDialog, setShooterDialog] = useState<'add' | 'edit' | null>(null);
+  /** 保存していないマークを捨てて動画を選び直してよいか、確認中か */
+  const [confirmingPick, setConfirmingPick] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileDateRef = useRef<Date | null>(null);
+  /** 確認を済ませた直後のファイル選択では、もう一度確認しない */
+  const confirmedPickRef = useRef(false);
 
   // 画面を閉じるときに動画を解放する
   useEffect(() => {
@@ -53,9 +71,10 @@ export function LoadScreen(props: Props) {
   const onPick = async (file: File | undefined) => {
     if (!file) return;
     abortRef.current?.abort();
-    props.onResult(null);
+    props.onResult(null, null);
     releaseVideo(videoRef.current);
     videoRef.current = null;
+    fileDateRef.current = Number.isFinite(file.lastModified) ? new Date(file.lastModified) : null;
     setInfo(null);
     setStatus({ kind: 'loading' });
     try {
@@ -74,9 +93,9 @@ export function LoadScreen(props: Props) {
     if (!video || !info) return;
     const controller = new AbortController();
     abortRef.current = controller;
-    props.onResult(null);
+    props.onResult(null, null);
     try {
-      const result = await runAnalysis({
+      const analyzed = await runAnalysis({
         video,
         config: poseBackendConfig(),
         fps: info.fps ?? FALLBACK_FPS,
@@ -85,17 +104,24 @@ export function LoadScreen(props: Props) {
         onProgress: (done, total) => setStatus({ kind: 'running', done, total }),
       });
       video.currentTime = 0;
-      props.onResult(result);
+      props.onResult(analyzed, fileDateRef.current);
       setStatus({
         kind: 'done',
-        frames: result.frames.length,
-        sec: result.timing.totalMs / 1000,
-        notes: result.notes,
+        frames: analyzed.frames.length,
+        sec: analyzed.timing.totalMs / 1000,
+        notes: analyzed.notes,
       });
     } catch (e) {
       if (isAborted(e)) setStatus({ kind: 'cancelled' });
       else setStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
     }
+  };
+
+  const confirmPick = () => {
+    setConfirmingPick(false);
+    // ファイル選択は、利用者の操作（このボタンを押したこと）の中で開く必要がある
+    confirmedPickRef.current = true;
+    fileInputRef.current?.click();
   };
 
   const busy = status.kind === 'preparing' || status.kind === 'running';
@@ -110,44 +136,93 @@ export function LoadScreen(props: Props) {
       <label className="field">
         <span>{ja.load.pickVideo}</span>
         <input
+          ref={fileInputRef}
           type="file"
           data-testid="video-file"
           accept="video/*"
           disabled={busy}
+          onClick={(e) => {
+            const confirmed = confirmedPickRef.current;
+            confirmedPickRef.current = false;
+            if (!hasUnsaved || confirmed) return;
+            e.preventDefault();
+            setConfirmingPick(true);
+          }}
           onChange={(e) => void onPick(e.target.files?.[0])}
         />
       </label>
 
       {status.kind === 'loading' && <p>{ja.load.loadingVideo}</p>}
-      {status.kind === 'unsupported' && <p className="danger">{ja.load.unsupported}</p>}
+      {status.kind === 'unsupported' && (
+        <div className="notice err">
+          <strong>{ja.load.unsupportedTitle}</strong>
+          <p className="small">{ja.load.unsupported}</p>
+        </div>
+      )}
       {info && (
-        <p className="muted small">{ja.load.videoInfo(info.w, info.h, info.sec, info.fps)}</p>
+        <p className="muted small num">{ja.load.videoInfo(info.w, info.h, info.sec, info.fps)}</p>
       )}
 
-      <div className="row">
-        <label className="field">
-          <span>{ja.load.handedness}</span>
-          <select
-            value={props.handedness}
-            onChange={(e) => props.onHandednessChange(e.target.value as Handedness)}
-          >
-            <option value="right">{ja.load.right}</option>
-            <option value="left">{ja.load.left}</option>
-          </select>
-        </label>
+      <div className="field">
+        <span id="shooter-label">{ja.shooter.label}</span>
+        {shooter ? (
+          <div className="row nowrap tight">
+            <select
+              className="grow"
+              data-testid="shooter-select"
+              aria-labelledby="shooter-label"
+              value={shooter.id}
+              disabled={busy}
+              onChange={(e) => {
+                if (e.target.value === ADD_SHOOTER) setShooterDialog('add');
+                else props.onShooterChange(Number(e.target.value));
+              }}
+            >
+              {shooters.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {ja.shooter.option(s.name, s.handedness)}
+                </option>
+              ))}
+              <option value={ADD_SHOOTER}>{ja.shooter.addOption}</option>
+            </select>
+            <button
+              data-testid="shooter-edit"
+              disabled={busy}
+              onClick={() => setShooterDialog('edit')}
+            >
+              {ja.shooter.edit}
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              className="full"
+              data-testid="shooter-register"
+              onClick={() => setShooterDialog('add')}
+            >
+              {ja.shooter.registerFirst}
+            </button>
+            <span>{ja.shooter.requiredHint}</span>
+          </>
+        )}
       </div>
 
-      <div className="row">
-        <button
-          className="primary"
-          data-testid="run-analysis"
-          disabled={!info || busy}
-          onClick={() => void run()}
-        >
-          {ja.load.run}
-        </button>
-        {busy && <button onClick={() => abortRef.current?.abort()}>{ja.load.cancel}</button>}
-      </div>
+      {/* 完了後はやり直しのボタンを出さない。Safari は、一度画面に置いた video を外すと
+          その後のシークが終わらなくなり、同じ動画のやり直しが止まってしまうため。
+          やり直すときは動画を選び直す（新しい video 要素になる） */}
+      {!result && (
+        <div className="row">
+          <button
+            className="primary full"
+            data-testid="run-analysis"
+            disabled={!info || !shooter || busy}
+            onClick={() => void run()}
+          >
+            {ja.load.run}
+          </button>
+          {busy && <button onClick={() => abortRef.current?.abort()}>{ja.load.cancel}</button>}
+        </div>
+      )}
 
       {status.kind === 'preparing' && <p>{ja.load.preparing}</p>}
       {status.kind === 'running' && (
@@ -157,13 +232,53 @@ export function LoadScreen(props: Props) {
         </div>
       )}
       {status.kind === 'done' && (
-        <p data-testid="analysis-done">
-          {ja.load.done(status.frames, status.sec)}
-          {status.notes.includes('gpuFallback') ? `（${ja.load.gpuFallback}）` : ''}
-        </p>
+        <div className="notice ok">
+          <strong>{ja.load.doneTitle}</strong>
+          <p className="small num" data-testid="analysis-done">
+            {ja.load.done(status.frames, status.sec)}
+            {status.notes.includes('gpuFallback') ? `（${ja.load.gpuFallback}）` : ''}
+          </p>
+          <div className="stack">
+            <button className="primary full" data-testid="go-mark" onClick={props.onGoMark}>
+              {ja.load.goMark}
+            </button>
+          </div>
+        </div>
       )}
       {status.kind === 'cancelled' && <p>{ja.load.cancelled}</p>}
-      {status.kind === 'error' && <p className="danger">{ja.load.error(status.message)}</p>}
+      {status.kind === 'error' && (
+        <div className="notice err">
+          <strong>{ja.load.errorTitle}</strong>
+          <p className="small">{ja.load.error(status.message)}</p>
+        </div>
+      )}
+
+      {shooterDialog && (
+        <ShooterDialog
+          shooters={shooters}
+          {...(shooterDialog === 'edit' && shooter ? { editing: shooter } : {})}
+          onCancel={() => setShooterDialog(null)}
+          onDone={(id) => {
+            void props.onShootersChanged().then(() => {
+              props.onShooterChange(id);
+              setShooterDialog(null);
+            });
+          }}
+        />
+      )}
+
+      {confirmingPick && (
+        <ConfirmDialog
+          title={ja.load.discardTitle}
+          confirmLabel={ja.load.discardConfirm}
+          destructive
+          onConfirm={confirmPick}
+          onCancel={() => setConfirmingPick(false)}
+          testId="discard-dialog"
+        >
+          <p className="small">{ja.load.discardBody}</p>
+        </ConfirmDialog>
+      )}
     </section>
   );
 }

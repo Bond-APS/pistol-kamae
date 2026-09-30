@@ -1,12 +1,7 @@
-import {
-  DEFAULT_VISIBILITY_THRESHOLD,
-  isPointUsable,
-  LANDMARK_NAMES,
-  SKELETON_EDGES,
-  type LandmarkFrame,
-} from '@pistol-kamae/engine';
+import type { LandmarkFrame } from '@pistol-kamae/engine';
 import { useEffect, useRef, type RefObject } from 'react';
 import { frameIndexAt } from '../analysis/frames';
+import { SKELETON_COLORS, SKELETON_SIZES, skeletonParts } from './skeleton';
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -19,26 +14,31 @@ interface Props {
 
 function draw(ctx: CanvasRenderingContext2D, frame: LandmarkFrame, w: number, h: number) {
   ctx.clearRect(0, 0, w, h);
-  const lm = frame.landmarks;
-  if (!lm) return;
+  if (!frame.landmarks) return;
   const scale = Math.max(w, h) / 1000;
-  // 計測に使わない点（visibility が低い、または画面の外）は灰色で描く
-  const ok = (name: (typeof LANDMARK_NAMES)[number]) =>
-    isPointUsable(lm[name], DEFAULT_VISIBILITY_THRESHOLD, { width: w, height: h });
+  const { edges, points } = skeletonParts(frame.landmarks, { width: w, height: h });
+  const color = (usable: boolean) => (usable ? SKELETON_COLORS.usable : SKELETON_COLORS.unusable);
 
-  ctx.lineWidth = 3 * scale;
-  for (const [a, b] of SKELETON_EDGES) {
-    ctx.strokeStyle = ok(a) && ok(b) ? 'rgba(0, 220, 90, 0.9)' : 'rgba(160, 160, 160, 0.6)';
-    ctx.beginPath();
-    ctx.moveTo(lm[a].x, lm[a].y);
-    ctx.lineTo(lm[b].x, lm[b].y);
-    ctx.stroke();
+  ctx.lineCap = 'round';
+  // 縁取りを先にすべて描き、その上に色の線を重ねる
+  for (const pass of ['outline', 'line'] as const) {
+    ctx.lineWidth = SKELETON_SIZES[pass] * scale;
+    for (const e of edges) {
+      ctx.strokeStyle = pass === 'outline' ? SKELETON_COLORS.outline : color(e.usable);
+      ctx.beginPath();
+      ctx.moveTo(e.a.x, e.a.y);
+      ctx.lineTo(e.b.x, e.b.y);
+      ctx.stroke();
+    }
   }
-  for (const name of LANDMARK_NAMES) {
-    const p = lm[name];
-    ctx.fillStyle = ok(name) ? 'rgba(0, 220, 90, 1)' : 'rgba(160, 160, 160, 0.8)';
+  for (const { p, usable } of points) {
+    ctx.fillStyle = SKELETON_COLORS.outline;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 5 * scale, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, SKELETON_SIZES.dotOutline * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color(usable);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, SKELETON_SIZES.dot * scale, 0, Math.PI * 2);
     ctx.fill();
   }
 }

@@ -7,6 +7,7 @@ import { ja } from '../i18n/ja';
 interface Props {
   result: AnalysisResult | null;
   handedness: Handedness;
+  onGoLoad: () => void;
 }
 
 const fmt = (v: number | null, digits: number): string =>
@@ -15,7 +16,7 @@ const fmt = (v: number | null, digits: number): string =>
 // 区間指定は開発サーバ（npm run dev）でのみ表示する検証用の機能。公開ビルドには含めない。
 const DEV_RANGE_ENABLED = import.meta.env.DEV;
 
-export function NoiseScreen({ result, handedness }: Props) {
+export function NoiseScreen({ result, handedness, onGoLoad }: Props) {
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'failed'>('idle');
   const [rangeText, setRangeText] = useState({ start: '', end: '' });
   const range = useMemo((): TimeRange | undefined => {
@@ -39,6 +40,7 @@ export function NoiseScreen({ result, handedness }: Props) {
         <h2>{ja.noise.title}</h2>
         <p className="muted">{ja.noise.intro}</p>
         <p>{ja.noise.noResult}</p>
+        <button onClick={onGoLoad}>{ja.common.goLoad}</button>
       </section>
     );
   }
@@ -165,7 +167,9 @@ export function NoiseScreen({ result, handedness }: Props) {
       </div>
       {copyState === 'failed' && (
         <div>
-          <p className="danger">{ja.noise.copyFailed}</p>
+          <div className="notice err">
+            <strong>{ja.noise.copyFailed}</strong>
+          </div>
           <textarea readOnly value={text} rows={16} className="textarea" />
         </div>
       )}

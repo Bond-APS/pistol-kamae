@@ -1,4 +1,4 @@
-// 段階②（マーク付け・撃発フレームの角度表）の自動テスト。実際の画面をブラウザで操作して確かめる。
+// 段階②（マーク付け・撃発フレームの角度表）の自動テスト。段階③（保存・ライブラリ）は librarytest.mjs。実際の画面をブラウザで操作して確かめる。
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/marktest.mjs webkit   … Safari と同じ描画エンジン
 //   node apps/web/e2e/marktest.mjs chromium … Chrome と同じ描画エンジン
@@ -36,7 +36,9 @@ const check = (name, ok, detail = '') => {
   console.log(`  ${ok ? 'OK  ' : 'NG  '} ${name}${detail === '' ? '' : `  [${detail}]`}`);
 };
 
-const browser = await launcher.launch({ headless: false });
+// 通常は画面を表示して動かす。Mac の画面がロック中・消灯中は、表示したウィンドウの描画更新が
+// 約 50 秒で止まるので、HEADLESS=1 を付けて画面を出さずに動かす（操作の確認用。速度の計測には使わない）
+const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 const page = await browser.newPage({ viewport: { width: 430, height: 900 } });
 const logs = [];
 page.on('console', (m) => {
@@ -89,14 +91,15 @@ const table = async () => {
   if ((await tid('shot-table').count()) === 0) return null;
   const frame = Number(await tid('shot-table').getAttribute('data-frame-index'));
   const rows = await tid('shot-table')
-    .locator('tbody tr')
+    .locator('tr[data-metric]')
     .evaluateAll((trs) =>
       trs.map((tr) => ({
         id: tr.dataset.metric,
         value: tr.dataset.value === '' ? null : Number(tr.dataset.value),
-        name: tr.children[0].textContent,
+        // 項目は 2 行：1 行目が名称、2 行目（small）が基準と記号
+        name: tr.children[0].firstChild?.textContent ?? '',
+        basis: tr.children[0].querySelector('small')?.textContent ?? '',
         text: tr.children[1].textContent,
-        unit: tr.children[2].textContent,
         grey: tr.classList.contains('unavailable'),
       })),
     );
@@ -113,6 +116,13 @@ try {
   await tid('tab-mark').click();
   check('推定前のマーク画面にプレイヤーが出ない', (await tid('frame-slider').count()) === 0);
   await tid('tab-load').click();
+
+  // 射手を登録する（利き手は射手ごとに決める。登録するまで姿勢推定は実行できない）
+  await tid('shooter-register').click();
+  await tid('shooter-name').fill('テスト射手');
+  await tid('shooter-right').click();
+  await tid('shooter-submit').click();
+  await tid('shooter-select').waitFor();
 
   console.log('  姿勢推定を実行中…');
   await tid('video-file').setInputFiles(videoPath);
@@ -201,16 +211,16 @@ try {
   check('角度表が撃発フレームを指す', tableA?.frame === shotA, tableA?.frame);
   check('角度表は 9 項目', tableA?.rows.length === 9, tableA?.rows.length);
   check(
-    'すべての行に名称（基準つき）と単位がある',
-    tableA?.rows.every((r) => /^\([a-j]\) .+（.+）$/.test(r.name) && ['°', '比'].includes(r.unit)),
-    tableA?.rows.map((r) => `${r.name}/${r.unit}`).join(', '),
+    'すべての行に名称と、基準・記号がある',
+    tableA?.rows.every((r) => r.name !== '' && /^.+ \([a-j]\)$/.test(r.basis)),
+    tableA?.rows.map((r) => `${r.name}/${r.basis}`).join(', '),
   );
   check(
-    '値のない行は「—」とグレー、値のある行は数値',
+    '値のない行は「—」とグレー、値のある行は数値（角度は符号と ° 付き、比は小数 2 桁）',
     tableA?.rows.every((r) =>
       r.value === null
         ? r.text === '—' && r.grey
-        : !r.grey && /^[+−]?\d+\.\d+$/.test(r.text) && Number.isFinite(r.value),
+        : !r.grey && /^[+−]\d+\.\d°$|^-?\d+\.\d{2}$/.test(r.text) && Number.isFinite(r.value),
     ),
     tableA?.rows.map((r) => r.text).join(' '),
   );
@@ -295,6 +305,8 @@ try {
   check('読込画面でもコマ送りできる', (await frameIndex()) === customEarly + 1);
   await tid('tab-noise').click();
   check('ノイズ測定画面では動画が隠れる', !(await page.locator('.video-box video').isVisible()));
+  await tid('tab-library').click();
+  check('ライブラリ画面でも動画が隠れる', !(await page.locator('.video-box video').isVisible()));
   await tid('tab-mark').click();
   await tid('frame-slider').waitFor();
   list = await marks();

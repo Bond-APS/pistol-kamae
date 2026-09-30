@@ -23,20 +23,26 @@ function shooter(): CommonLandmarks {
 }
 
 describe('personBounds', () => {
-  it('使える点をすべて含む最小の長方形', () => {
+  it('よく見えている点をすべて含む最小の長方形', () => {
     expect(personBounds(shooter(), IMAGE)).toEqual({ x: 500, y: 100, width: 300, height: 550 });
   });
 
-  it('よく見えない点と画面の外の点は含めない', () => {
+  it('よく見えない点は含めない', () => {
     const lm = shooter();
-    lm.rightWrist = p(500, 190, 0.2); // よく見えない
-    lm.rightAnkle = p(610, 760); // 画面の下にはみ出し
-    lm.leftAnkle = p(700, 770);
-    // 左端は右肩（600）、下端は両腰（400）になる
-    expect(personBounds(lm, IMAGE)).toEqual({ x: 600, y: 100, width: 200, height: 300 });
+    lm.rightWrist = p(500, 190, 0.2);
+    // 左端は右肩（600）になる
+    expect(personBounds(lm, IMAGE)).toEqual({ x: 600, y: 100, width: 200, height: 550 });
   });
 
-  it('使える点が 2 つ未満なら null', () => {
+  it('画面の外にある点は、画面の端に寄せて含める（足首が切れていれば下端まで）', () => {
+    const lm = shooter();
+    lm.rightAnkle = p(610, 760);
+    lm.leftAnkle = p(700, 770);
+    lm.rightWrist = p(-40, 190);
+    expect(personBounds(lm, IMAGE)).toEqual({ x: 0, y: 100, width: 800, height: 620 });
+  });
+
+  it('よく見えている点が 2 つ未満なら null', () => {
     const lm = shooter();
     for (const name of Object.keys(lm) as Array<keyof CommonLandmarks>) {
       lm[name] = p(lm[name].x, lm[name].y, 0);
