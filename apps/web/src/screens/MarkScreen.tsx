@@ -3,6 +3,7 @@ import {
   METRIC_UNITS,
   addCustomMark,
   frameIndexAt,
+  hasCustomMarkLabel,
   metricsAtTime,
   nextMarkId,
   normalizeMarkLabel,
@@ -61,12 +62,15 @@ export function MarkScreen(props: Props) {
 
   const current = result.frames[frameIndex];
   const label = normalizeMarkLabel(labelText);
+  // 同じ名前は 1 つまで。撃発マークの表示名とも重ならないようにする
+  const duplicate =
+    label !== null && (label === ja.mark.shotName || hasCustomMarkLabel(marks, label));
 
   const markShot = () => {
     if (current) onMarksChange(setShotMark(marks, current.timeSec));
   };
   const addCustom = () => {
-    if (!current || label === null) return;
+    if (!current || label === null || duplicate) return;
     onMarksChange(addCustomMark(marks, { id: nextMarkId(marks), label, timeSec: current.timeSec }));
     setLabelText('');
   };
@@ -98,10 +102,19 @@ export function MarkScreen(props: Props) {
             onChange={(e) => setLabelText(e.target.value)}
           />
         </label>
-        <button data-testid="add-custom" disabled={!current || label === null} onClick={addCustom}>
+        <button
+          data-testid="add-custom"
+          disabled={!current || label === null || duplicate}
+          onClick={addCustom}
+        >
           {ja.mark.addCustom}
         </button>
       </div>
+      {duplicate && (
+        <p className="danger small" data-testid="custom-duplicate">
+          {ja.mark.customDuplicate}
+        </p>
+      )}
 
       <h3>{ja.mark.listTitle}</h3>
       {!shot && <p className="danger small">{ja.mark.shotRequired}</p>}

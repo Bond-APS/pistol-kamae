@@ -63,6 +63,8 @@ export const ja = {
     customLabel: '任意マークの名前',
     customPlaceholder: '例：振り上げ開始',
     addCustom: '任意マークを追加',
+    customDuplicate:
+      '同じ名前のマークがすでにあります。別の名前にするか、一覧から先に削除してください。',
     listTitle: 'マーク一覧（押すとそのフレームへ移動）',
     listEmpty: 'マークはまだありません。',
     shotRequired: '撃発マークがまだ付いていません（必須）。',

@@ -14,7 +14,6 @@ export {
   type Point,
 } from './landmarks/types';
 export { fromMediaPipe, type MediaPipeLandmark } from './landmarks/fromMediaPipe';
-export { fromCoco17, type CocoKeypoint } from './landmarks/fromCoco17';
 
 export { mirrorX, toSided, type Handedness, type SidedLandmarks } from './normalize/handedness';
 
@@ -38,6 +37,7 @@ export { frameIndexAt } from './landmarks/frames';
 export { SHOT_MARK_ID, type Mark, type MarkKind } from './marks/types';
 export {
   addCustomMark,
+  hasCustomMarkLabel,
   nextMarkId,
   normalizeMarkLabel,
   removeMark,

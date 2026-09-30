@@ -31,15 +31,28 @@ export function normalizeMarkLabel(label: string): string | null {
 }
 
 /**
+ * その名前の任意マークがすでにあるか（前後の空白は無視して比べる）。
+ * 同じ名前は 1 動画に 1 つまで。2 つの動画を揃える同期点に任意マークを選ぶとき、
+ * 同名が複数あるとどれを使うか決められなくなるため。
+ */
+export function hasCustomMarkLabel(marks: ReadonlyArray<Mark>, label: string): boolean {
+  const normalized = normalizeMarkLabel(label);
+  return normalized !== null && marks.some((m) => m.kind === 'custom' && m.label === normalized);
+}
+
+/**
  * 任意マークを追加する。
- * 名前が空、または id が重複している場合は何もせず元の一覧を返す。
+ * 名前が空、同じ名前の任意マークがすでにある、または id が重複している場合は、
+ * 何もせず元の一覧を返す。
  */
 export function addCustomMark(
   marks: ReadonlyArray<Mark>,
   mark: { id: string; label: string; timeSec: number },
 ): Mark[] {
   const label = normalizeMarkLabel(mark.label);
-  if (label === null || marks.some((m) => m.id === mark.id)) return [...marks];
+  if (label === null || hasCustomMarkLabel(marks, label) || marks.some((m) => m.id === mark.id)) {
+    return [...marks];
+  }
   return sorted([...marks, { id: mark.id, kind: 'custom', label, timeSec: mark.timeSec }]);
 }
 

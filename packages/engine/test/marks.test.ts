@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addCustomMark,
+  hasCustomMarkLabel,
   nextMarkId,
   normalizeMarkLabel,
   removeMark,
@@ -72,10 +73,21 @@ describe('任意マーク', () => {
     expect(addCustomMark(marks, { id: 'a', label: '二つ目', timeSec: 2 })).toEqual(marks);
   });
 
-  it('同じ名前のマークを複数付けられる', () => {
+  it('同じ名前の任意マークは 1 つまで（2 つ目は追加しない）', () => {
+    const marks = addCustomMark([], { id: 'a', label: '息を止める', timeSec: 1 });
+    expect(addCustomMark(marks, { id: 'b', label: '息を止める', timeSec: 2 })).toEqual(marks);
+    // 前後の空白が違うだけでも同じ名前とみなす
+    expect(addCustomMark(marks, { id: 'b', label: ' 息を止める ', timeSec: 2 })).toEqual(marks);
+    expect(hasCustomMarkLabel(marks, ' 息を止める ')).toBe(true);
+    expect(hasCustomMarkLabel(marks, '振り上げ開始')).toBe(false);
+    expect(hasCustomMarkLabel(marks, '')).toBe(false);
+  });
+
+  it('削除すれば同じ名前をもう一度付けられる', () => {
     let marks = addCustomMark([], { id: 'a', label: '息を止める', timeSec: 1 });
+    marks = removeMark(marks, 'a');
     marks = addCustomMark(marks, { id: 'b', label: '息を止める', timeSec: 2 });
-    expect(marks).toHaveLength(2);
+    expect(marks.map((m) => m.timeSec)).toEqual([2]);
   });
 });
 

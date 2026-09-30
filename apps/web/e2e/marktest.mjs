@@ -265,6 +265,15 @@ try {
     JSON.stringify(list.map((m) => [m.name, m.frame])),
   );
   check('追加後は入力欄が空に戻る', (await tid('custom-label').inputValue()) === '');
+  for (const name of [' フォロースルー', '撃発']) {
+    await tid('custom-label').fill(name);
+    check(
+      `すでにある名前「${name.trim()}」は追加できず、案内が出る`,
+      (await tid('add-custom').isDisabled()) && (await tid('custom-duplicate').count()) === 1,
+    );
+  }
+  await tid('custom-label').fill('');
+  check('名前を消すと案内も消える', (await tid('custom-duplicate').count()) === 0);
   check('任意マークを足しても角度表は撃発のまま', (await table())?.frame === shotB);
 
   // D：一覧を押すと移動
@@ -359,7 +368,8 @@ console.log(`saved ${outFile}`);
 if (fatal) console.log(`FATAL: ${fatal}`);
 // テスト用ウィンドウが他のウィンドウに隠れると、ブラウザが描画の更新を止めてテストが進まなくなる。
 // アプリの不具合ではないので、区別できるよう終了コードを変える（2 なら再実行する）
-const hiddenWindow = Boolean(fatal?.includes('raf=0/s'));
+// 通常は毎秒 60 回前後。10 回未満なら隠れている（画面の消灯・ロック中も同じ）とみなす
+const hiddenWindow = Number(/raf=(\d+)\/s/.exec(fatal ?? '')?.[1] ?? 60) < 10;
 if (hiddenWindow) console.log('テスト用ウィンドウが隠れて描画が止まりました。再実行してください。');
 if (logs.length) console.log(`console: ${logs.length} 件（結果ファイル参照）`);
 console.log(`${checks.length - failed.length} / ${checks.length} 合格`);
