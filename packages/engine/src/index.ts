@@ -48,4 +48,34 @@ export {
 
 export { computeNoiseStats, seriesStats, type NoiseStats, type SeriesStats } from './noise/stats';
 
+export { coverRect, expandRect, personBounds, type Rect } from './landmarks/bounds';
+
+export {
+  RECORD_FORMAT_VERSION,
+  type RecordAnalysis,
+  type RecordMeta,
+  type ShotRecord,
+} from './record/types';
+export {
+  SCORE_MAX,
+  SCORE_MIN,
+  formatScore,
+  isValidScore,
+  parseScore,
+  type ScoreParseResult,
+} from './record/score';
+export {
+  normalizeLocalDateTime,
+  parseLocalDateTime,
+  toLocalDateTime,
+  type LocalDateTime,
+} from './record/dateTime';
+export {
+  SHOOTER_NAME_MAX_LENGTH,
+  hasShooterName,
+  normalizeShooterName,
+  type Shooter,
+} from './record/shooter';
+export { checkShotRecord, shotMetricsOfRecord, type RecordProblem } from './record/validate';
+
 export type { PoseBackend } from './pose/PoseBackend';

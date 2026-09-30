@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>段階③ UI 案（モックアップ）</title>
+<style>
+/* 既存のトークン（値は変えない） */
+:root {
+  --color-bg: #ffffff; --color-fg: #1a1a1a; --color-muted: #6b6b6b; --color-border: #d9d9d9;
+  --color-accent: #0a66c2; --color-accent-fg: #ffffff; --color-danger: #c62828; --color-surface: #f4f4f4;
+  --space-1: 4px; --space-2: 8px; --space-3: 16px; --space-4: 24px;
+  --font-size-base: 16px; --font-size-small: 14px; --tap-size: 44px;
+  /* 追加するトークン */
+  --color-border-strong: #8a8a8a; --color-accent-soft: #e6f0fa;
+  --color-success: #1b7a3d; --color-success-soft: #e8f5ec;
+  --color-danger-fg: #ffffff; --color-danger-soft: #fdecea;
+  --color-fav: #b26a00; --color-scrim: rgba(0,0,0,.5);
+  --space-5: 32px; --font-size-large: 20px; --tap-size-primary: 52px;
+  --radius-s: 8px; --radius-l: 16px; --radius-pill: 999px;
+  --page: #e6e6e6;
+}
+:root[data-theme='dark'] {
+  --color-bg: #121212; --color-fg: #ededed; --color-muted: #9a9a9a; --color-border: #3a3a3a;
+  --color-accent: #6cb4ff; --color-accent-fg: #0a0a0a; --color-danger: #ff6b6b; --color-surface: #1e1e1e;
+  --color-border-strong: #7a7a7a; --color-accent-soft: #16324d;
+  --color-success: #5fd38a; --color-success-soft: #163222;
+  --color-danger-fg: #0a0a0a; --color-danger-soft: #3a1c1c;
+  --color-fav: #ffc940; --page: #000000;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--page); color: var(--color-fg);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; font-size: 16px; line-height: 1.5; }
+.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+.top h1 { font-size: 20px; margin: 0; flex: 1; min-width: 12em; }
+.board { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.shot { width: 375px; max-width: 100%; }
+.shot > .cap { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+.shot > .note { font-size: 13px; color: var(--color-muted); margin: 6px 2px 0; }
+.phone { position: relative; background: var(--color-bg); border: 1px solid var(--color-border-strong); border-radius: 28px; overflow: hidden; padding: 16px; }
+.phone h1 { font-size: 16px; margin: 0; }
+.phone h2 { font-size: var(--font-size-large); margin: 12px 0 8px; }
+.phone h3 { font-size: 16px; margin: 16px 0 4px; }
+.phone p { margin: 8px 0; }
+.muted { color: var(--color-muted); } .small { font-size: 14px; } .num { font-variant-numeric: tabular-nums; }
+/* ボタン 4 種と入力欄 */
+.btn, .input, .select { min-height: var(--tap-size); font: inherit; border-radius: var(--radius-s); padding: 0 16px; color: var(--color-fg); }
+.btn { border: 1px solid var(--color-border); background: var(--color-surface); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn.primary { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); min-height: var(--tap-size-primary); font-weight: 700; }
+.btn.danger { background: var(--color-bg); color: var(--color-danger); border-color: var(--color-danger); }
+.btn.danger-fill { background: var(--color-danger); color: var(--color-danger-fg); border-color: var(--color-danger); min-height: var(--tap-size-primary); font-weight: 700; }
+.btn.icon { width: 44px; padding: 0; border: 0; background: transparent; font-size: 24px; }
+.btn.full { display: flex; width: 100%; }
+.btn[disabled] { opacity: .5; }
+.input, .select { width: 100%; border: 1px solid var(--color-border-strong); background: var(--color-bg); display: flex; align-items: center; }
+.select::after { content: '▾'; margin-left: auto; color: var(--color-muted); }
+.field { margin: 12px 0; } .field > .lab { display: block; font-size: 14px; color: var(--color-muted); margin-bottom: 4px; }
+.field > .hint { font-size: 14px; color: var(--color-muted); margin-top: 4px; }
+.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.row > .grow { flex: 1; }
+.fav-on { color: var(--color-fav); } .fav-off { color: var(--color-muted); }
+.chip { min-height: var(--tap-size); padding: 0 16px; border-radius: var(--radius-pill); border: 1px solid var(--color-border-strong); background: var(--color-bg); display: inline-flex; align-items: center; font-size: 14px; }
+.chip.on { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* タブ：選択中は下線（主ボタンと同じ見た目にしない） */
+.tabs { display: flex; border-bottom: 1px solid var(--color-border); margin: 8px -16px 0; padding: 0 8px; }
+.tab { flex: 1; min-height: var(--tap-size); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--color-muted); border-bottom: 3px solid transparent; white-space: nowrap; }
+.tab.on { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.dot { color: var(--color-danger); margin-left: 2px; }
+/* 案内の帯：記号と文で示す */
+.notice { border-radius: var(--radius-s); padding: 12px; margin: 12px 0; border: 1px solid var(--color-border); background: var(--color-surface); }
+.notice.ok { background: var(--color-success-soft); border-color: var(--color-success); }
+.notice.ok strong { color: var(--color-success); }
+.notice.err { background: var(--color-danger-soft); border-color: var(--color-danger); }
+.notice.err strong { color: var(--color-danger); }
+.notice p { margin: 2px 0 0; }
+/* 動画・静止画の枠 */
+.still { background: #3d444d; border-radius: var(--radius-s); overflow: hidden; display: block; width: 100%; }
+.thumb { width: 60px; height: 80px; flex: none; border-radius: var(--radius-s); background: #3d444d; overflow: hidden; }
+.range { width: 100%; accent-color: var(--color-accent); margin: 8px 0 0; }
+/* 一覧 */
+.month { font-size: 14px; font-weight: 700; color: var(--color-muted); margin: 16px 0 0; padding-bottom: 4px; border-bottom: 1px solid var(--color-border); }
+.item { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+.item .main { flex: 1; min-width: 0; }
+.item .l1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; }
+.item .score { font-size: var(--font-size-large); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.item .score small, .big small { font-size: 14px; font-weight: 400; margin-left: 2px; }
+.item .l2 { font-size: 14px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.none { color: var(--color-muted); font-weight: 400; }
+/* 角度表：2 列、項目は 2 行 */
+.mt { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
+.mt th { text-align: left; font-size: 14px; color: var(--color-muted); padding: 12px 0 4px; border-bottom: 1px solid var(--color-border-strong); }
+.mt td { padding: 8px 0; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+.mt td small { display: block; font-size: 14px; color: var(--color-muted); }
+.mt td.v { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mt tr.na td { color: var(--color-muted); font-weight: 400; }
+.seg { display: flex; border: 1px solid var(--color-border-strong); border-radius: var(--radius-s); overflow: hidden; margin: 8px 0; }
+.seg span { flex: 1; min-height: var(--tap-size); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.seg .on { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 700; }
+.big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.scrim { background: var(--color-scrim); margin: -16px; padding: 120px 24px; }
+.dialog { background: var(--color-bg); border-radius: var(--radius-l); padding: 20px; }
+.dialog h2 { margin-top: 0; }
+.divider { border: 0; border-top: 2px dashed var(--color-border-strong); margin: 20px -16px 12px; }
+.sw { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 12px; }
+.sw div { text-align: center; } .sw i { display: block; height: 32px; border-radius: 6px; border: 1px solid var(--color-border-strong); margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="fig" viewBox="0 0 100 110">
+    <g stroke="#0a0a0a" stroke-width="5" stroke-linecap="round" fill="none">
+      <path d="M40 32H60M43 62H57M50 32V62M60 32L95 29M40 32L41 58M43 62L38 100M57 62L63 100M50 18V32"/>
+    </g>
+    <g stroke="#00dc5a" stroke-width="2.5" stroke-linecap="round" fill="none">
+      <path d="M40 32H60M43 62H57M50 32V62M60 32L95 29M40 32L41 58M43 62L38 100M57 62L63 100M50 18V32"/>
+    </g>
+    <g fill="#00dc5a" stroke="#0a0a0a" stroke-width="1">
+      <circle cx="50" cy="18" r="3.2"/><circle cx="40" cy="32" r="3.2"/><circle cx="60" cy="32" r="3.2"/>
+      <circle cx="43" cy="62" r="3.2"/><circle cx="57" cy="62" r="3.2"/><circle cx="95" cy="29" r="3.2"/>
+      <circle cx="41" cy="58" r="3.2"/><circle cx="38" cy="100" r="3.2"/><circle cx="63" cy="100" r="3.2"/>
+    </g>
+  </symbol>
+</svg>
+
+<div class="top">
+  <h1>段階③ UI 案（モックアップ）</h1>
+  <button class="btn" id="theme">ライト／ダークを切り替える</button>
+</div>
+
+<div class="board">
+
+<section class="shot">
+  <p class="cap">1. マーク画面（撃発マークあり・未保存）</p>
+  <div class="phone">
+    <h1>Pistol Kamae</h1>
+    <div class="tabs"><span class="tab">読込</span><span class="tab on">マーク<span class="dot">●</span></span><span class="tab">ライブラリ</span><span class="tab">ノイズ測定</span></div>
+    <svg class="still" viewBox="0 0 343 193" style="margin-top:16px"><use href="#fig" x="120" y="12" width="150" height="170"/></svg>
+    <input class="range" type="range" value="46" aria-label="表示するフレーム">
+    <div class="row"><span class="btn">◀ 1 コマ</span><span class="btn">再生</span><span class="btn">1 コマ ▶</span></div>
+    <p class="muted small">142 / 310 フレーム（4.733 秒）</p>
+    <span class="btn full">撃発マークをここに付け直す</span>
+    <div style="height:16px"></div>
+    <span class="btn primary full">ライブラリに保存</span>
+    <p class="small"><span class="dot">●</span> 未保存（撃発：142 フレーム目）</p>
+    <p class="muted small">… この下に、任意マーク・マーク一覧・角度表が続く</p>
+  </div>
+  <p class="note">保存ボタンは撃発ボタンのすぐ下。撃発マークが無いときは押せず、「撃発マークを付けると保存できます」と理由を出す。「マーク」タブの ● は未保存の印。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">2. 保存の入力（iPhone では全画面）</p>
+  <div class="phone">
+    <h2 style="margin-top:0">ライブラリに保存</h2>
+    <div class="field"><span class="lab">射手</span>
+      <div class="chips"><span class="chip on">✓ 山田（右）</span><span class="chip">佐藤（左）</span><span class="chip">＋ 新しい射手</span></div></div>
+    <div class="row" style="align-items:flex-end">
+      <div class="field grow" style="margin:0"><span class="lab">点数（0〜10.9、空欄でもよい）</span><span class="input num">10.3</span></div>
+      <span class="btn"><span class="fav-off">☆</span> お気に入り</span>
+    </div>
+    <div class="field"><span class="lab">撮影日時</span><span class="input num">2026/09/30　14:05</span>
+      <div class="hint">動画ファイルの日時です。違っていたら直してください。</div></div>
+    <p><span class="btn full" style="justify-content:flex-start">▸ メモ</span></p>
+    <div class="row"><span class="btn">キャンセル</span><span class="btn primary grow">保存する</span></div>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">点数が範囲の外のとき</p>
+    <div class="field" style="margin-bottom:0"><span class="lab">点数（0〜10.9、空欄でもよい）</span><span class="input num" style="border-color:var(--color-danger)">105</span>
+      <div class="hint" style="color:var(--color-danger)">！ 点数は 0〜10.9 で入力してください。</div></div>
+  </div>
+  <p class="note">【改訂】読込画面で選んだ射手が選択済み。利き手は射手に付いているので、ここでは選ばない。何も打たずに「保存する」で保存できる。ライブラリでの編集も同じ形（メモは開いた状態、ボタンは「変更を保存」）。編集で射手を替えると、利き手も替わり、角度を計算し直す。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">3. 保存したあと（マーク画面の同じ位置）</p>
+  <div class="phone">
+    <span class="btn full">撃発マークをここに付け直す</span>
+    <div class="notice ok">
+      <strong>✓ ライブラリに保存しました</strong>
+      <p class="small num">9/30（水）14:05・山田・10.3 点</p>
+      <div style="height:8px"></div>
+      <span class="btn primary full">次の動画を読み込む</span>
+      <div style="height:8px"></div>
+      <span class="btn full">ライブラリで見る</span>
+    </div>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">保存のあとでマークを変えたとき</p>
+    <span class="btn primary full">上書き保存</span>
+    <p class="small"><span class="dot">●</span> 保存後に変更があります</p>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">保存に失敗したとき（入力は消さない）</p>
+    <div class="notice err"><strong>！ 保存できませんでした</strong><p class="small">端末の空き容量を確認して、もう一度「保存する」を押してください。</p></div>
+  </div>
+  <p class="note">消える通知は使わず、帯を残す（屋外で見逃さないため）。上書きは同じ 1 件を更新し、件数は増えない。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">4. ライブラリ（一覧）</p>
+  <div class="phone">
+    <h1>Pistol Kamae</h1>
+    <div class="tabs"><span class="tab">読込</span><span class="tab">マーク</span><span class="tab on">ライブラリ</span><span class="tab">ノイズ測定</span></div>
+    <h2>ライブラリ</h2>
+    <span class="select">射手：すべて（12）</span>
+    <div class="row"><span class="chip"><span class="fav-off">☆</span>&nbsp;お気に入りのみ</span><span class="muted small">12 件</span></div>
+    <p class="month">2026年9月（3 件）</p>
+    <div class="item">
+      <svg class="thumb" viewBox="20 8 75 100"><use href="#fig" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">9/30（水）14:05</span><span class="score">10.3<small>点</small></span></div>
+        <div class="l2">山田・引き金が軽く切れた。肩が楽</div></div>
+      <span class="btn icon fav-on" aria-label="お気に入りから外す">★</span>
+    </div>
+    <div class="item">
+      <svg class="thumb" viewBox="20 8 75 100"><use href="#fig" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">9/30（水）13:52</span><span class="score">9.1<small>点</small></span></div>
+        <div class="l2">山田</div></div>
+      <span class="btn icon fav-off" aria-label="お気に入りに追加">☆</span>
+    </div>
+    <div class="item">
+      <svg class="thumb" viewBox="20 8 75 100"><use href="#fig" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">9/23（水）10:20</span><span class="score none">—</span></div>
+        <div class="l2">佐藤・初めての撮影</div></div>
+      <span class="btn icon fav-off" aria-label="お気に入りに追加">☆</span>
+    </div>
+    <p class="month">2026年8月（9 件）</p>
+    <div class="item">
+      <svg class="thumb" viewBox="20 8 75 100"><use href="#fig" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">8/29（土）15:40</span><span class="score">10.5<small>点</small></span></div>
+        <div class="l2">山田・基準にしたい姿勢</div></div>
+      <span class="btn icon fav-on" aria-label="お気に入りから外す">★</span>
+    </div>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">1 件も無いとき</p>
+    <p>まだ保存した記録がありません。動画を読み込み、撃発マークを付けて「ライブラリに保存」を押すと、ここに並びます。</p>
+    <span class="btn primary full">動画を読み込む</span>
+  </div>
+  <p class="note">【改訂】「お気に入りのみ」の絞り込みを追加。行を押すと開く。★ は押すとすぐ切り替わる。静止画は人物が中央に来るよう切り抜く。並びは新しい順。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">5. 1 件を開いた画面</p>
+  <div class="phone">
+    <div class="row" style="margin-top:0"><span class="btn">‹ ライブラリ</span><span class="grow"></span><span class="btn icon fav-on" aria-label="お気に入りから外す">★</span></div>
+    <div class="row" style="align-items:baseline"><h2 class="grow num" style="margin:0">9/30（水）14:05</h2><span class="big">10.3<small>点</small></span></div>
+    <p class="small" style="margin-top:0">山田・右利き<br>メモ：引き金が軽く切れた。肩が楽</p>
+    <svg class="still" viewBox="0 0 343 300"><use href="#fig" x="40" y="10" width="262" height="288"/></svg>
+    <div class="seg"><span class="on">人物に寄せる</span><span>全体</span></div>
+    <span class="btn">編集</span>
+    <h3>撃発の瞬間の角度</h3>
+    <p class="muted small" style="margin:0">＋ は銃側へ傾く・上がる向き</p>
+    <table class="mt">
+      <tr><th colspan="2">角度</th></tr>
+      <tr><td>肩線の傾き<small>水平基準 (a)</small></td><td class="v">+12.4°</td></tr>
+      <tr><td>腰線の傾き<small>水平基準 (b)</small></td><td class="v">+3.1°</td></tr>
+      <tr><td>体軸の傾き<small>鉛直基準 (c)</small></td><td class="v">−9.8°</td></tr>
+      <tr><td>首の傾き<small>鉛直基準 (d)</small></td><td class="v">+4.2°</td></tr>
+      <tr><td>腕の挙上角<small>水平基準 (f)</small></td><td class="v">+1.3°</td></tr>
+      <tr><td>腕と肩線のなす角<small>身体基準 (g)</small></td><td class="v">+168.9°</td></tr>
+      <tr><th colspan="2">体幹長に対する比</th></tr>
+      <tr><td>腰中心の横ずれ<small>体幹長比 (h)</small></td><td class="v">0.04</td></tr>
+      <tr class="na"><td>スタンス幅<small>体幹長比 (i)・足首が画面の外</small></td><td class="v">—</td></tr>
+      <tr><td>手首と顔の水平距離<small>体幹長比 (j)</small></td><td class="v">1.42</td></tr>
+    </table>
+    <p class="muted small">1280×720・30 fps・310 フレーム・mediapipe-full-video</p>
+    <div style="height:32px"></div>
+    <span class="btn danger">この記録を削除</span>
+  </div>
+  <p class="note">動画は出ない（保存していないため）。角度表はマーク画面と同じ部品にする。削除は一番下に、間を空けて置く。画面左端からのスワイプでも一覧へ戻れる。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">6. 削除の確認</p>
+  <div class="phone">
+    <div class="scrim"><div class="dialog">
+      <h2>この記録を削除しますか？</h2>
+      <div class="row"><svg class="thumb" viewBox="20 8 75 100"><use href="#fig" width="100" height="110"/></svg>
+        <p class="small num" style="margin:0">9/30（水）14:05<br>山田・10.3 点</p></div>
+      <p class="small">元に戻せません。動画ファイルは消えません。</p>
+      <span class="btn danger-fill full">削除する</span>
+      <div style="height:8px"></div>
+      <span class="btn full">キャンセル</span>
+    </div></div>
+  </div>
+  <p class="note">確認の窓は、ボタンを縦に積み、一番下を必ず「キャンセル」にする（未保存の確認も同じ並び）。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">7. 共通の部品と色</p>
+  <div class="phone">
+    <h3 style="margin-top:0">ボタン 4 種</h3>
+    <div class="row"><span class="btn primary grow">主（画面に 1 つ）</span><span class="btn">副</span></div>
+    <div class="row"><span class="btn danger">危険</span><span class="btn icon fav-on">★</span><span class="btn icon fav-off">☆</span><span class="btn" disabled>押せない</span></div>
+    <p class="muted small">押せないボタンには、理由を近くに文字で出す。</p>
+    <h3>入力欄と選択チップ</h3>
+    <span class="input">入力欄（白地に濃い枠）</span>
+    <div class="chips" style="margin-top:8px"><span class="chip on">✓ 選択中</span><span class="chip">選択肢</span></div>
+    <h3>案内の帯（記号と文で示す）</h3>
+    <div class="notice ok"><strong>✓ 成功</strong></div>
+    <div class="notice err"><strong>！ エラー・必須の不足</strong></div>
+    <div class="notice"><strong>案内</strong></div>
+    <h3>色（上段は今のまま、下段が追加）</h3>
+    <div class="sw">
+      <div><i style="background:var(--color-accent)"></i>主</div><div><i style="background:var(--color-danger)"></i>危険</div>
+      <div><i style="background:var(--color-surface)"></i>面</div><div><i style="background:var(--color-muted)"></i>補足の字</div>
+      <div><i style="background:var(--color-accent-soft)"></i>選択中</div><div><i style="background:var(--color-success)"></i>成功</div>
+      <div><i style="background:var(--color-fav)"></i>★</div><div><i style="background:var(--color-border-strong)"></i>入力の枠</div>
+    </div>
+    <p class="muted small">余白は 4・8・16・24・32px。角丸は 8px（窓は 16px）。文字は 14・16・20px（点数だけ 28px）。押せる部品は 44px 以上、主ボタンは 52px。</p>
+  </div>
+</section>
+
+<section class="shot">
+  <p class="cap">8.【追加】読込画面（利き手の代わりに射手を選ぶ）</p>
+  <div class="phone">
+    <h1>Pistol Kamae</h1>
+    <div class="tabs"><span class="tab on">読込</span><span class="tab">マーク</span><span class="tab">ライブラリ</span><span class="tab">ノイズ測定</span></div>
+    <div class="field"><span class="lab">手順 1：動画を選ぶ</span><span class="input">ファイルを選択　good-1.mov</span>
+      <div class="hint num">1280×720、17.2 秒、推定 30 fps</div></div>
+    <div class="field"><span class="lab">射手</span>
+      <div class="row" style="margin:0"><span class="select grow">山田（右利き）</span><span class="btn">編集</span></div>
+      <div class="hint">前回の射手が選ばれています。一覧の最後に「＋ 新しい射手を登録」。</div></div>
+    <span class="btn full">手順 2：姿勢推定をやり直す</span>
+    <div class="notice ok"><strong>✓ 完了</strong><p class="small num">310 フレームを 52.0 秒で処理</p>
+      <div style="height:8px"></div><span class="btn primary full">マーク付けへ進む</span></div>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">射手が 1 人も登録されていないとき（初回）</p>
+    <div class="field" style="margin-bottom:0"><span class="lab">射手</span><span class="btn full">＋ 射手を登録</span>
+      <div class="hint">射手を登録すると、姿勢推定を実行できます。</div></div>
+  </div>
+  <p class="note">今の「利き手」の選択をなくし、射手の選択に置き換える。利き手は射手の登録時に 1 回だけ選ぶ。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">9.【追加】射手の登録・編集</p>
+  <div class="phone">
+    <div class="scrim" style="padding:60px 24px"><div class="dialog">
+      <h2>射手を登録</h2>
+      <div class="field"><span class="lab">名前</span><span class="input">山田</span></div>
+      <div class="field"><span class="lab">利き手（銃を持つ手）</span>
+        <div class="seg" style="margin:0"><span class="on">右</span><span>左</span></div>
+        <div class="hint">射手ごとに 1 回決めれば、動画のたびに選び直す必要はありません。</div></div>
+      <div class="row"><span class="btn">キャンセル</span><span class="btn primary grow">登録する</span></div>
+    </div></div>
+  </div>
+  <p class="note">「編集」から開いたときは題が「射手を編集」。名前や利き手を直すと、その射手の保存済みの記録すべてに反映される（角度は開くたびに計算するため）。同じ名前は 2 人登録できない。</p>
+</section>
+
+</div>
+<script>
+  const root = document.documentElement;
+  if (matchMedia('(prefers-color-scheme: dark)').matches) root.dataset.theme = 'dark';
+  document.getElementById('theme').addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+</script>
+</body>
+</html>
