@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>段階④ UI 案（モックアップ）</title>
+<style>
+/* 段階③までのトークン（値は変えない） */
+:root {
+  --color-bg: #ffffff; --color-fg: #1a1a1a; --color-muted: #6b6b6b; --color-border: #d9d9d9;
+  --color-accent: #0a66c2; --color-accent-fg: #ffffff; --color-danger: #c62828; --color-surface: #f4f4f4;
+  --color-border-strong: #8a8a8a; --color-accent-soft: #e6f0fa;
+  --color-success: #1b7a3d; --color-success-soft: #e8f5ec;
+  --color-danger-fg: #ffffff; --color-danger-soft: #fdecea;
+  --color-fav: #b26a00; --color-scrim: rgba(0,0,0,.5);
+  --space-1: 4px; --space-2: 8px; --space-3: 16px; --space-4: 24px; --space-5: 32px;
+  --font-size-base: 16px; --font-size-small: 14px; --font-size-large: 20px;
+  --tap-size: 44px; --tap-size-primary: 52px;
+  --radius-s: 8px; --radius-l: 16px; --radius-pill: 999px;
+  --page: #e6e6e6;
+  /* 段階④で追加するトークン */
+  --color-warn-soft: #fff1c7;      /* 差の色分け：やや差がある（黄） */
+  --skel-current: rgb(0, 220, 90); /* 今回の骨格（今までと同じ緑） */
+  --skel-base: rgb(255, 110, 210); /* 基準の骨格（紫がかった桃色・点線） */
+  --level-line: #ffd400;           /* 水平の線 */
+}
+:root[data-theme='dark'] {
+  --color-bg: #121212; --color-fg: #ededed; --color-muted: #9a9a9a; --color-border: #3a3a3a;
+  --color-accent: #6cb4ff; --color-accent-fg: #0a0a0a; --color-danger: #ff6b6b; --color-surface: #1e1e1e;
+  --color-border-strong: #7a7a7a; --color-accent-soft: #16324d;
+  --color-success: #5fd38a; --color-success-soft: #163222;
+  --color-danger-fg: #0a0a0a; --color-danger-soft: #3a1c1c;
+  --color-fav: #ffc940; --page: #000000;
+  --color-warn-soft: #4a3c0c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--page); color: var(--color-fg);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; font-size: 16px; line-height: 1.5; }
+.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+.top h1 { font-size: 20px; margin: 0; flex: 1; min-width: 12em; }
+.board { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.shot { width: 375px; max-width: 100%; }
+.shot > .cap { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+.shot > .note { font-size: 13px; color: var(--color-muted); margin: 6px 2px 0; }
+.phone { position: relative; background: var(--color-bg); border: 1px solid var(--color-border-strong); border-radius: 28px; overflow: hidden; padding: 16px; }
+.phone h1 { font-size: 16px; margin: 0; }
+.phone h2 { font-size: var(--font-size-large); margin: 12px 0 8px; }
+.phone h3 { font-size: 16px; margin: 16px 0 4px; }
+.phone p { margin: 8px 0; }
+.muted { color: var(--color-muted); } .small { font-size: 14px; } .num { font-variant-numeric: tabular-nums; }
+.btn, .input, .select { min-height: var(--tap-size); font: inherit; border-radius: var(--radius-s); padding: 0 16px; color: var(--color-fg); }
+.btn { border: 1px solid var(--color-border); background: var(--color-surface); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.btn.primary { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); min-height: var(--tap-size-primary); font-weight: 700; }
+.btn.danger { background: var(--color-bg); color: var(--color-danger); border-color: var(--color-danger); }
+.btn.icon { width: 44px; padding: 0; border: 0; background: transparent; font-size: 24px; }
+.btn.full { display: flex; width: 100%; }
+.btn.compact { padding: 0 12px; font-size: 14px; }
+.select { width: 100%; border: 1px solid var(--color-border-strong); background: var(--color-bg); display: flex; align-items: center; }
+.select::after { content: '▾'; margin-left: auto; color: var(--color-muted); }
+.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.row > .grow { flex: 1; }
+.fav-on { color: var(--color-fav); } .fav-off { color: var(--color-muted); }
+.chip { min-height: var(--tap-size); padding: 0 16px; border-radius: var(--radius-pill); border: 1px solid var(--color-border-strong); background: var(--color-bg); display: inline-flex; align-items: center; font-size: 14px; }
+.chip.on { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent); font-weight: 700; }
+.tabs { display: flex; border-bottom: 1px solid var(--color-border); margin: 8px -16px 0; padding: 0 8px; }
+.tab { flex: 1 1 auto; min-height: var(--tap-size); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--color-muted); border-bottom: 3px solid transparent; white-space: nowrap; padding: 0 4px; }
+.tab.on { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.notice { border-radius: var(--radius-s); padding: 12px; margin: 12px 0; border: 1px solid var(--color-border); background: var(--color-surface); }
+.notice.ok { background: var(--color-success-soft); border-color: var(--color-success); }
+.notice.ok strong { color: var(--color-success); }
+.notice.err { background: var(--color-danger-soft); border-color: var(--color-danger); }
+.notice.err strong { color: var(--color-danger); }
+.notice p { margin: 2px 0 0; }
+.still { background: #3d444d; border-radius: var(--radius-s); overflow: hidden; display: block; width: 100%; }
+.thumb { width: 60px; height: 80px; flex: none; border-radius: var(--radius-s); background: #3d444d; overflow: hidden; }
+.thumb.s { width: 48px; height: 64px; }
+.item { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+.item .main { flex: 1; min-width: 0; }
+.item .l1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; }
+.item .score { font-size: var(--font-size-large); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.item .score small { font-size: 14px; font-weight: 400; margin-left: 2px; }
+.item .l2 { font-size: 14px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item.sel { background: var(--color-accent-soft); margin: 0 -8px; padding: 8px; border-radius: var(--radius-s); }
+.seg { display: flex; border: 1px solid var(--color-border-strong); border-radius: var(--radius-s); overflow: hidden; margin: 8px 0; }
+.seg span { flex: 1; min-height: var(--tap-size); display: flex; align-items: center; justify-content: center; font-size: 14px; text-align: center; }
+.seg .on { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 700; }
+.divider { border: 0; border-top: 2px dashed var(--color-border-strong); margin: 20px -16px 12px; }
+.proposal { display: inline-block; font-size: 12px; font-weight: 700; border: 1px solid var(--color-accent); color: var(--color-accent); border-radius: 4px; padding: 0 4px; }
+
+/* ④：比べる 2 件の欄 */
+.pair { border: 1px solid var(--color-border); border-radius: var(--radius-s); margin: 8px 0 12px; }
+.pair .who { display: flex; gap: 10px; align-items: center; padding: 8px; }
+.pair .who + .who { border-top: 1px solid var(--color-border); }
+.pair .main { flex: 1; min-width: 0; }
+.pair .l1 { font-weight: 700; white-space: nowrap; line-height: 1.3; }
+.pair .role { display: flex; line-height: 1.3; }
+.pair .l2 { font-size: 14px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; }
+.key { display: inline-block; width: 22px; height: 0; border-top: 4px solid var(--skel-current); vertical-align: middle; }
+.key.base { border-top: 4px dashed var(--skel-base); }
+.legend { display: flex; gap: 16px; font-size: 14px; margin: 6px 0 0; }
+/* ④：差分表（項目・基準・今回・差） */
+.dt { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
+.dt th { font-size: 13px; color: var(--color-muted); padding: 10px 0 4px; border-bottom: 1px solid var(--color-border-strong); text-align: right; font-weight: 700; white-space: nowrap; }
+.dt th:first-child { text-align: left; }
+.dt td { padding: 8px 0; border-bottom: 1px solid var(--color-border); vertical-align: middle; font-size: 15px; }
+.dt td small { display: block; font-size: 13px; color: var(--color-muted); }
+.dt td.v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 14px; padding-left: 9px; }
+.dt td.d { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; font-size: 15px; padding: 8px 4px 8px 6px; }
+.dt td.d.y { background: var(--color-warn-soft); }
+.dt td.d.r { background: var(--color-danger-soft); color: var(--color-danger); }
+.dt tr.na td { color: var(--color-muted); font-weight: 400; }
+.side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.side p { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+.lvl { display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-s); padding: 8px 8px 8px 12px; margin: 8px 0; }
+.lvl .grow { flex: 1; font-size: 14px; }
+.readout { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <!-- 今回の骨格：緑・実線（今までと同じ） -->
+  <symbol id="cur" viewBox="0 0 100 110">
+    <g stroke="rgba(0,0,0,.75)" stroke-width="5" stroke-linecap="round" fill="none">
+      <path d="M40 32H60M43 62H57M50 32V62M40 32L5 29M60 32L59 58M43 62L37 100M57 62L62 100M50 32L46 18"/>
+    </g>
+    <g stroke="var(--skel-current)" stroke-width="2.5" stroke-linecap="round" fill="none">
+      <path d="M40 32H60M43 62H57M50 32V62M40 32L5 29M60 32L59 58M43 62L37 100M57 62L62 100M50 32L46 18"/>
+    </g>
+    <g fill="var(--skel-current)" stroke="rgba(0,0,0,.75)" stroke-width="1">
+      <circle cx="46" cy="18" r="3"/><circle cx="40" cy="32" r="3"/><circle cx="60" cy="32" r="3"/>
+      <circle cx="43" cy="62" r="3"/><circle cx="57" cy="62" r="3"/><circle cx="5" cy="29" r="3"/>
+      <circle cx="59" cy="58" r="3"/><circle cx="37" cy="100" r="3"/><circle cx="62" cy="100" r="3"/>
+    </g>
+  </symbol>
+  <!-- 基準の骨格：別の色・点線・半透明 -->
+  <symbol id="base" viewBox="0 0 100 110">
+    <g opacity=".85">
+      <g stroke="rgba(0,0,0,.6)" stroke-width="4.5" stroke-linecap="round" fill="none">
+        <path d="M40 30.5L60 33.5M43 62H57M50 32V62M40 30.5L5 24.5M60 33.5L60.5 58M43 62L35.5 100M57 62L64 100M50 32L48 17.5"/>
+      </g>
+      <g stroke="var(--skel-base)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4.5 3.5" fill="none">
+        <path d="M40 30.5L60 33.5M43 62H57M50 32V62M40 30.5L5 24.5M60 33.5L60.5 58M43 62L35.5 100M57 62L64 100M50 32L48 17.5"/>
+      </g>
+      <g fill="var(--skel-base)" stroke="rgba(0,0,0,.6)" stroke-width="1">
+        <circle cx="48" cy="17.5" r="2.6"/><circle cx="40" cy="30.5" r="2.6"/><circle cx="60" cy="33.5" r="2.6"/>
+        <circle cx="43" cy="62" r="2.6"/><circle cx="57" cy="62" r="2.6"/><circle cx="5" cy="24.5" r="2.6"/>
+        <circle cx="60.5" cy="58" r="2.6"/><circle cx="35.5" cy="100" r="2.6"/><circle cx="64" cy="100" r="2.6"/>
+      </g>
+    </g>
+  </symbol>
+  <!-- 写真の代わりの人影 -->
+  <symbol id="body" viewBox="0 0 100 110">
+    <g fill="#59626d">
+      <ellipse cx="47" cy="17" rx="7" ry="8.5"/>
+      <path d="M36 28H64L62 66H38Z"/><path d="M38 27L4 25L4 32L38 36Z"/>
+      <path d="M38 62L32 104H42L50 66L58 104H67L62 62Z"/>
+    </g>
+  </symbol>
+</svg>
+
+<div class="top">
+  <h1>段階④ UI 案（モックアップ）</h1>
+  <button class="btn" id="theme">ライト／ダークを切り替える</button>
+</div>
+<p class="small" style="margin:0 0 16px;max-width:60em">絵と数値は見本です（実際の動画のものではありません）。色・余白・ボタンの種類は段階③で決めた共通ルールのままで、④で足すのは「骨格の 2 色目」「差の色分け（黄・赤）」「水平の線の色」の 3 つだけです。</p>
+
+<div class="board">
+
+<section class="shot">
+  <p class="cap">1. 比較画面（重ねる・位置と大きさを揃える）</p>
+  <div class="phone">
+    <h1>Pistol Kamae</h1>
+    <div class="tabs"><span class="tab">読込</span><span class="tab">マーク</span><span class="tab">ライブラリ</span><span class="tab on">比較</span><span class="tab">ノイズ</span></div>
+    <h2>比較</h2>
+    <div class="pair">
+      <div class="who">
+        <svg class="thumb s" viewBox="0 8 75 100"><use href="#body" width="100" height="110"/></svg>
+        <div class="main"><div class="role"><span class="key base"></span>基準 <span class="fav-on">★</span></div>
+          <div class="l1 num">8/29（土）15:40</div>
+          <div class="l2">山田・10.5 点</div></div>
+        <span class="btn compact">替える</span>
+      </div>
+      <div class="who">
+        <svg class="thumb s" viewBox="0 8 75 100"><use href="#body" width="100" height="110"/></svg>
+        <div class="main"><div class="role"><span class="key"></span>今回</div>
+          <div class="l1 num">9/30（水）13:52</div>
+          <div class="l2">山田・9.1 点</div></div>
+        <span class="btn compact">替える</span>
+      </div>
+    </div>
+    <svg class="still" viewBox="0 0 343 320">
+      <use href="#body" x="36" y="12" width="272" height="300"/>
+      <use href="#base" x="36" y="12" width="272" height="300"/>
+      <use href="#cur" x="36" y="12" width="272" height="300"/>
+    </svg>
+    <p class="muted small" style="margin:4px 0 0">写真は「今回」の撃発の瞬間</p>
+    <div class="seg"><span class="on">重ねる</span><span>横に並べる</span></div>
+    <div class="seg"><span class="on">位置と大きさを揃える</span><span>撮ったまま</span></div>
+    <p class="muted small" style="margin-top:0">腰の中心を重ね、体幹の長さ（腰の中心→肩の中心）が同じになるよう基準を拡大・縮小しています。どちらも水平の線でカメラの傾きを補正済み。</p>
+
+    <h3>撃発の瞬間の差</h3>
+    <p class="muted small" style="margin:0">差＝今回 − 基準。＋ は今回のほうが銃側へ傾く・上がる向き</p>
+    <table class="dt">
+      <tr><th>角度</th><th>基準</th><th>今回</th><th>差</th></tr>
+      <tr><td>肩線の傾き<small>水平基準 (a)</small></td><td class="v">+12.4°</td><td class="v">+13.6°</td><td class="d r">◆ +1.2°</td></tr>
+      <tr><td>腰線の傾き<small>水平基準 (b)</small></td><td class="v">+3.1°</td><td class="v">+3.4°</td><td class="d">+0.3°</td></tr>
+      <tr><td>体軸の傾き<small>鉛直基準 (c)</small></td><td class="v">−9.8°</td><td class="v">−10.5°</td><td class="d y">◇ −0.7°</td></tr>
+      <tr><td>首の傾き<small>鉛直基準 (d)</small></td><td class="v">+17.2°</td><td class="v">+17.0°</td><td class="d">−0.2°</td></tr>
+      <tr><td>腕の挙上角<small>水平基準 (f)</small></td><td class="v">+12.3°</td><td class="v">+12.1°</td><td class="d">−0.2°</td></tr>
+      <tr><td>腕と肩線のなす角<small>身体基準 (g)</small></td><td class="v">−0.1°</td><td class="v">−1.5°</td><td class="d r">◆ −1.4°</td></tr>
+      <tr><th>体幹長に対する比</th><th>基準</th><th>今回</th><th>差</th></tr>
+      <tr><td>腰中心の横ずれ<small>体幹長比 (h)</small></td><td class="v">0.04</td><td class="v">0.05</td><td class="d">+0.01</td></tr>
+      <tr class="na"><td>スタンス幅<small>体幹長比 (i)・今回は足首が画面の外</small></td><td class="v">0.92</td><td class="v">—</td><td class="d">—</td></tr>
+      <tr><td>手首と顔の水平距離<small>体幹長比 (j)</small></td><td class="v">1.42</td><td class="v">1.40</td><td class="d y">◇ −0.02</td></tr>
+    </table>
+    <p class="muted small">◇ 測定の揺れの 2 倍を超える差　◆ 3 倍を超える差<br>印のない差は、測定の揺れと区別できません。</p>
+  </div>
+  <p class="note">骨格は、今回＝緑の実線（今までと同じ）、基準＝桃色の点線・半透明。色の見分けにくい人でも線の種類で分かる。差の色分けも、色だけでなく ◇ ◆ の印を付ける。主ボタン（青）はこの画面には置かない（次にやるべき 1 つの操作がないため）。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">2. 表示の切替（横に並べる／撮ったまま）</p>
+  <div class="phone">
+    <p class="muted small" style="margin-top:0">「横に並べる」を選んだとき</p>
+    <div class="side">
+      <div><p><span class="role"><span class="key base"></span>基準</span></p>
+        <svg class="still" viewBox="0 0 166 200"><use href="#body" x="2" y="8" width="164" height="182"/><use href="#base" x="2" y="8" width="164" height="182"/></svg></div>
+      <div><p><span class="role"><span class="key"></span>今回</span></p>
+        <svg class="still" viewBox="0 0 166 200"><use href="#body" x="2" y="8" width="164" height="182"/><use href="#cur" x="2" y="8" width="164" height="182"/></svg></div>
+    </div>
+    <div class="seg"><span>重ねる</span><span class="on">横に並べる</span></div>
+    <p class="muted small" style="margin-top:0">それぞれの写真に、それぞれの骨格。人物が同じ大きさに見えるよう寄せて表示。</p>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">「重ねる」で「撮ったまま」を選んだとき</p>
+    <svg class="still" viewBox="0 0 343 300">
+      <use href="#body" x="50" y="14" width="250" height="276"/>
+      <use href="#base" x="80" y="30" width="222" height="245"/>
+      <use href="#cur" x="50" y="14" width="250" height="276"/>
+    </svg>
+    <div class="seg"><span>位置と大きさを揃える</span><span class="on">撮ったまま</span></div>
+    <p class="muted small" style="margin-top:0">画面の中の位置と大きさをそのまま重ねます。カメラを動かさずに続けて撮った 2 本で、立ち位置のずれを見るときに使います。</p>
+    <div class="notice"><strong>カメラの位置が違うようです</strong><p class="small">人物の大きさが 12% 違います。「位置と大きさを揃える」で比べてください。</p></div>
+  </div>
+  <p class="note">既定は「重ねる」「位置と大きさを揃える」。「撮ったまま」は、人物の大きさが大きく違うとき（カメラを動かした 2 本）に案内の帯を出す。差分表はどの表示でも同じ。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">3. 記録を選ぶ（「替える」を押したとき・iPhone では全画面）</p>
+  <div class="phone">
+    <h2 style="margin-top:0">基準を選ぶ</h2>
+    <p class="muted small" style="margin-top:0">お気に入り（★）の記録から選びます。</p>
+    <span class="select">射手：山田（4）</span>
+    <div class="item sel">
+      <svg class="thumb" viewBox="0 8 75 100"><use href="#body" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">✓ 8/29（土）15:40</span><span class="score">10.5<small>点</small></span></div>
+        <div class="l2">山田・基準にしたい姿勢</div></div>
+    </div>
+    <div class="item">
+      <svg class="thumb" viewBox="0 8 75 100"><use href="#body" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">9/30（水）14:05</span><span class="score">10.3<small>点</small></span></div>
+        <div class="l2">山田・引き金が軽く切れた。肩が楽</div></div>
+    </div>
+    <div class="item">
+      <svg class="thumb" viewBox="0 8 75 100"><use href="#body" width="100" height="110"/></svg>
+      <div class="main"><div class="l1"><span class="num">8/22（土）11:10</span><span class="score">10.1<small>点</small></span></div>
+        <div class="l2">山田・水平の線なし</div></div>
+    </div>
+    <div style="height:8px"></div>
+    <span class="btn full">キャンセル</span>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">お気に入りが 1 件も無いとき</p>
+    <p>基準にできる記録がありません。ライブラリで、基準にしたい記録の ☆ を押してお気に入りにしてください。</p>
+    <span class="btn primary full">ライブラリを開く</span>
+  </div>
+  <p class="note">行を押すとすぐ決まり、比較画面に戻る。「今回を選ぶ」も同じ形で、こちらはお気に入り以外も含むすべての記録から選ぶ（「お気に入りのみ」の絞り込み付き）。一覧の行はライブラリと同じ部品。射手の絞り込みは、もう片方の記録の射手が初めから選ばれている。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">4. 水平の線を引く（ライブラリで開いた記録から・全画面）</p>
+  <div class="phone">
+    <h2 style="margin-top:0">水平の線を引く</h2>
+    <p class="small" style="margin-top:0">床と壁の境目など、<strong>本当は水平なもの</strong>に線を合わせてください。両端の ● を指で動かします。線は長いほど正確です。</p>
+    <svg class="still" viewBox="0 0 343 230">
+      <rect width="343" height="230" fill="#3d444d"/>
+      <path d="M0 172L343 166V230H0Z" fill="#4b535d"/>
+      <path d="M0 172L343 166" stroke="#7d8793" stroke-width="1.5"/>
+      <use href="#body" x="96" y="22" width="170" height="187"/>
+      <use href="#cur" x="96" y="22" width="170" height="187"/>
+      <!-- 引いた線 -->
+      <line x1="28" y1="171.5" x2="318" y2="166.4" stroke="rgba(0,0,0,.7)" stroke-width="4"/>
+      <line x1="28" y1="171.5" x2="318" y2="166.4" stroke="var(--level-line)" stroke-width="2"/>
+      <!-- 端のつまみ：指で隠れないよう、線の端より下を持つ -->
+      <g stroke="var(--level-line)" stroke-width="1.5">
+        <line x1="28" y1="171.5" x2="28" y2="196"/><line x1="318" y1="166.4" x2="318" y2="191"/>
+      </g>
+      <g fill="var(--level-line)" stroke="rgba(0,0,0,.7)" stroke-width="1.5">
+        <circle cx="28" cy="171.5" r="3"/><circle cx="318" cy="166.4" r="3"/>
+        <circle cx="28" cy="206" r="12"/><circle cx="318" cy="201" r="12"/>
+      </g>
+      <!-- 拡大鏡：動かしている端の周りを大きく見せる -->
+      <g>
+        <circle cx="52" cy="52" r="42" fill="#3d444d" stroke="#ffffff" stroke-width="2"/>
+        <clipPath id="lens"><circle cx="52" cy="52" r="41"/></clipPath>
+        <g clip-path="url(#lens)">
+          <path d="M0 56L110 48V100H0Z" fill="#4b535d"/>
+          <path d="M0 56L110 48" stroke="#7d8793" stroke-width="5"/>
+          <line x1="0" y1="55.6" x2="110" y2="48.4" stroke="var(--level-line)" stroke-width="2.5"/>
+          <line x1="52" y1="30" x2="52" y2="74" stroke="#ffffff" stroke-width="1"/>
+          <line x1="30" y1="52" x2="74" y2="52" stroke="#ffffff" stroke-width="1"/>
+        </g>
+      </g>
+    </svg>
+    <p class="readout">カメラの傾き：1.0°（右上がり）</p>
+    <p class="muted small" style="margin-top:0">保存すると、この記録の角度を 1.0° 分だけ補正して計算します。</p>
+    <div class="row"><span class="btn">キャンセル</span><span class="btn primary grow">この線で決める</span></div>
+    <div style="height:16px"></div>
+    <span class="btn danger">線を消す（補正をやめる）</span>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">線の傾きが 10° を超えたとき</p>
+    <div class="notice err"><strong>！ 傾きが大きすぎます（14.2°）</strong><p class="small">奥へ向かって延びる線（射台の前の縁など）は、水平でも斜めに写ります。カメラから見て左右に延びる線を選んでください。</p></div>
+  </div>
+  <p class="note">写真は撃発の瞬間の静止画（全体）。端を動かしている間、左上の拡大鏡にその周りが大きく出る（指で隠れないよう、つまみは線の端より下にある）。まだ線が無い記録では「線を消す」は出ない。<span class="proposal">提案</span> 柱やドア枠など鉛直なものに合わせても補正できるようにする案は、質問 5 を参照。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">5. ライブラリで 1 件を開いた画面（変わるところだけ）</p>
+  <div class="phone">
+    <div class="row" style="margin-top:0"><span class="btn">‹ ライブラリ</span><span class="grow"></span><span class="btn icon fav-off">☆</span></div>
+    <h2 class="num" style="margin:0">9/30（水）13:52　<span style="font-size:28px">9.1</span><small style="font-size:14px;font-weight:400">点</small></h2>
+    <p class="small" style="margin-top:0">山田・右利き</p>
+    <svg class="still" viewBox="0 0 343 200"><use href="#body" x="80" y="8" width="172" height="190"/><use href="#cur" x="80" y="8" width="172" height="190"/></svg>
+    <div class="seg"><span class="on">人物に寄せる</span><span>全体</span></div>
+    <div class="lvl"><span class="grow"><strong>水平の線：なし</strong><br><span class="muted">カメラの傾きを補正していません</span></span><span class="btn compact">線を引く</span></div>
+    <span class="btn primary full">基準と比べる</span>
+    <div class="row"><span class="btn">編集</span></div>
+    <h3>撃発の瞬間の角度</h3>
+    <p class="muted small" style="margin:0">… 角度表（今までと同じ）が続く</p>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">水平の線を引いたあと</p>
+    <div class="lvl"><span class="grow"><strong>✓ 水平の線：あり</strong><br><span class="muted num">カメラの傾き 1.0°（右上がり）を補正</span></span><span class="btn compact">引き直す</span></div>
+    <p class="muted small">角度表の上にも「カメラの傾き 1.0° を補正した値です」と出す。</p>
+  </div>
+  <p class="note">静止画のすぐ下に「水平の線」の欄と「基準と比べる」を足す。「基準と比べる」を押すと、この記録を「今回」として比較画面が開く（基準は前回使ったもの。無ければ基準を選ぶ画面が先に開く）。この画面の主ボタンは「基準と比べる」。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">6. 比較画面のそのほかの状態</p>
+  <div class="phone">
+    <p class="muted small" style="margin-top:0">初めて「比較」タブを開いたとき</p>
+    <h2>比較</h2>
+    <p>好調のときの記録（基準）と、もう 1 件の記録を重ねて、姿勢の差を見ます。</p>
+    <span class="btn primary full">基準を選ぶ</span>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">片方に水平の線が無いとき（2 件の欄のすぐ下）</p>
+    <div class="notice err"><strong>！ 「今回」に水平の線がありません</strong>
+      <p class="small">水平基準・鉛直基準の角度の差には、カメラの傾きの違いが混ざります。</p>
+      <div style="height:8px"></div><span class="btn full">「今回」に水平の線を引く</span></div>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">利き手が違う 2 件を選んだとき</p>
+    <div class="notice"><strong>利き手が違う 2 人です</strong><p class="small">基準（佐藤・左利き）の骨格を左右反転して重ねています。角度は、どちらも銃側を＋として比べています。</p></div>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">マーク画面で保存した直後の帯（ボタンを 1 つ足す）</p>
+    <div class="notice ok">
+      <strong>✓ ライブラリに保存しました</strong>
+      <p class="small num">9/30（水）13:52・山田・9.1 点</p>
+      <div style="height:8px"></div>
+      <span class="btn primary full">次の動画を読み込む</span>
+      <div style="height:8px"></div>
+      <span class="btn full">基準と比べる</span>
+      <div style="height:8px"></div>
+      <span class="btn full">ライブラリで見る</span>
+    </div>
+  </div>
+  <p class="note">選んだ 2 件は端末に覚えておき、次に「比較」タブを開いたときも同じ 2 件が出る。どちらかが削除されていたら、選び直しの状態に戻る。水平の線が両方とも無いときも同じ帯を出す（線を引くボタンは 2 つ）。</p>
+</section>
+
+</div>
+<script>
+  const root = document.documentElement;
+  if (matchMedia('(prefers-color-scheme: dark)').matches) root.dataset.theme = 'dark';
+  document.getElementById('theme').addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+</script>
+</body>
+</html>
