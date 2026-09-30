@@ -1,7 +1,5 @@
-import { parseLocalDateTime } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Score } from '../components/Score';
-import { StoredImg } from '../components/StoredImg';
+import { RecordSummary } from '../components/RecordSummary';
 import { listRecords, setRecordFavorite } from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
@@ -23,6 +21,8 @@ interface Props {
   onGoLoad: () => void;
   onRecordChanged: (id: number) => void;
   onRecordDeleted: (id: number) => void;
+  /** 開いた記録を「今回」として、基準と比べる */
+  onCompare: (id: number) => void;
 }
 
 /** ブラウザの「戻る」の履歴に付ける目印。記録を開いている間だけ積む */
@@ -108,6 +108,7 @@ export function LibraryScreen(props: Props) {
           void reload();
           onRecordChanged(id);
         }}
+        onCompare={props.onCompare}
         onDeleted={(id) => {
           void reload();
           onRecordDeleted(id);
@@ -209,47 +210,31 @@ export function LibraryScreen(props: Props) {
                 {ja.library.month(group.year, group.month, group.rows.length)}
               </p>
               <ul className="lib-list">
-                {group.rows.map((r) => {
-                  const date = parseLocalDateTime(r.shotAt);
-                  const shooterName = shooterById.get(r.shooterId)?.name ?? '';
-                  return (
-                    <li
-                      key={r.id}
-                      className="lib-item"
-                      data-testid="lib-item"
-                      data-record-id={r.id}
-                      data-favorite={r.favorite}
+                {group.rows.map((r) => (
+                  <li
+                    key={r.id}
+                    className="lib-item"
+                    data-testid="lib-item"
+                    data-record-id={r.id}
+                    data-favorite={r.favorite}
+                  >
+                    <button className="lib-open" data-testid="lib-open" onClick={() => open(r.id)}>
+                      <RecordSummary
+                        row={r}
+                        shooterName={shooterById.get(r.shooterId)?.name ?? ''}
+                      />
+                    </button>
+                    <button
+                      className={r.favorite ? 'icon fav-on' : 'icon fav-off'}
+                      data-testid="lib-favorite"
+                      aria-pressed={r.favorite}
+                      aria-label={r.favorite ? ja.library.removeFavorite : ja.library.addFavorite}
+                      onClick={() => void toggleFavorite(r)}
                     >
-                      <button
-                        className="lib-open"
-                        data-testid="lib-open"
-                        onClick={() => open(r.id)}
-                      >
-                        <StoredImg image={r.thumb} className="thumb" alt="" />
-                        <span className="lib-main">
-                          <span className="lib-line1">
-                            <span data-testid="lib-date">
-                              {date ? ja.record.dateTime(date) : r.shotAt}
-                            </span>
-                            <Score value={r.score} />
-                          </span>
-                          <span className="lib-line2" data-testid="lib-sub">
-                            {[shooterName, r.memo].filter((s) => s !== '').join('・')}
-                          </span>
-                        </span>
-                      </button>
-                      <button
-                        className={r.favorite ? 'icon fav-on' : 'icon fav-off'}
-                        data-testid="lib-favorite"
-                        aria-pressed={r.favorite}
-                        aria-label={r.favorite ? ja.library.removeFavorite : ja.library.addFavorite}
-                        onClick={() => void toggleFavorite(r)}
-                      >
-                        {r.favorite ? '★' : '☆'}
-                      </button>
-                    </li>
-                  );
-                })}
+                      {r.favorite ? '★' : '☆'}
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
           ))}

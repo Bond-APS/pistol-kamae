@@ -42,6 +42,8 @@ interface Props {
   onShootersChanged: () => Promise<void>;
   onGoLoad: () => void;
   onGoLibrary: () => void;
+  /** 保存した記録を「今回」として、基準と比べる */
+  onCompare: (recordId: number) => void;
 }
 
 const analysisOf = (r: AnalysisResult): RecordAnalysis => ({
@@ -169,6 +171,13 @@ export function MarkScreen(props: Props) {
             <div className="stack">
               <button className="primary full" data-testid="save-next" onClick={props.onGoLoad}>
                 {ja.save.nextVideo}
+              </button>
+              <button
+                className="full"
+                data-testid="save-compare"
+                onClick={() => props.onCompare(saved.recordId)}
+              >
+                {ja.save.compare}
               </button>
               <button className="full" data-testid="save-view" onClick={props.onGoLibrary}>
                 {ja.save.viewLibrary}

@@ -1,7 +1,13 @@
 // ブラウザ内データベース（IndexedDB）の表の定義。Dexie は IndexedDB を扱いやすくする部品。
 // 保存はすべてこの端末の中で完結する。動画本体は保存しない。
 
-import type { Handedness, Mark, RecordAnalysis } from '@pistol-kamae/engine';
+import {
+  RECORD_FORMAT_VERSION,
+  type Handedness,
+  type LevelLine,
+  type Mark,
+  type RecordAnalysis,
+} from '@pistol-kamae/engine';
 import Dexie, { type EntityTable, type Table } from 'dexie';
 
 /**
@@ -43,6 +49,8 @@ export interface RecordDataRow {
   formatVersion: number;
   analysis: RecordAnalysis;
   marks: Mark[];
+  /** 水平校正の線（元の動画の画素座標）。引いていなければ null。保存形式の版 2 で追加 */
+  level: LevelLine | null;
   still: StoredImage;
 }
 
@@ -67,6 +75,19 @@ export class KamaeDb extends Dexie {
       recordData: 'id',
       settings: 'key',
     });
+    // 版 2（段階④）：記録に水平校正の線を足した。表の構成は同じ。
+    // 版 1 で保存した記録は消さずに、「線なし」として今の保存形式に直す
+    this.version(2).upgrade((tx) =>
+      tx
+        .table<RecordDataRow, number>('recordData')
+        .toCollection()
+        .modify((row) => {
+          if (row.formatVersion === 1) {
+            row.formatVersion = RECORD_FORMAT_VERSION;
+            row.level = null;
+          }
+        }),
+    );
   }
 }
 

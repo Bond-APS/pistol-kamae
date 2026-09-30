@@ -4,6 +4,7 @@ import {
   RECORD_FORMAT_VERSION,
   checkShotRecord,
   type Handedness,
+  type LevelLine,
   type Mark,
   type RecordAnalysis,
   type ShotRecord,
@@ -17,6 +18,7 @@ import {
 } from './schema';
 
 const LAST_SHOOTER_KEY = 'lastShooterId';
+const COMPARE_PAIR_KEY = 'comparePair';
 
 /** 同じ名前の射手がすでにいるときに投げる */
 export class DuplicateShooterError extends Error {
@@ -97,6 +99,7 @@ export async function addRecord(
       formatVersion: RECORD_FORMAT_VERSION,
       analysis,
       marks,
+      level: null,
       still: images.still,
     });
     return id;
@@ -113,6 +116,15 @@ export async function overwriteRecordMarks(
     const updated = await db.records.update(id, { thumb: images.thumb, updatedAt: Date.now() });
     if (updated === 0) throw new Error('record not found');
     await db.recordData.update(id, { marks, still: images.still });
+  });
+}
+
+/** 水平校正の線を保存する。null なら線を消す（補正をやめる） */
+export async function setRecordLevel(id: number, level: LevelLine | null): Promise<void> {
+  await db.transaction('rw', db.records, db.recordData, async () => {
+    const updated = await db.recordData.update(id, { level });
+    if (updated === 0) throw new Error('record not found');
+    await db.records.update(id, { updatedAt: Date.now() });
   });
 }
 
@@ -154,6 +166,7 @@ export function toShotRecord(row: RecordRow, data: RecordDataRow, shooter: Shoot
     formatVersion: RECORD_FORMAT_VERSION,
     analysis: data.analysis,
     marks: data.marks,
+    level: data.level ?? null,
     meta: {
       shotAt: row.shotAt,
       shooterName: shooter.name,
@@ -174,4 +187,30 @@ export async function openRecord(id: number): Promise<OpenedRecord | null> {
   const record = toShotRecord(row, data, shooter);
   if (checkShotRecord(record) !== null) return null;
   return { row, shooter, record, still: data.still };
+}
+
+/** 比較画面で選んだ 2 件（基準と今回）。選んでいなければ null */
+export interface ComparePair {
+  baseId: number | null;
+  currentId: number | null;
+}
+
+export const EMPTY_PAIR: ComparePair = { baseId: null, currentId: null };
+
+const idOrNull = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+
+/** 前回比べた 2 件。削除済みの記録は null にして返す */
+export async function getComparePair(): Promise<ComparePair> {
+  const row = await db.settings.get(COMPARE_PAIR_KEY);
+  const value = (row?.value ?? {}) as Partial<ComparePair>;
+  const exists = async (id: number | null) =>
+    id !== null && (await db.records.get(id)) !== undefined ? id : null;
+  return {
+    baseId: await exists(idOrNull(value.baseId)),
+    currentId: await exists(idOrNull(value.currentId)),
+  };
+}
+
+export async function setComparePair(pair: ComparePair): Promise<void> {
+  await db.settings.put({ key: COMPARE_PAIR_KEY, value: pair });
 }

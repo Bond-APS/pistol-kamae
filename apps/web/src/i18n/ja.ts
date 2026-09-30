@@ -16,7 +16,7 @@ export const ja = {
   app: {
     title: 'Pistol Kamae',
     subtitle: 'AP 射撃姿勢解析',
-    stageNote: '開発中の検証用画面（段階③を確認中）',
+    stageNote: '開発中の検証用画面（段階④を確認中）',
     dbUnavailable:
       'このブラウザでは保存の機能を使えません。プライベートブラウズを切るか、別のブラウザで開いてください。',
   },
@@ -28,7 +28,9 @@ export const ja = {
     load: '読込',
     mark: 'マーク',
     library: 'ライブラリ',
-    noise: 'ノイズ測定',
+    compare: '比較',
+    // タブ 5 つが iPhone の幅に収まるよう短くしている（画面の題は「静止ノイズ測定」のまま）
+    noise: 'ノイズ',
     unsavedAria: '保存していないマークがあります',
   },
   common: {
@@ -135,6 +137,7 @@ export const ja = {
     savedTitle: '✓ ライブラリに保存しました',
     nextVideo: '次の動画を読み込む',
     viewLibrary: 'ライブラリで見る',
+    compare: '基準と比べる',
     failedTitle: '！ 保存できませんでした',
     failedBody: '端末の空き容量を確認して、もう一度押してください。',
   },
@@ -193,6 +196,116 @@ export const ja = {
     removeConfirm: '削除する',
     removeFailed: '！ 削除できませんでした。もう一度押してください。',
     notFound: '！ この記録を開けませんでした。',
+    compare: '基準と比べる',
+  },
+  level: {
+    rowNone: '水平の線：なし',
+    rowNoneHint: 'カメラの傾きを補正していません',
+    rowUnusableHint: '引いてある線が短すぎるか傾きすぎで、補正に使えません。引き直してください。',
+    rowSet: '✓ 水平の線：あり',
+    rowSetHint: (tilt: string) => `カメラの傾き ${tilt} を補正`,
+    draw: '線を引く',
+    redraw: '引き直す',
+    tableNote: (tilt: string) => `カメラの傾き ${tilt} を補正した値です。`,
+    title: '水平の線を引く',
+    intro:
+      '射手のすぐ近くにある、本当は鉛直なもの（柱・ドア枠など）か、本当は水平なもの（床と壁の境目など）に、線を合わせてください。両端の ● を指で動かします。線は長いほど正確です。',
+    imageAlt: '撃発の瞬間の静止画と、水平の線',
+    handle: (n: 1 | 2) => `線の端 ${n}（矢印キーでも動かせます）`,
+    /** カメラの傾きの大きさ。例：1.0° */
+    tilt: (deg: number) => `${Math.abs(deg).toFixed(1)}°`,
+    /** 線の向きごとの、写り方の説明。例：水平なものが右下がりに 1.0° 傾いて写っています */
+    readout: (kind: 'horizontal' | 'vertical', deg: number) => {
+      const abs = Math.abs(deg).toFixed(1);
+      if (abs === '0.0') return 'カメラの傾き：0.0°（傾きなし）';
+      return kind === 'horizontal'
+        ? `水平なものが${deg > 0 ? '右下がり' : '右上がり'}に ${abs}° 傾いて写っています`
+        : `鉛直なものの上が${deg > 0 ? '右' : '左'}に ${abs}° 倒れて写っています`;
+    },
+    kindHorizontal: '水平なものに合わせた線として扱います。',
+    kindVertical: '鉛直なもの（柱・ドア枠など）に合わせた線として扱います。',
+    saveNote: '決めると、この記録の角度を、この傾きの分だけ補正して計算します。',
+    tooShortTitle: '！ 線が短すぎます',
+    tooShortBody:
+      '画面の長い辺の 2 割以上の長さにしてください。短い線は、少しのずれで角度が大きく変わります。',
+    tooTiltedTitle: (deg: number) => `！ 傾きが大きすぎます（${Math.abs(deg).toFixed(1)}°）`,
+    tooTiltedBody:
+      '奥へ向かって延びる線（射台の前の縁など）は、水平でも斜めに写ります。カメラから見て左右に延びる線か、鉛直な線を選んでください。',
+    farTitle: '線が射手から離れています',
+    farBody:
+      'カメラが少しでも上や下を向いていると、鉛直なものは画面の端に近いほど斜めに写ります。射手のすぐ近くにある線を選ぶと正確です（このままでも決められます）。',
+    submit: 'この線で決める',
+    saving: '保存中…',
+    remove: '線を消す（補正をやめる）',
+    failed: '！ 保存できませんでした。もう一度押してください。',
+  },
+  compare: {
+    title: '比較',
+    loading: '読み込んでいます…',
+    intro: '好調のときの記録（基準）と、もう 1 件の記録を重ねて、姿勢の差を見ます。',
+    base: '基準',
+    current: '今回',
+    notChosen: '未選択',
+    change: '替える',
+    choose: '選ぶ',
+    chooseBase: '基準を選ぶ',
+    chooseCurrent: '今回の記録を選ぶ',
+    pickBaseTitle: '基準を選ぶ',
+    pickBaseHint: 'お気に入り（★）の記録から選びます。',
+    pickCurrentTitle: '今回の記録を選ぶ',
+    pickCurrentHint: '基準と比べる記録を選びます。',
+    pickNoFavorite:
+      '基準にできる記録がありません。ライブラリで、基準にしたい記録の ☆ を押してお気に入りにしてください。',
+    pickNoRecord:
+      '比べられる記録がありません。動画を読み込み、撃発マークを付けて「ライブラリに保存」を押してください。',
+    pickNoMatch: '条件に合う記録がありません。',
+    goLibrary: 'ライブラリを開く',
+    selected: '選択中',
+    photoNote: '写真は「今回」の撃発の瞬間',
+    overlayAlt: '基準と今回の骨格を重ねた図',
+    layoutOverlay: '重ねる',
+    layoutSide: '横に並べる',
+    alignNormalized: '位置と大きさを揃える',
+    alignRaw: '撮ったまま',
+    normalizedNote:
+      '腰の中心を重ね、体幹の長さ（腰の中心→肩の中心）が同じになるよう基準を拡大・縮小しています。',
+    normalizedLevelNote: 'どちらも水平の線でカメラの傾きを補正済み。',
+    rawNote:
+      '画面の中の位置と大きさをそのまま重ねます。カメラを動かさずに続けて撮った 2 本で、立ち位置のずれを見るときに使います。',
+    sideNote: 'それぞれの写真に、それぞれの骨格。人物が同じ大きさに見えるよう寄せて表示。',
+    rawUnavailable: '画面の縦横比が違う 2 件は、「撮ったまま」では重ねられません。',
+    normalizedUnavailable:
+      '肩か腰がよく見えない記録があるため、位置と大きさを揃えられません。「撮ったまま」で重ねています。',
+    cannotOverlayTitle: 'この 2 件は重ねられません',
+    cannotOverlayBody:
+      '肩か腰がよく見えない記録があるため位置と大きさを揃えられず、画面の縦横比も違うため撮ったままでも重ねられません。差分表だけを見てください。',
+    cameraMovedTitle: 'カメラの位置が違うようです',
+    cameraMovedBody: (percent: number) =>
+      `人物の大きさが ${percent}% 違います。「位置と大きさを揃える」で比べてください。`,
+    noLevelBoth: '！ どちらにも水平の線がありません',
+    noLevelOne: (role: string) => `！ 「${role}」に水平の線がありません`,
+    noLevelBody: '水平基準・鉛直基準の角度の差には、カメラの傾きの違いが混ざります。',
+    drawLevel: (role: string) => `「${role}」に水平の線を引く`,
+    handednessTitle: '利き手が違う 2 人です',
+    handednessBody: (name: string, handedness: 'right' | 'left') =>
+      `「位置と大きさを揃える」では、基準（${name}・${handednessName[handedness]}）の骨格を左右反転して重ねます。角度は、どちらも銃側を＋として比べています。`,
+    backendTitle: '姿勢推定のモデルが違う 2 件です',
+    backendBody: 'モデルが違うと角度が系統的にずれるため、差は参考になりません。',
+    tableTitle: '撃発の瞬間の差',
+    signNote:
+      '差＝今回 − 基準。角度の＋は今回のほうが銃側へ傾く・上がる向き、比の＋は今回のほうが大きい',
+    colBase: '基準',
+    colCurrent: '今回',
+    colDiff: '差',
+    markNotable: '◇',
+    markLarge: '◆',
+    ariaNotable: 'やや差がある',
+    ariaLarge: '差がある',
+    legend: (notable: number, large: number) =>
+      `◇ 測定の揺れの ${notable} 倍以上の差、◆ ${large} 倍以上の差`,
+    legendNone:
+      '測定の揺れ＝同じ姿勢でも 1 コマごとに値がばらつく幅。印のない差は、その揺れと区別できません。「—」は計測できなかった項目。',
+    notFound: '！ 選んでいた記録が見つかりません。選び直してください。',
   },
   noise: {
     title: '静止ノイズ測定',
@@ -264,7 +377,7 @@ export const ja = {
     signNote: '＋ は銃側へ傾く・上がる向き',
     noPerson: '！ このフレームでは人物を検出できなかったため、計測できません。',
     legend:
-      '「—」は関節が十分に見えない、または画面の外にあって計測できなかった項目。水平・鉛直はカメラの向きが基準（水平校正は段階④）。',
+      '「—」は関節が十分に見えない、または画面の外にあって計測できなかった項目。水平・鉛直は、ライブラリで水平の線を引くまではカメラの向きが基準。',
     na: '—',
   },
   units: {
