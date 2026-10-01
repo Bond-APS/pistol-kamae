@@ -46,6 +46,12 @@ interface Props {
   onCompare: (recordId: number) => void;
 }
 
+/**
+ * 保存する動画本体の大きさの上限（バイト）。保存と表示のとき、動画全体を一度メモリに載せるので、
+ * 大きすぎる動画はスマートフォンでブラウザが落ちる恐れがある。これを超える動画は、記録だけを保存する
+ */
+const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+
 const analysisOf = (r: AnalysisResult): RecordAnalysis => ({
   backendId: r.backendId,
   width: r.width,
@@ -63,6 +69,8 @@ export function MarkScreen(props: Props) {
   const [overwriteFailed, setOverwriteFailed] = useState(false);
   /** 記録は保存できたが、動画本体の保存に失敗した（端末の空き容量が足りないなど） */
   const [videoFailed, setVideoFailed] = useState(false);
+  /** 動画が大きすぎて、動画本体を保存しなかった */
+  const [videoTooLarge, setVideoTooLarge] = useState(false);
 
   const handedness = shooter?.handedness ?? 'right';
   const fileDate =
@@ -129,7 +137,9 @@ export function MarkScreen(props: Props) {
     const recordId = await addRecord(fields, analysisOf(result), marks, images);
     // 動画本体は大きいので、記録とは別に保存する。失敗しても記録は残し、その旨を知らせる
     let failed = props.file === null;
-    if (props.file) {
+    const tooLarge = props.file !== null && props.file.size > VIDEO_MAX_BYTES;
+    setVideoTooLarge(tooLarge);
+    if (props.file && !tooLarge) {
       try {
         await setRecordVideo(recordId, {
           bytes: await props.file.arrayBuffer(),
@@ -139,7 +149,7 @@ export function MarkScreen(props: Props) {
         failed = true;
       }
     }
-    setVideoFailed(failed);
+    setVideoFailed(failed && !tooLarge);
     props.onSaved({ recordId, marksKey: marksKeyOf(marks), fields });
     setFormOpen(false);
   };
@@ -187,6 +197,11 @@ export function MarkScreen(props: Props) {
             <p className="small num" data-testid="save-summary">
               {savedSummary}
             </p>
+            {videoTooLarge && (
+              <p className="small" data-testid="save-video-too-large">
+                {ja.save.videoTooLarge}
+              </p>
+            )}
             {videoFailed && (
               <p className="small" data-testid="save-video-failed">
                 {ja.save.videoFailed}

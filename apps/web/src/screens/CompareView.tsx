@@ -80,16 +80,21 @@ export function CompareView({ base, current }: Props) {
   const [baseOpacity, setBaseOpacity] = useState(DEFAULT_BASE_OPACITY);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [holding, setHolding] = useState(false);
-  const [linked, setLinked] = useState(false);
+  /**
+   * 「2 本を一緒に動かす」のとき、入れた瞬間の時刻の差（今回 − 基準、秒）。切ってあれば null。
+   * 動かすたびの差分を積み上げると、端に当たったときや丸めで対応がずれるので、最初の差を保つ
+   */
+  const [linkOffset, setLinkOffset] = useState<number | null>(null);
+  const linked = linkOffset !== null;
   const [playing, setPlaying] = useState(false);
   /** 表示中のフレーム番号。開いた直後はどちらも撃発の瞬間 */
   const [baseIndex, setBaseIndex] = useState(b.shotIndex);
   const [currentIndex, setCurrentIndex] = useState(c.shotIndex);
-  /** 動画を付け直したら増やし、読み直す */
-  const [videoVersion, setVideoVersion] = useState(0);
+  /** 動画を付け直したら増やし、その記録の動画だけを読み直す */
+  const [videoVersion, setVideoVersion] = useState({ base: 0, current: 0 });
 
-  const baseVideo = useRecordVideoUrl(base.row.id, videoVersion);
-  const currentVideo = useRecordVideoUrl(current.row.id, videoVersion);
+  const baseVideo = useRecordVideoUrl(base.row.id, videoVersion.base);
+  const currentVideo = useRecordVideoUrl(current.row.id, videoVersion.current);
   const baseVideoRef = useRef<HTMLVideoElement | null>(null);
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const setBaseVideo = useCallback((el: HTMLVideoElement | null) => {
@@ -124,27 +129,40 @@ export function CompareView({ base, current }: Props) {
     return baseValues && currentValues ? compareMetrics(baseValues, currentValues) : null;
   }, [b, c, baseIndex, currentIndex]);
 
+  /** 動画がいま表示しているコマに、骨格・バー・差分表を合わせる（読み込み前の動画は無視する） */
+  const syncIndices = useCallback(() => {
+    const bv = baseVideoRef.current;
+    const cv = currentVideoRef.current;
+    if (bv && bv.readyState >= 2) setBaseIndex(Math.max(frameIndexAt(b.frames, bv.currentTime), 0));
+    if (cv && cv.readyState >= 2) {
+      setCurrentIndex(Math.max(frameIndexAt(c.frames, cv.currentTime), 0));
+    }
+  }, [b, c]);
   const pause = useCallback(() => {
+    const wasPlaying = [baseVideoRef.current, currentVideoRef.current].some((v) => v && !v.paused);
     baseVideoRef.current?.pause();
     currentVideoRef.current?.pause();
+    // 止めた位置のコマに合わせる（最後に合わせてから進んだ分のずれを残さない）
+    if (wasPlaying) syncIndices();
     setPlaying(false);
-  }, []);
+  }, [syncIndices]);
 
   /** バーなどで時点を選ぶ。「2 本を一緒に動かす」なら、もう片方も同じ秒数だけ動かす */
   const select = (role: Role, index: number) => {
     pause();
     const [own, other] = role === 'base' ? [b, c] : [c, b];
-    const [ownIndex, otherIndex] =
-      role === 'base' ? [baseIndex, currentIndex] : [currentIndex, baseIndex];
     const [setOwn, setOther] =
       role === 'base' ? [setBaseIndex, setCurrentIndex] : [setCurrentIndex, setBaseIndex];
     setOwn(index);
-    if (linked) {
-      const moved = timeOf(own.frames, index) - timeOf(own.frames, ownIndex);
-      const target = timeOf(other.frames, otherIndex) + moved;
-      setOther(Math.max(frameIndexAt(other.frames, Math.max(target, 0)), 0));
+    if (linkOffset !== null) {
+      const own_t = timeOf(own.frames, index);
+      const target = role === 'base' ? own_t + linkOffset : own_t - linkOffset;
+      const last = other.frames.length - 1;
+      setOther(Math.min(Math.max(frameIndexAt(other.frames, Math.max(target, 0)), 0), last));
     }
   };
+  const toggleLinked = () =>
+    setLinkOffset(linked ? null : timeOf(c.frames, currentIndex) - timeOf(b.frames, baseIndex));
 
   // 再生中は、動画の進みに合わせて骨格・バー・差分表を動かす
   useEffect(() => {
@@ -153,24 +171,29 @@ export function CompareView({ base, current }: Props) {
     const tick = () => {
       const bv = baseVideoRef.current;
       const cv = currentVideoRef.current;
-      if (bv) setBaseIndex(Math.max(frameIndexAt(b.frames, bv.currentTime), 0));
-      if (cv) setCurrentIndex(Math.max(frameIndexAt(c.frames, cv.currentTime), 0));
-      // どちらかが終わりまで行ったら、両方止める
+      // どちらかが終わりまで行った・止まった・画面から外れたら、両方止める
       if (!bv || !cv || bv.ended || cv.ended || bv.paused || cv.paused) {
-        bv?.pause();
-        cv?.pause();
-        setPlaying(false);
+        pause();
         return;
       }
+      syncIndices();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, b, c]);
+  }, [playing, pause, syncIndices]);
   // 画面を離れるときは止める
-  useEffect(() => pause, [pause]);
+  useEffect(
+    () => () => {
+      baseVideoRef.current?.pause();
+      currentVideoRef.current?.pause();
+    },
+    [],
+  );
 
   const bothVideos = baseVideo.state === 'ready' && currentVideo.state === 'ready';
+  // 重ねられない 2 件は、重ねる表示では基準の動画を置かないので、横に並べたときだけ再生できる
+  const canPlay = bothVideos && !(layout === 'overlay' && cannotOverlay);
   const play = () => {
     const bv = baseVideoRef.current;
     const cv = currentVideoRef.current;
@@ -301,7 +324,11 @@ export function CompareView({ base, current }: Props) {
           className="chip"
           data-testid="toggle-side"
           aria-pressed={layout === 'side'}
-          onClick={() => setLayout(layout === 'side' ? 'overlay' : 'side')}
+          onClick={() => {
+            // 切り替えると動画の部品が作り直されるので、先に止めて、いまの時点を保つ
+            pause();
+            setLayout(layout === 'side' ? 'overlay' : 'side');
+          }}
         >
           {ja.compare.layoutSide}
         </button>
@@ -324,7 +351,7 @@ export function CompareView({ base, current }: Props) {
                   <AttachVideo
                     recordId={opened.row.id}
                     analysis={opened.record.analysis}
-                    onAttached={() => setVideoVersion((v) => v + 1)}
+                    onAttached={() => setVideoVersion((v) => ({ ...v, [role]: v[role] + 1 }))}
                     testId={`attach-${role}`}
                   />
                 </div>
@@ -353,13 +380,13 @@ export function CompareView({ base, current }: Props) {
           className="chip"
           data-testid="toggle-linked"
           aria-pressed={linked}
-          onClick={() => setLinked(!linked)}
+          onClick={toggleLinked}
         >
           {ja.compare.linked}
         </button>
         <button
           data-testid="compare-play"
-          disabled={!bothVideos}
+          disabled={!canPlay}
           onClick={() => (playing ? pause() : play())}
         >
           {playing ? ja.player.pause : ja.compare.playBoth}
@@ -367,6 +394,11 @@ export function CompareView({ base, current }: Props) {
       </div>
       {!bothVideos && noVideo.length > 0 && (
         <p className="muted small">{ja.compare.playUnavailable}</p>
+      )}
+      {bothVideos && !canPlay && (
+        <p className="muted small" data-testid="play-reason">
+          {ja.compare.playNeedsSide}
+        </p>
       )}
       {linked && <p className="muted small">{ja.compare.linkedNote}</p>}
 

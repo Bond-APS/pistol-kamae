@@ -292,11 +292,7 @@ export function CompareScreen(props: Props) {
             </div>
           )}
 
-          <CompareView
-            key={`${base.row.id}:${current.row.id}:${version}`}
-            base={base}
-            current={current}
-          />
+          <CompareView key={`${base.row.id}:${current.row.id}`} base={base} current={current} />
         </>
       )}
       {dialogs}

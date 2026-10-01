@@ -42,12 +42,21 @@ interface Props {
   children: ReactNode;
 }
 
+/** 押してから、基準だけの表示に切り替えるまでの待ち時間（ミリ秒） */
+const HOLD_DELAY_MS = 180;
+/** 待っている間に指がこれ以上動いたら、スクロールとみなして切り替えない（px） */
+const HOLD_MOVE_LIMIT_PX = 10;
 /** シーク先との差がこれ未満なら、動かさない（同じ時刻への無駄なシークを避ける） */
 const SEEK_EPSILON_SEC = 0.001;
+
+/** メタ情報が読めてから、最初のフレームが読めるのを待つ時間。過ぎたら一瞬だけ再生して読ませる */
+const FIRST_FRAME_WAIT_MS = 800;
 
 function LayerVideo({ layer }: { layer: StageLayer }) {
   const { videoUrl, timeSec, onVideo } = layer;
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  /** いちばん新しい「表示したい時刻」。シークの最中に次の指示が来たら、終わってからここへ移す */
+  const targetRef = useRef(timeSec);
   const setVideo = useCallback(
     (el: HTMLVideoElement | null) => {
       videoRef.current = el;
@@ -55,30 +64,54 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
     },
     [onVideo],
   );
-  // 止まっているときだけ、指定の時刻へ移す（再生中は動画の進みに任せる）
+  /** 止まっているときだけ、表示したい時刻へ移す（再生中は動画の進みに任せる） */
+  const seekToTarget = useCallback(() => {
+    const video = videoRef.current;
+    // バーを引いている間は指示が続けて来る。前のシークが終わる前に次を入れ続けると、
+    // iPhone では重くなる・終わらなくなることがあるので、終わってから最新の時刻へ 1 回だけ移す
+    if (!video || !video.paused || video.readyState === 0 || video.seeking) return;
+    if (Math.abs(video.currentTime - targetRef.current) > SEEK_EPSILON_SEC) {
+      video.currentTime = targetRef.current;
+    }
+  }, []);
+  useEffect(() => {
+    targetRef.current = timeSec;
+    seekToTarget();
+  }, [timeSec, videoUrl, seekToTarget]);
+  // 動画の URL は、ここで 1 回だけ渡して読み込みを始める（iPhone の Safari は、明示的に load() を
+  // 呼ばないと読み始めないことがある）。src を属性で渡してから load() を呼ぶと読み込みが 2 回始まり、
+  // WebKit では 1 回目の「最初の絵」の指示が取り消されて、先頭のコマのままになることがあった
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !video.paused || video.readyState === 0) return;
-    if (Math.abs(video.currentTime - timeSec) > SEEK_EPSILON_SEC) video.currentTime = timeSec;
-  }, [timeSec, videoUrl]);
-  // iPhone の Safari は、明示的に load() を呼ばないと読み始めないことがある
-  useEffect(() => {
-    videoRef.current?.load();
+    if (!video || !videoUrl) return;
+    video.src = videoUrl;
+    video.load();
   }, [videoUrl]);
 
   if (!videoUrl) return null;
   return (
     <video
       ref={setVideo}
-      src={videoUrl}
       muted
       playsInline
       preload="auto"
       data-testid={`stage-video-${layer.key}`}
       // 最初の絵を出す。Safari（WebKit）は、メタ情報が読めた時点（loadedmetadata）で時刻を移しても
       // 絵が出ず黒いままになるので、最初のフレームが読めてから（loadeddata）移す
-      onLoadedData={(e) => {
-        e.currentTarget.currentTime = timeSec;
+      onLoadedData={seekToTarget}
+      onCanPlay={seekToTarget}
+      onSeeked={seekToTarget}
+      // 省データの設定などで、再生するまで最初のフレームを読まない端末への保険：
+      // しばらく待っても読めなければ、一瞬だけ再生して読ませる（音は消してある）
+      onLoadedMetadata={(e) => {
+        const video = e.currentTarget;
+        setTimeout(() => {
+          if (video.readyState >= 2 || !video.paused || !video.isConnected) return;
+          void video.play().then(
+            () => video.pause(),
+            () => {},
+          );
+        }, FIRST_FRAME_WAIT_MS);
       }}
     />
   );
@@ -109,10 +142,35 @@ export function CompareStage({ view, layers, onHold, label, testId, children }: 
   const k = width / view.width;
   // 枠の座標 → 画面上の px
   const toScreen: Affine = { a: k, b: 0, c: 0, d: k, e: -view.x * k, f: -view.y * k };
-  const hold = (holding: boolean) => (e: ReactPointerEvent) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    onHold?.(holding);
+  // 押している間だけ基準を表示する。絵の上から画面をスクロールし始めたときに切り替わらないよう、
+  // 押してから少し待ち、その間に指が動いたら（スクロールとみなして）取り消す
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdStart = useRef<{ x: number; y: number } | null>(null);
+  const endHold = () => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    holdStart.current = null;
+    onHold?.(false);
   };
+  const startHold = (e: ReactPointerEvent) => {
+    if (!onHold || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    holdStart.current = { x: e.clientX, y: e.clientY };
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      onHold(true);
+    }, HOLD_DELAY_MS);
+  };
+  const moveHold = (e: ReactPointerEvent) => {
+    const start = holdStart.current;
+    if (!start || holdTimer.current === null) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > HOLD_MOVE_LIMIT_PX) endHold();
+  };
+  useEffect(
+    () => () => {
+      if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
 
   return (
     <div
@@ -122,12 +180,13 @@ export function CompareStage({ view, layers, onHold, label, testId, children }: 
       style={{
         aspectRatio: `${view.width} / ${view.height}`,
         // 縦長の範囲でも画面からはみ出さないよう、高さの上限に合わせて幅を狭める
-        width: `min(100%, calc(60vh * ${view.width / view.height}))`,
+        width: `min(100%, calc(50vh * ${view.width / view.height}))`,
       }}
-      onPointerDown={hold(true)}
-      onPointerUp={hold(false)}
-      onPointerCancel={hold(false)}
-      onPointerLeave={hold(false)}
+      onPointerDown={startHold}
+      onPointerMove={moveHold}
+      onPointerUp={endHold}
+      onPointerCancel={endHold}
+      onPointerLeave={endHold}
       onContextMenu={(e) => e.preventDefault()}
     >
       {width > 0 &&

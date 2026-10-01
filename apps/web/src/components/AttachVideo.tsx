@@ -14,11 +14,18 @@ interface Props {
 
 /**
  * 動画の長さがこれ以上違えば、別の動画とみなす（秒）。
- * 同じファイルなら長さはぴったり同じになるので、狭くしてある（1 フレームは約 0.033 秒）。
+ * 同じファイルなら長さは同じになるが、端末が選ぶたびに書き出し直す場合のわずかな違いは許す。
  */
-const DURATION_TOLERANCE_SEC = 0.05;
+const DURATION_TOLERANCE_SEC = 0.2;
 
 type Status = 'idle' | 'busy' | 'mismatch' | 'unsupported' | 'failed';
+
+/** 選んだ動画の大きさと長さ（違ったときに見せる） */
+interface Picked {
+  width: number;
+  height: number;
+  durationSec: number;
+}
 
 /**
  * 動画本体のない記録（仕様変更の前に保存した記録、保存に失敗した記録）に、あとから動画を付けるボタン。
@@ -27,6 +34,7 @@ type Status = 'idle' | 'busy' | 'mismatch' | 'unsupported' | 'failed';
 export function AttachVideo({ recordId, analysis, onAttached, testId }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<Status>('idle');
+  const [picked, setPicked] = useState<Picked | null>(null);
 
   const onPick = async (file: File | undefined) => {
     if (!file) return;
@@ -42,6 +50,7 @@ export function AttachVideo({ recordId, analysis, onAttached, testId }: Props) {
       video.videoWidth === analysis.width &&
       video.videoHeight === analysis.height &&
       Math.abs(video.duration - analysis.durationSec) < DURATION_TOLERANCE_SEC;
+    setPicked({ width: video.videoWidth, height: video.videoHeight, durationSec: video.duration });
     releaseVideo(video);
     if (!same) {
       setStatus('mismatch');
@@ -81,6 +90,19 @@ export function AttachVideo({ recordId, analysis, onAttached, testId }: Props) {
       {status === 'mismatch' && (
         <p className="danger small" data-testid={`${testId}-error`}>
           {ja.video.mismatch}
+          {picked && (
+            <>
+              <br />
+              {ja.video.mismatchDetail(
+                analysis.width,
+                analysis.height,
+                analysis.durationSec,
+                picked.width,
+                picked.height,
+                picked.durationSec,
+              )}
+            </>
+          )}
         </p>
       )}
       {status === 'unsupported' && (

@@ -626,6 +626,63 @@ try {
       (await timeIndex('current')) === pausedAt[1],
     pausedAt.join(' / '),
   );
+  // 止めたあと、動画の絵と、骨格・バーが同じコマを指している
+  await waitStageVideos();
+  const afterPause = await page.evaluate(() => {
+    const fps = 30;
+    return ['base', 'current'].map((role) => ({
+      index: Number(document.querySelector(`[data-testid=time-${role}]`).dataset.frameIndex),
+      videoFrame: Math.floor(
+        document.querySelector(`[data-testid=stage-video-${role}]`).currentTime * fps + 1e-6,
+      ),
+    }));
+  });
+  check(
+    '止めたあと、動画の絵と骨格・バーが同じコマ',
+    afterPause.every((v) => v.index === v.videoFrame),
+    JSON.stringify(afterPause),
+  );
+  // 再生中に「横に並べる」へ切り替えても、時点が先頭に戻らない
+  await tid('compare-play').click();
+  await page.waitForTimeout(300);
+  await tid('toggle-side').click();
+  await tid('compare-side').waitFor();
+  await waitStageVideos();
+  const afterToggle = [await timeIndex('base'), await timeIndex('current')];
+  summary.afterToggleDebug = [
+    await stageVideo('base').then((v) => ({ t: v.time, rs: v.ready, seeking: v.seeking })),
+    await page.waitForTimeout(700),
+    await stageVideo('base').then((v) => ({ t: v.time, rs: v.ready, seeking: v.seeking })),
+    await page.evaluate(() => document.querySelectorAll('[data-testid=stage-video-base]').length),
+  ];
+  check(
+    '再生中に「横に並べる」へ切り替えると止まり、時点はそのまま（先頭に戻らない）',
+    afterToggle[0] >= pausedAt[0] &&
+      afterToggle[1] >= pausedAt[1] &&
+      (await stageVideo('base')).paused &&
+      Math.abs((await stageVideo('base')).time * 30 - afterToggle[0]) < 1,
+    `${afterToggle.join(' / ')}、止めた位置 ${pausedAt.join(' / ')}、基準の動画 ${((await stageVideo('base')).time * 30).toFixed(2)} コマ目`,
+  );
+  await tid('toggle-side').click();
+  await waitStageVideos();
+  // 連動：片方を端まで動かして戻しても、入れたときの対応に戻る
+  await slideTime('base', shotA - 20);
+  await slideTime('current', shotB - 5);
+  await tid('toggle-linked').click();
+  // 基準のほうが撃発までが長いので、基準を先頭へ動かすと、今回は先頭で止まる
+  await slideTime('base', 0);
+  check(
+    '連動中、相手が先頭より前へは行かない（0 で止まる）',
+    (await timeIndex('current')) === 0,
+    await timeIndex('current'),
+  );
+  await slideTime('base', shotA - 20);
+  check(
+    '端に当たってから戻しても、連動を入れたときの対応に戻る',
+    (await timeIndex('current')) === shotB - 5,
+    await timeIndex('current'),
+  );
+  await tid('toggle-linked').click();
   await page.screenshot({ path: join(outDir, `compare-${browserName}-video.png`), fullPage: true });
 
   // 動画のない記録：撃発の瞬間の写真と骨格だけが出る。あとから動画を付けられる
