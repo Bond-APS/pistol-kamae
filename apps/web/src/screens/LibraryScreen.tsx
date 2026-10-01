@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { RecordSummary } from '../components/RecordSummary';
-import { listRecords, setRecordFavorite } from '../db/library';
+import { listRecords, setRecordFavorite, storageUsage } from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import {
@@ -39,6 +39,8 @@ export function LibraryScreen(props: Props) {
   const { active, shooters, onShootersChanged, onGoLoad, onRecordChanged, onRecordDeleted } = props;
   const [rows, setRows] = useState<RecordRow[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  /** この端末で使っている保存容量（バイト）。調べられなければ null */
+  const [usage, setUsage] = useState<number | null>(null);
   const [filter, setFilter] = useState<ListFilter>(NO_FILTER);
   const [openId, setOpenId] = useState<number | null>(null);
   /** 記録を開く前の一覧のスクロール位置。戻ったときに復元する */
@@ -50,6 +52,7 @@ export function LibraryScreen(props: Props) {
         (list) => {
           setRows(list);
           setLoadFailed(false);
+          void storageUsage().then(setUsage);
         },
         () => setLoadFailed(true),
       ),
@@ -239,6 +242,11 @@ export function LibraryScreen(props: Props) {
             </div>
           ))}
         </>
+      )}
+      {usage !== null && total > 0 && (
+        <p className="muted small num" data-testid="library-usage">
+          {ja.video.usage(Math.round(usage / 1_000_000))}
+        </p>
       )}
     </section>
   );

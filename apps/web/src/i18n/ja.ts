@@ -140,6 +140,8 @@ export const ja = {
     compare: '基準と比べる',
     failedTitle: '！ 保存できませんでした',
     failedBody: '端末の空き容量を確認して、もう一度押してください。',
+    videoFailed:
+      '！ 動画本体は保存できませんでした（端末の空き容量が足りない可能性があります）。比較画面では、撃発の瞬間の写真と骨格だけが出ます。',
   },
   record: {
     formSaveTitle: 'ライブラリに保存',
@@ -197,6 +199,17 @@ export const ja = {
     removeFailed: '！ 削除できませんでした。もう一度押してください。',
     notFound: '！ この記録を開けませんでした。',
     compare: '基準と比べる',
+  },
+  video: {
+    attach: '動画を付ける（ファイルを選ぶ）',
+    attaching: '動画を確かめています…',
+    mismatch:
+      '！ この記録の動画ではないようです（画面の大きさか長さが違います）。記録を作ったときと同じ動画を選んでください。',
+    failed: '！ 動画を保存できませんでした。端末の空き容量を確認してください。',
+    rowSaved: '動画：保存済み',
+    rowNone: '動画：なし',
+    rowNoneHint: '比較画面で、撃発の瞬間以外の絵が出ません',
+    usage: (mb: number) => `この端末で使っている保存容量：約 ${mb} MB（動画を含む）`,
   },
   level: {
     rowNone: '水平の線：なし',
@@ -261,7 +274,24 @@ export const ja = {
     pickNoMatch: '条件に合う記録がありません。',
     goLibrary: 'ライブラリを開く',
     selected: '選択中',
-    photoNote: '写真は「今回」の撃発の瞬間',
+    holdNote: '絵を押している間は基準だけを表示します。離すと今回に戻ります。',
+    baseOpacity: '基準の濃さ',
+    showSkeleton: '骨格を表示',
+    timeSlider: (role: string) => `${role}の時点（つまみを動かして選ぶ）`,
+    atShot: '撃発の瞬間',
+    beforeShot: (sec: number) => `撃発の ${sec.toFixed(2)} 秒前`,
+    afterShot: (sec: number) => `撃発の ${sec.toFixed(2)} 秒後`,
+    toShot: '撃発へ',
+    linked: '2 本を一緒に動かす',
+    linkedNote:
+      '片方のバーを動かすと、もう片方も同じ秒数だけ動きます。先にそれぞれを合わせたい時点（例：振り上げ開始）にしてから入れると、そこを揃えたまま動かせます。',
+    playBoth: '2 本を再生',
+    playUnavailable: '2 本の再生は、両方の記録に動画があるときに使えます。',
+    noVideoBoth: 'どちらの記録にも動画がありません',
+    noVideoOne: (role: string) => `「${role}」の記録に動画がありません`,
+    noVideoBody:
+      '動画のない記録は、撃発の瞬間の写真と骨格だけが出ます（バーを動かすと、骨格と差分表は変わります）。記録を作ったときと同じ動画ファイルを選ぶと、動画を付けられます。',
+    attachFor: (role: string) => `「${role}」の動画`,
     overlayAlt: '基準と今回の骨格を重ねた図',
     layoutOverlay: '重ねる',
     layoutSide: '横に並べる',
@@ -292,6 +322,8 @@ export const ja = {
     backendTitle: '姿勢推定のモデルが違う 2 件です',
     backendBody: 'モデルが違うと角度が系統的にずれるため、差は参考になりません。',
     tableTitle: '撃発の瞬間の差',
+    tableTitleAt: '選んだ時点の差',
+    tableTimes: (base: string, current: string) => `基準：${base}／今回：${current}`,
     signNote:
       '差＝今回 − 基準。角度の＋は今回のほうが銃側へ傾く・上がる向き、比の＋は今回のほうが大きい',
     colBase: '基準',

@@ -1,5 +1,5 @@
 // ブラウザ内データベース（IndexedDB）の表の定義。Dexie は IndexedDB を扱いやすくする部品。
-// 保存はすべてこの端末の中で完結する。動画本体は保存しない。
+// 保存はすべてこの端末の中で完結する。動画本体も端末の中にだけ保存する（比較画面で、任意の時点の絵を出すため）。
 
 import {
   RECORD_FORMAT_VERSION,
@@ -54,6 +54,17 @@ export interface RecordDataRow {
   still: StoredImage;
 }
 
+/**
+ * 記録の動画本体。id は RecordRow と同じ。重いので、比較画面で使うときだけ読む。
+ * Blob のままだと Safari（WebKit）で保存に失敗するので、画像と同じくバイト列で持つ。
+ */
+export interface RecordVideoRow {
+  id: number;
+  bytes: ArrayBuffer;
+  /** 動画の種類（例：video/quicktime） */
+  type: string;
+}
+
 /** 前回選んだ射手など、端末ごとの小さな設定 */
 export interface SettingRow {
   key: string;
@@ -64,6 +75,7 @@ export class KamaeDb extends Dexie {
   shooters!: EntityTable<ShooterRow, 'id'>;
   records!: EntityTable<RecordRow, 'id'>;
   recordData!: Table<RecordDataRow, number>;
+  recordVideos!: Table<RecordVideoRow, number>;
   settings!: Table<SettingRow, string>;
 
   constructor() {
@@ -88,6 +100,8 @@ export class KamaeDb extends Dexie {
           }
         }),
     );
+    // 版 3（段階④の仕様変更）：動画本体の表を足した。それまでの記録は「動画なし」のまま残る
+    this.version(3).stores({ recordVideos: 'id' });
   }
 }
 

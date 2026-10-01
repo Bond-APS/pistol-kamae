@@ -11,6 +11,7 @@ import {
   type Rect,
 } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AttachVideo } from '../components/AttachVideo';
 import { ConfirmDialog } from '../components/Dialog';
 import { LevelEditor } from '../components/LevelEditor';
 import { MetricTable } from '../components/MetricTable';
@@ -20,6 +21,7 @@ import { StillView } from '../components/StillView';
 import { StoredImg } from '../components/StoredImg';
 import {
   deleteRecord,
+  hasRecordVideo,
   openRecord,
   setRecordFavorite,
   setRecordLevel,
@@ -56,6 +58,18 @@ export function RecordDetail(props: Props) {
   const [fit, setFit] = useState<'person' | 'whole'>('person');
   const [editing, setEditing] = useState(false);
   const [leveling, setLeveling] = useState(false);
+  /** 動画本体が保存されているか。調べ終わるまでは null */
+  const [hasVideo, setHasVideo] = useState<boolean | null>(null);
+  const checkVideo = useCallback(
+    () =>
+      hasRecordVideo(recordId).then(setHasVideo, () => {
+        setHasVideo(false);
+      }),
+    [recordId],
+  );
+  useEffect(() => {
+    void checkVideo();
+  }, [checkVideo]);
   const [removing, setRemoving] = useState(false);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeFailed, setRemoveFailed] = useState(false);
@@ -224,6 +238,28 @@ export function RecordDetail(props: Props) {
           {record.level === null ? ja.level.draw : ja.level.redraw}
         </button>
       </div>
+
+      {hasVideo !== null && (
+        <div className="level-row" data-testid="detail-video" data-has-video={hasVideo}>
+          <span className="grow small">
+            <strong>{hasVideo ? ja.video.rowSaved : ja.video.rowNone}</strong>
+            {!hasVideo && (
+              <>
+                <br />
+                <span className="muted">{ja.video.rowNoneHint}</span>
+              </>
+            )}
+          </span>
+        </div>
+      )}
+      {hasVideo === false && (
+        <AttachVideo
+          recordId={row.id}
+          analysis={analysis}
+          onAttached={() => void checkVideo()}
+          testId="detail-attach"
+        />
+      )}
 
       <button
         className="primary full"

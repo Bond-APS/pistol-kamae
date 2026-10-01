@@ -21,8 +21,8 @@ interface Props {
   onShooterChange: (shooterId: number) => void;
   onShootersChanged: () => Promise<void>;
   result: AnalysisResult | null;
-  /** fileDate は動画ファイルの更新日時（撮影日時の初期値に使う） */
-  onResult: (r: AnalysisResult | null, fileDate: Date | null) => void;
+  /** file は選んだ動画ファイル（保存のとき、動画本体と撮影日時の初期値に使う） */
+  onResult: (r: AnalysisResult | null, file: File | null) => void;
   /** 保存していないマークがあるか。あれば、動画を選び直す前に確認する */
   hasUnsaved: boolean;
   onGoMark: () => void;
@@ -56,7 +56,7 @@ export function LoadScreen(props: Props) {
   const [confirmingPick, setConfirmingPick] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const fileDateRef = useRef<Date | null>(null);
+  const fileRef = useRef<File | null>(null);
   /** 確認を済ませた直後のファイル選択では、もう一度確認しない */
   const confirmedPickRef = useRef(false);
 
@@ -74,7 +74,7 @@ export function LoadScreen(props: Props) {
     props.onResult(null, null);
     releaseVideo(videoRef.current);
     videoRef.current = null;
-    fileDateRef.current = Number.isFinite(file.lastModified) ? new Date(file.lastModified) : null;
+    fileRef.current = file;
     setInfo(null);
     setStatus({ kind: 'loading' });
     try {
@@ -104,7 +104,7 @@ export function LoadScreen(props: Props) {
         onProgress: (done, total) => setStatus({ kind: 'running', done, total }),
       });
       video.currentTime = 0;
-      props.onResult(analyzed, fileDateRef.current);
+      props.onResult(analyzed, fileRef.current);
       setStatus({
         kind: 'done',
         frames: analyzed.frames.length,

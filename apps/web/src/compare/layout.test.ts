@@ -10,7 +10,14 @@ import {
   type Point,
 } from '@pistol-kamae/engine';
 import { describe, expect, it } from 'vitest';
-import { canNormalize, overlayLayout, sameAspect, sideBySideViews, type PoseSide } from './layout';
+import {
+  canNormalize,
+  overlayLayout,
+  sameAspect,
+  sequenceBounds,
+  sideBySideViews,
+  type PoseSide,
+} from './layout';
 
 const p = (x: number, y: number, visibility = 1): Point => ({ x, y, visibility });
 const SIZE = { width: 1000, height: 1000 };
@@ -192,5 +199,35 @@ describe('sideBySideViews：横に並べるときの範囲', () => {
     const views = sideBySideViews(side(null), side(upright()));
     expect(views.base).toEqual({ x: 0, y: 0, width: 1000, height: 1000 });
     expect(views.current.x).toBeCloseTo(100 - 105, 6);
+  });
+});
+
+describe('sequenceBounds：動画全体を通した人物の範囲', () => {
+  it('全フレームの範囲をすべて含む。人物のいないフレームは飛ばす', () => {
+    const lowered = upright();
+    // 腕を下ろしている（手首が腰の横、画面の下のほう）
+    lowered.rightWrist = p(380, 620);
+    const frames = [
+      { timeSec: 0, landmarks: lowered },
+      { timeSec: 0.1, landmarks: null },
+      { timeSec: 0.2, landmarks: upright() },
+    ];
+    // 腕を上げた姿勢は x 100〜620、下ろした姿勢は x 380〜620。y はどちらも 100〜800
+    expect(sequenceBounds(frames, SIZE, 1)).toEqual({ x: 100, y: 100, width: 520, height: 700 });
+    expect(sequenceBounds([{ timeSec: 0, landmarks: null }], SIZE, 1)).toBeNull();
+    expect(sequenceBounds([], SIZE)).toBeNull();
+  });
+
+  it('範囲を渡すと、表示範囲はその範囲から決まる（撃発の瞬間の姿勢は位置合わせにだけ使う）', () => {
+    const wide = { x: 0, y: 50, width: 900, height: 900 };
+    const layout = overlayLayout(
+      side(upright(), { bounds: wide }),
+      side(upright(), { bounds: wide }),
+      'normalized',
+    );
+    // 長い辺 900 の 15% の余白
+    expect(layout.view.x).toBeCloseTo(-135, 6);
+    expect(layout.view.width).toBeCloseTo(900 + 270, 6);
+    expect(layout.sizeRatio).toBeCloseTo(1, 9);
   });
 });

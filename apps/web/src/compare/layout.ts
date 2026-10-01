@@ -18,13 +18,20 @@ import {
   type CommonLandmarks,
   type Handedness,
   type ImageSize,
+  type LandmarkFrame,
   type Rect,
 } from '@pistol-kamae/engine';
 
 /** 比べる片方（基準または今回）の、撃発の瞬間の姿勢 */
 export interface PoseSide {
-  /** 撃発フレームの関節の位置。人物を検出できていなければ null */
+  /** 撃発フレームの関節の位置。人物を検出できていなければ null。位置合わせ（揃える）はこの姿勢で決める */
   landmarks: CommonLandmarks | null;
+  /**
+   * 表示範囲を決めるための、人物が写っている範囲。省略時は landmarks から求める。
+   * 動画の全体を見るときは、全フレームを通した範囲（sequenceBounds）を入れる
+   * （撃発の瞬間の範囲だけだと、腕を下ろした姿勢などが枠からはみ出すため）。
+   */
+  bounds?: Rect | null;
   /** 動画の大きさ（画素） */
   size: ImageSize;
   /** カメラの傾き（度）。水平の線がなければ 0 */
@@ -44,6 +51,31 @@ const wholeOf = (size: ImageSize): Rect => ({ x: 0, y: 0, width: size.width, hei
 
 const anchorOf = (side: PoseSide): BodyAnchor | null =>
   side.landmarks ? bodyAnchor(side.landmarks, side.size) : null;
+
+const boundsOf = (side: PoseSide): Rect | null =>
+  side.bounds !== undefined
+    ? side.bounds
+    : side.landmarks
+      ? personBounds(side.landmarks, side.size)
+      : null;
+
+/**
+ * 動画の全フレームを通して、人物が写っている範囲。人物を 1 度も検出できていなければ null。
+ * every は何フレームおきに調べるか（全フレームを調べなくても範囲はほとんど変わらない）。
+ */
+export function sequenceBounds(
+  frames: ReadonlyArray<LandmarkFrame>,
+  size: ImageSize,
+  every = 3,
+): Rect | null {
+  let bounds: Rect | null = null;
+  for (let i = 0; i < frames.length; i += every) {
+    const landmarks = frames[i]!.landmarks;
+    const b = landmarks ? personBounds(landmarks, size) : null;
+    if (b) bounds = bounds ? unionRect(bounds, b) : b;
+  }
+  return bounds;
+}
 
 /** 位置と大きさを揃えられるか（どちらも両肩・両腰が使えること） */
 export function canNormalize(base: PoseSide, current: PoseSide): boolean {
@@ -99,8 +131,8 @@ export function overlayLayout(base: PoseSide, current: PoseSide, mode: AlignMode
   const sizeRatio =
     movedAnchor && currentAnchor ? movedAnchor.trunkLength / currentAnchor.trunkLength : null;
 
-  const currentBounds = current.landmarks ? personBounds(current.landmarks, current.size) : null;
-  const baseBounds = base.landmarks ? personBounds(base.landmarks, base.size) : null;
+  const currentBounds = boundsOf(current);
+  const baseBounds = boundsOf(base);
   const movedBounds = baseBounds ? transformedBounds(baseBounds, baseTransform) : null;
   const bounds =
     currentBounds && movedBounds
@@ -120,7 +152,7 @@ interface Extents {
 }
 
 function extentsOf(side: PoseSide, anchor: BodyAnchor): Extents | null {
-  const bounds = side.landmarks ? personBounds(side.landmarks, side.size) : null;
+  const bounds = boundsOf(side);
   if (!bounds) return null;
   const rect = padRect(bounds, VIEW_MARGIN);
   const { hipCenter, trunkLength } = anchor;
@@ -134,7 +166,7 @@ function extentsOf(side: PoseSide, anchor: BodyAnchor): Extents | null {
 
 /** 人物に寄せた範囲（余白付き）。人物を検出できていなければ画像全体 */
 function personView(side: PoseSide): Rect {
-  const bounds = side.landmarks ? personBounds(side.landmarks, side.size) : null;
+  const bounds = boundsOf(side);
   return bounds ? padRect(bounds, VIEW_MARGIN) : wholeOf(side.size);
 }
 

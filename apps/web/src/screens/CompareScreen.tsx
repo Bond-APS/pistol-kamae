@@ -1,26 +1,20 @@
 import {
   bodyAnchor,
-  compareMetrics,
   formatScore,
   frameIndexAt,
+  hasUsableLevel,
   parseLocalDateTime,
   shotMarkOf,
-  shotMetricsOfRecord,
-  tiltDegOfRecord,
   type LevelLine,
 } from '@pistol-kamae/engine';
-import { useEffect, useMemo, useState } from 'react';
-import { canNormalize, overlayLayout, sameAspect, sideBySideViews } from '../compare/layout';
-import type { AlignMode, PoseSide } from '../compare/layout';
-import { DiffTable } from '../components/DiffTable';
+import { useEffect, useState } from 'react';
 import { LevelEditor } from '../components/LevelEditor';
 import { RecordPicker } from '../components/RecordPicker';
-import { skeletonParts } from '../components/skeleton';
-import { StillView } from '../components/StillView';
 import { StoredImg } from '../components/StoredImg';
 import { openRecord, setRecordLevel, type ComparePair, type OpenedRecord } from '../db/library';
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
+import { CompareView } from './CompareView';
 
 interface Props {
   shooters: ShooterRow[];
@@ -45,23 +39,21 @@ interface Loaded {
   current: OpenedRecord | null;
 }
 
-/** 人物の大きさがこの割合を超えて違えば、カメラの位置が違うとみなして案内する */
-const SIZE_NOTICE_RATIO = 0.05;
-
-/** 記録の撃発の瞬間の姿勢 */
-function poseOf(opened: OpenedRecord): PoseSide {
+/** 記録の撃発の瞬間の、射手の左右の位置（腰の中心の x）。求められなければ null */
+function personXOf(opened: OpenedRecord): number | null {
   const { record } = opened;
   const shot = shotMarkOf(record.marks);
   const frames = record.analysis.frames;
-  return {
-    landmarks: shot ? (frames[frameIndexAt(frames, shot.timeSec)]?.landmarks ?? null) : null,
-    size: { width: record.analysis.width, height: record.analysis.height },
-    tiltDeg: tiltDegOfRecord(record),
-    handedness: record.meta.handedness,
-  };
+  const landmarks = shot ? frames[frameIndexAt(frames, shot.timeSec)]?.landmarks : null;
+  if (!landmarks) return null;
+  const size = { width: record.analysis.width, height: record.analysis.height };
+  return bodyAnchor(landmarks, size)?.hipCenter.x ?? null;
 }
 
-/** 比較画面：基準と今回の 2 件の撃発の瞬間を重ね、角度の差を表で示す */
+/**
+ * 比較画面：基準と今回の 2 件を選び、動画を重ねて、選んだ時点どうしの角度の差を表で示す。
+ * ここでは 2 件の選択と案内を受け持ち、図と表は CompareView が受け持つ。
+ */
 export function CompareScreen(props: Props) {
   const { shooters, pair, onPairChange, autoPickBase, onAutoPickHandled, onGoLibrary } = props;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -76,8 +68,6 @@ export function CompareScreen(props: Props) {
     if (autoPickBase) onAutoPickHandled();
   }, [autoPickBase, onAutoPickHandled]);
   const [leveling, setLeveling] = useState<Role | null>(null);
-  const [layout, setLayout] = useState<'overlay' | 'side'>('overlay');
-  const [align, setAlign] = useState<AlignMode>('normalized');
 
   // 射手の名前や利き手が直されたときも読み直す（角度は利き手から計算し直す）
   useEffect(() => {
@@ -110,22 +100,6 @@ export function CompareScreen(props: Props) {
   const ready = loaded !== null && loaded.pair === pair;
   const base = ready ? loaded.base : null;
   const current = ready ? loaded.current : null;
-
-  const view = useMemo(() => {
-    if (!base || !current) return null;
-    const basePose = poseOf(base);
-    const currentPose = poseOf(current);
-    const baseMetrics = shotMetricsOfRecord(base.record)?.values ?? null;
-    const currentMetrics = shotMetricsOfRecord(current.record)?.values ?? null;
-    return {
-      basePose,
-      currentPose,
-      normalizable: canNormalize(basePose, currentPose),
-      rawAvailable: sameAspect(basePose.size, currentPose.size),
-      diffs: baseMetrics && currentMetrics ? compareMetrics(baseMetrics, currentMetrics) : null,
-      side: sideBySideViews(basePose, currentPose),
-    };
-  }, [base, current]);
 
   const choose = (role: Role, id: number) => {
     setMissing(false);
@@ -181,10 +155,7 @@ export function CompareScreen(props: Props) {
   };
 
   const levelTarget = leveling === 'base' ? base : leveling === 'current' ? current : null;
-  const levelPose = levelTarget ? poseOf(levelTarget) : null;
-  const levelPersonX = levelPose?.landmarks
-    ? (bodyAnchor(levelPose.landmarks, levelPose.size)?.hipCenter.x ?? null)
-    : null;
+  const levelPersonX = levelTarget ? personXOf(levelTarget) : null;
   const dialogs = (
     <>
       {picking && (
@@ -253,12 +224,11 @@ export function CompareScreen(props: Props) {
     );
   }
 
-  // 位置と大きさを揃えられないときは「撮ったまま」で重ねる。それも無理（縦横比が違う）なら重ねない
-  const mode: AlignMode = view && !view.normalizable ? 'raw' : align;
-  const cannotOverlay = view !== null && !view.normalizable && !view.rawAvailable;
-  const overlay = view ? overlayLayout(view.basePose, view.currentPose, mode) : null;
-  const noLevel = ROLES.filter((role) => (role === 'base' ? base : current)?.record.level === null);
-  const sizeGap = overlay?.sizeRatio ? Math.abs(overlay.sizeRatio - 1) : 0;
+  // 水平の線がない、または今の基準に合わず補正に使っていない記録
+  const noLevel = ROLES.filter((role) => {
+    const opened = role === 'base' ? base : current;
+    return opened !== null && !hasUsableLevel(opened.record);
+  });
 
   return (
     <section data-testid="compare">
@@ -283,7 +253,7 @@ export function CompareScreen(props: Props) {
         </button>
       )}
 
-      {base && current && view && overlay && (
+      {base && current && (
         <>
           {noLevel.length > 0 && (
             <div className="notice err" data-testid="compare-no-level">
@@ -322,121 +292,11 @@ export function CompareScreen(props: Props) {
             </div>
           )}
 
-          {layout === 'overlay' ? (
-            <div data-testid="compare-overlay" data-align={mode}>
-              <StillView
-                image={current.still}
-                width={view.currentPose.size.width}
-                height={view.currentPose.size.height}
-                landmarks={view.currentPose.landmarks}
-                view={overlay.view}
-                baseParts={
-                  view.basePose.landmarks && !cannotOverlay
-                    ? skeletonParts(
-                        view.basePose.landmarks,
-                        view.basePose.size,
-                        overlay.baseTransform,
-                      )
-                    : null
-                }
-                alt={ja.compare.overlayAlt}
-              />
-              <p className="muted small photo-note">{ja.compare.photoNote}</p>
-            </div>
-          ) : (
-            <div className="side-by-side" data-testid="compare-side">
-              {ROLES.map((role) => {
-                const opened = role === 'base' ? base : current;
-                const pose = role === 'base' ? view.basePose : view.currentPose;
-                return (
-                  <div key={role}>
-                    <p className="pair-role">
-                      <span className={`skeleton-key ${role}`} aria-hidden="true" />
-                      {roleName(role)}
-                    </p>
-                    <StillView
-                      image={opened.still}
-                      width={pose.size.width}
-                      height={pose.size.height}
-                      landmarks={pose.landmarks}
-                      view={role === 'base' ? view.side.base : view.side.current}
-                      variant={role}
-                      testId={`still-${role}`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="seg spaced">
-            {(['overlay', 'side'] as const).map((l) => (
-              <button
-                key={l}
-                data-testid={`layout-${l}`}
-                aria-pressed={layout === l}
-                onClick={() => setLayout(l)}
-              >
-                {l === 'overlay' ? ja.compare.layoutOverlay : ja.compare.layoutSide}
-              </button>
-            ))}
-          </div>
-          {layout === 'side' && <p className="muted small">{ja.compare.sideNote}</p>}
-          {layout === 'overlay' && cannotOverlay && (
-            <div className="notice" data-testid="compare-cannot-overlay">
-              <strong>{ja.compare.cannotOverlayTitle}</strong>
-              <p className="small">{ja.compare.cannotOverlayBody}</p>
-            </div>
-          )}
-          {layout === 'overlay' && !cannotOverlay && (
-            <>
-              <div className="seg spaced">
-                <button
-                  data-testid="align-normalized"
-                  aria-pressed={mode === 'normalized'}
-                  disabled={!view.normalizable}
-                  onClick={() => setAlign('normalized')}
-                >
-                  {ja.compare.alignNormalized}
-                </button>
-                <button
-                  data-testid="align-raw"
-                  aria-pressed={mode === 'raw'}
-                  disabled={!view.rawAvailable && view.normalizable}
-                  onClick={() => setAlign('raw')}
-                >
-                  {ja.compare.alignRaw}
-                </button>
-              </div>
-              {!view.normalizable && (
-                <p className="muted small" data-testid="align-normalized-reason">
-                  {ja.compare.normalizedUnavailable}
-                </p>
-              )}
-              {!view.rawAvailable && (
-                <p className="muted small" data-testid="align-raw-reason">
-                  {ja.compare.rawUnavailable}
-                </p>
-              )}
-              <p className="muted small">
-                {mode === 'normalized' ? ja.compare.normalizedNote : ja.compare.rawNote}
-                {mode === 'normalized' && noLevel.length === 0 && ja.compare.normalizedLevelNote}
-              </p>
-              {mode === 'raw' && view.normalizable && sizeGap > SIZE_NOTICE_RATIO && (
-                <div className="notice" data-testid="compare-camera-moved">
-                  <strong>{ja.compare.cameraMovedTitle}</strong>
-                  <p className="small">{ja.compare.cameraMovedBody(Math.round(sizeGap * 100))}</p>
-                </div>
-              )}
-            </>
-          )}
-
-          <h3>{ja.compare.tableTitle}</h3>
-          {view.diffs ? (
-            <DiffTable diffs={view.diffs} testId="diff-table" />
-          ) : (
-            <p className="danger small">{ja.metricTable.noPerson}</p>
-          )}
+          <CompareView
+            key={`${base.row.id}:${current.row.id}:${version}`}
+            base={base}
+            current={current}
+          />
         </>
       )}
       {dialogs}

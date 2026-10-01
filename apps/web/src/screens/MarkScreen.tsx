@@ -18,7 +18,7 @@ import { useMemo, useState, type RefObject } from 'react';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { MetricTable } from '../components/MetricTable';
 import { RecordForm } from '../components/RecordForm';
-import { addRecord, overwriteRecordMarks, type RecordFields } from '../db/library';
+import { addRecord, overwriteRecordMarks, setRecordVideo, type RecordFields } from '../db/library';
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import { isChangedAfterSave, marksKeyOf, type SavedState } from '../library/savedState';
@@ -35,8 +35,8 @@ interface Props {
   shooter: ShooterRow | null;
   marks: Mark[];
   onMarksChange: (marks: Mark[]) => void;
-  /** 動画ファイルの更新日時（撮影日時の初期値） */
-  fileDate: Date | null;
+  /** 読み込んだ動画ファイル。動画本体として保存し、更新日時を撮影日時の初期値にする */
+  file: File | null;
   saved: SavedState | null;
   onSaved: (saved: SavedState) => void;
   onShootersChanged: () => Promise<void>;
@@ -61,8 +61,14 @@ export function MarkScreen(props: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [overwriting, setOverwriting] = useState(false);
   const [overwriteFailed, setOverwriteFailed] = useState(false);
+  /** 記録は保存できたが、動画本体の保存に失敗した（端末の空き容量が足りないなど） */
+  const [videoFailed, setVideoFailed] = useState(false);
 
   const handedness = shooter?.handedness ?? 'right';
+  const fileDate =
+    props.file && Number.isFinite(props.file.lastModified)
+      ? new Date(props.file.lastModified)
+      : null;
   const shot = shotMarkOf(marks);
   const shotMetrics = useMemo(
     () =>
@@ -121,6 +127,19 @@ export function MarkScreen(props: Props) {
   const saveNew = async (fields: RecordFields) => {
     const images = await captureImages();
     const recordId = await addRecord(fields, analysisOf(result), marks, images);
+    // 動画本体は大きいので、記録とは別に保存する。失敗しても記録は残し、その旨を知らせる
+    let failed = props.file === null;
+    if (props.file) {
+      try {
+        await setRecordVideo(recordId, {
+          bytes: await props.file.arrayBuffer(),
+          type: props.file.type,
+        });
+      } catch {
+        failed = true;
+      }
+    }
+    setVideoFailed(failed);
     props.onSaved({ recordId, marksKey: marksKeyOf(marks), fields });
     setFormOpen(false);
   };
@@ -168,6 +187,11 @@ export function MarkScreen(props: Props) {
             <p className="small num" data-testid="save-summary">
               {savedSummary}
             </p>
+            {videoFailed && (
+              <p className="small" data-testid="save-video-failed">
+                {ja.save.videoFailed}
+              </p>
+            )}
             <div className="stack">
               <button className="primary full" data-testid="save-next" onClick={props.onGoLoad}>
                 {ja.save.nextVideo}
@@ -314,7 +338,7 @@ export function MarkScreen(props: Props) {
           shooters={shooters}
           initial={{
             shooterId: shooter.id,
-            shotAt: toLocalDateTime(props.fileDate ?? new Date()),
+            shotAt: toLocalDateTime(fileDate ?? new Date()),
             score: null,
             memo: '',
             favorite: false,

@@ -38,7 +38,8 @@ export function App() {
   const [shooterId, setShooterId] = useState<number | null>(null);
   const [dbFailed, setDbFailed] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [fileDate, setFileDate] = useState<Date | null>(null);
+  /** 読み込んだ動画ファイル。保存のとき、動画本体と撮影日時の初期値に使う */
+  const [file, setFile] = useState<File | null>(null);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [saved, setSaved] = useState<SavedState | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
@@ -87,9 +88,9 @@ export function App() {
   }, []);
 
   // 動画を選び直す・推定をやり直すと、マークと保存先の対応は消える
-  const onResult = useCallback((r: AnalysisResult | null, date: Date | null) => {
+  const onResult = useCallback((r: AnalysisResult | null, f: File | null) => {
     setResult(r);
-    setFileDate(date);
+    setFile(f);
     setMarks([]);
     setSaved(null);
     setFrameIndex(0);
@@ -237,7 +238,7 @@ export function App() {
             shooter={shooter}
             marks={marks}
             onMarksChange={setMarks}
-            fileDate={fileDate}
+            file={file}
             saved={saved}
             onSaved={onSaved}
             onShootersChanged={reloadShooters}

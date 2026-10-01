@@ -165,6 +165,100 @@ const openDetail = async (recordId) => {
     .click();
   await tid('detail-table').waitFor();
 };
+/**
+ * 絵の指紋：16×16 画素に縮めた明るさの並び。どの時点の絵かを見分けるのに使う（librarytest.mjs と同じ作り方）。
+ */
+const SIGNATURE = `(source, w, h) => {
+  const mid = document.createElement('canvas');
+  mid.width = 256; mid.height = 256;
+  const midCtx = mid.getContext('2d');
+  midCtx.imageSmoothingQuality = 'high';
+  midCtx.drawImage(source, 0, 0, w, h, 0, 0, 256, 256);
+  const c = document.createElement('canvas');
+  c.width = 16; c.height = 16;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(mid, 0, 0, 256, 256, 0, 0, 16, 16);
+  const d = ctx.getImageData(0, 0, 16, 16).data;
+  const out = [];
+  for (let i = 0; i < d.length; i += 4) out.push((d[i] + d[i + 1] + d[i + 2]) / 3);
+  return out;
+}`;
+const pictureGap = (a, b) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0) / a.length;
+/** 開いた記録の静止画（撃発の瞬間）の指紋 */
+const stillSignature = () =>
+  page.evaluate(`(async () => {
+    const href = document.querySelector('[data-testid=still-image]')?.getAttribute('href');
+    const img = new Image();
+    img.src = href;
+    await img.decode();
+    return (${SIGNATURE})(img, img.naturalWidth, img.naturalHeight);
+  })()`);
+/** 比較画面の動画（role は base か current）：いま出ている絵の指紋と、時刻・濃さ */
+const stageVideo = (role) =>
+  page.evaluate(`(() => {
+    const v = document.querySelector('[data-testid=stage-video-${role}]');
+    if (!v) return null;
+    const layer = v.closest('.stage-layer');
+    return {
+      ready: v.readyState,
+      width: v.videoWidth,
+      time: v.currentTime,
+      paused: v.paused,
+      seeking: v.seeking,
+      opacity: Number(getComputedStyle(layer).opacity),
+      sig: v.readyState >= 2 ? (${SIGNATURE})(v, v.videoWidth, v.videoHeight) : null,
+    };
+  })()`);
+/** 比較画面の動画が、指定の時点の絵を出し終えるまで待つ */
+const waitStageVideos = () =>
+  page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-testid^=stage-video-]')].every(
+        (v) => v.readyState >= 2 && !v.seeking,
+      ),
+    null,
+    { timeout: 20_000 },
+  );
+const timeIndex = async (role) =>
+  Number(await tid(`time-${role}`).getAttribute('data-frame-index'));
+/** 時点のバーを動かす */
+const slideTime = async (role, index) => {
+  await tid(`time-${role}-slider`).evaluate((el, v) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(el, String(v));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, index);
+  await page.waitForFunction(
+    ([r, i]) => document.querySelector(`[data-testid=time-${r}]`)?.dataset.frameIndex === String(i),
+    [role, index],
+  );
+  await waitStageVideos();
+  await page.waitForTimeout(150);
+};
+/** ブラウザ内データベースを直接見る（動画本体の表の件数、削除） */
+const videoRows = (deleteId = null) =>
+  page.evaluate(
+    (id) =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('pistol-kamae');
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('recordVideos', 'readwrite');
+          const store = tx.objectStore('recordVideos');
+          if (id !== null) store.delete(id);
+          const keys = store.getAllKeys();
+          tx.oncomplete = () => {
+            db.close();
+            resolve(keys.result);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    deleteId,
+  );
 const waitCompare = () => tid('diff-table').waitFor({ timeout: 10_000 });
 /** 記録を選ぶ窓が開き、一覧（または「候補なし」の案内）が出るまで待つ */
 const waitPicker = () =>
@@ -178,6 +272,8 @@ const overflowing = () =>
     const out = [];
     for (const el of document.querySelectorAll('[data-testid=compare] *')) {
       if (el.closest('svg') && el.tagName !== 'svg') continue;
+      // 動画の枠の中身は、枠で切り取られるので数えない
+      if (el.closest('.stage') && !el.classList.contains('stage')) continue;
       const r = el.getBoundingClientRect();
       if (r.width > 0 && r.right > window.innerWidth + 0.5) {
         out.push(
@@ -299,6 +395,15 @@ try {
     await tid('detail-level').textContent(),
   );
   check('線を引く前は、角度表に補正の注記が出ない', (await tid('metric-note').count()) === 0);
+  await tid('detail-video').waitFor();
+  check(
+    '保存した記録に、動画本体が保存されている',
+    (await tid('detail-video').getAttribute('data-has-video')) === 'true' &&
+      (await tid('detail-attach').count()) === 0 &&
+      (await videoRows()).join(',') === `${recordA},${recordB}`,
+    (await videoRows()).join(','),
+  );
+  const stillSigA = await stillSignature();
   await openDetail(recordB);
   const rawB = await detailTable();
   const skeletonB = await skeleton('still-skeleton');
@@ -358,19 +463,210 @@ try {
   );
   check(
     '既定は「重ねる」「位置と大きさを揃える」',
-    (await tid('layout-overlay').getAttribute('aria-pressed')) === 'true' &&
+    (await tid('toggle-side').getAttribute('aria-pressed')) === 'false' &&
       (await tid('align-normalized').getAttribute('aria-pressed')) === 'true' &&
       (await tid('compare-overlay').getAttribute('data-align')) === 'normalized',
   );
-  const stillImage = await page.evaluate(async () => {
-    const href = document.querySelector('[data-testid=still-image]')?.getAttribute('href');
-    if (!href) return 0;
-    const img = new Image();
-    img.src = href;
-    await img.decode();
-    return img.naturalWidth;
-  });
-  check('今回の静止画が表示される', stillImage > 0, stillImage);
+
+  // ── E2：動画どうしの重ね描きと、時点のバー
+  await waitStageVideos();
+  let vBase = await stageVideo('base');
+  let vCurrent = await stageVideo('current');
+  check(
+    '基準と今回の動画が、どちらも表示されている',
+    vBase?.width > 0 && vCurrent?.width > 0 && vBase.paused && vCurrent.paused,
+    `${vBase?.width} / ${vCurrent?.width}`,
+  );
+  check(
+    '今回の動画の上に、基準の動画が半透明（濃さ 50%）で重なる',
+    vCurrent.opacity === 1 && Math.abs(vBase.opacity - 0.5) < 1e-6,
+    `${vCurrent.opacity} / ${vBase.opacity}`,
+  );
+  const shotA = await timeIndex('base');
+  const shotB = await timeIndex('current');
+  check(
+    '開いた直後は、どちらも撃発の瞬間',
+    (await tid('time-base-label').textContent()) === '撃発の瞬間' &&
+      (await tid('time-current-label').textContent()) === '撃発の瞬間' &&
+      (await tid('diff-title').textContent()) === '撃発の瞬間の差',
+    `${shotA} / ${shotB}`,
+  );
+  summary.shotPictureGap = pictureGap(vBase.sig, stillSigA);
+  check(
+    '基準の動画に出ている絵は、撃発フレームの絵（保存した静止画と同じ）',
+    summary.shotPictureGap < 3,
+    summary.shotPictureGap.toFixed(2),
+  );
+  const diffsAtShot = await diffTable();
+  // 基準のバーを 1 秒前（30 コマ前）へ。腕を上げる途中なので、絵も骨格も角度も変わる
+  await slideTime('base', shotA - 30);
+  vBase = await stageVideo('base');
+  summary.movedPictureGap = pictureGap(vBase.sig, stillSigA);
+  check(
+    '基準のバーを動かすと、基準の動画の絵が変わる（動きのある動画）',
+    summary.movedPictureGap > 1 && summary.movedPictureGap > summary.shotPictureGap * 2,
+    `撃発 ${summary.shotPictureGap.toFixed(2)} → 1 秒前 ${summary.movedPictureGap.toFixed(2)}`,
+  );
+  check(
+    '時点が「撃発の 1.00 秒前」と出て、表の題が「選んだ時点の差」になる',
+    (await tid('time-base-label').textContent()) === '撃発の 1.00 秒前' &&
+      (await tid('diff-title').textContent()) === '選んだ時点の差' &&
+      (await tid('diff-times').textContent()) === '基準：撃発の 1.00 秒前／今回：撃発の瞬間',
+    await tid('diff-times').textContent(),
+  );
+  const movedBaseSkeleton = await skeleton('still-skeleton-base');
+  const diffsMoved = await diffTable();
+  check(
+    '基準の骨格と、差分表の基準の列が、その時点のものに変わる（今回の列は変わらない）',
+    dist(movedBaseSkeleton.points[8], base1.points[8]) > 5 &&
+      diffsMoved.armElevation.base !== diffsAtShot.armElevation.base &&
+      Object.keys(diffsMoved).every((id) => diffsMoved[id].current === diffsAtShot[id].current) &&
+      (await timeIndex('current')) === shotB,
+    `腕の挙上角 ${diffsAtShot.armElevation.base} → ${diffsMoved.armElevation.base}`,
+  );
+  const hipMoved = anchorOf(movedBaseSkeleton.points).hip;
+  check(
+    '位置合わせは撃発の瞬間で決めたまま（時点を動かしても合わせ直さない）',
+    (await skeleton('still-skeleton')).points.every((p, i) => dist(p, current1.points[i]) < 1e-6) &&
+      dist(hipMoved, a1.hip) < a1.trunk * 0.2,
+  );
+  await tid('time-base-next').click();
+  await page.waitForFunction(
+    (i) => document.querySelector('[data-testid=time-base]')?.dataset.frameIndex === String(i),
+    shotA - 29,
+  );
+  check('「1 コマ ▶」で 1 コマ進む', (await timeIndex('base')) === shotA - 29);
+  // 2 本を一緒に動かす：今回を 15 コマ（0.5 秒）戻すと、基準も 0.5 秒戻る
+  await tid('toggle-linked').click();
+  await slideTime('current', shotB - 15);
+  check(
+    '「2 本を一緒に動かす」を入れると、片方を動かした秒数だけ、もう片方も動く',
+    (await timeIndex('base')) === shotA - 29 - 15 &&
+      (await tid('time-current-label').textContent()) === '撃発の 0.50 秒前',
+    `${await timeIndex('base')} / ${await tid('time-current-label').textContent()}`,
+  );
+  await tid('toggle-linked').click();
+  await tid('time-current-shot').click();
+  await tid('time-base-shot').click();
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid=diff-title]')?.textContent === '撃発の瞬間の差',
+  );
+  await waitStageVideos();
+  const diffsBack = await diffTable();
+  check(
+    '「撃発へ」で撃発の瞬間に戻り、表も元に戻る（連動を切ると片方だけ動く）',
+    (await timeIndex('base')) === shotA &&
+      (await timeIndex('current')) === shotB &&
+      Object.keys(diffsBack).every((id) => diffsBack[id].diff === diffsAtShot[id].diff),
+  );
+  // 押している間は基準だけ
+  await tid('still').scrollIntoViewIfNeeded();
+  const stageBox = await tid('still').boundingBox();
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2);
+  await page.mouse.down();
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid=compare-overlay]')?.dataset.holding === 'true',
+  );
+  vBase = await stageVideo('base');
+  vCurrent = await stageVideo('current');
+  check(
+    '絵を押している間は、基準の動画と基準の骨格だけが出る',
+    vBase.opacity === 1 &&
+      vCurrent.opacity === 0 &&
+      (await skeleton('still-skeleton')) === null &&
+      (await skeleton('still-skeleton-base'))?.lines === 20,
+    `${vBase.opacity} / ${vCurrent.opacity}`,
+  );
+  await page.mouse.up();
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid=compare-overlay]')?.dataset.holding === 'false',
+  );
+  check(
+    '離すと、今回の動画の上に基準が半透明で重なる表示に戻る',
+    (await stageVideo('current')).opacity === 1 &&
+      Math.abs((await stageVideo('base')).opacity - 0.5) < 1e-6 &&
+      (await skeleton('still-skeleton'))?.lines === 20,
+  );
+  await tid('base-opacity').fill('0');
+  check(
+    '「基準の濃さ」を 0 にすると、基準の動画が見えなくなる',
+    (await stageVideo('base')).opacity === 0,
+  );
+  await tid('base-opacity').fill('50');
+  await tid('toggle-skeleton').click();
+  check(
+    '「骨格を表示」を切ると、骨格が消える（動画だけになる）',
+    (await skeleton('still-skeleton')) === null && (await skeleton('still-skeleton-base')) === null,
+  );
+  await tid('toggle-skeleton').click();
+  // 2 本を再生
+  await slideTime('base', shotA - 45);
+  await slideTime('current', shotB - 45);
+  await tid('compare-play').click();
+  await page.waitForFunction(
+    ([a, b]) =>
+      Number(document.querySelector('[data-testid=time-base]')?.dataset.frameIndex) > a + 5 &&
+      Number(document.querySelector('[data-testid=time-current]')?.dataset.frameIndex) > b + 5,
+    [shotA - 45, shotB - 45],
+    { timeout: 10_000 },
+  );
+  check(
+    '「2 本を再生」で 2 本とも進み、バーと骨格がついていく',
+    !(await stageVideo('base')).paused && !(await stageVideo('current')).paused,
+  );
+  await tid('compare-play').click();
+  await page.waitForTimeout(300);
+  const pausedAt = [await timeIndex('base'), await timeIndex('current')];
+  await page.waitForTimeout(400);
+  check(
+    '一時停止で 2 本とも止まる',
+    (await stageVideo('base')).paused &&
+      (await stageVideo('current')).paused &&
+      (await timeIndex('base')) === pausedAt[0] &&
+      (await timeIndex('current')) === pausedAt[1],
+    pausedAt.join(' / '),
+  );
+  await page.screenshot({ path: join(outDir, `compare-${browserName}-video.png`), fullPage: true });
+
+  // 動画のない記録：撃発の瞬間の写真と骨格だけが出る。あとから動画を付けられる
+  await videoRows(recordB);
+  await tid('tab-library').click();
+  await tid('tab-compare').click();
+  await tid('compare-no-video').waitFor();
+  check(
+    '動画のない記録を選ぶと案内が出て、撃発の瞬間は保存してある静止画が出る',
+    (await tid('compare-no-video').textContent()).includes('「今回」の記録に動画がありません') &&
+      (await tid('stage-still-current').count()) === 1 &&
+      (await tid('stage-video-current').count()) === 0 &&
+      (await tid('compare-play').isDisabled()),
+  );
+  await slideTime('current', shotB - 10);
+  const diffsNoVideo = await diffTable();
+  check(
+    '動画がなくても、バーを動かすと骨格と差分表は変わる（写真は出ない）',
+    (await tid('stage-still-current').count()) === 0 &&
+      (await skeleton('still-skeleton'))?.lines === 20 &&
+      (await tid('diff-title').textContent()) === '選んだ時点の差' &&
+      Object.keys(diffsNoVideo).length === 9,
+  );
+  await tid('attach-current-file').setInputFiles(videoA);
+  await tid('attach-current-error').waitFor();
+  check(
+    '別の動画（長さが違う）を選ぶと、付けずに理由を出す',
+    (await tid('attach-current-error').textContent()).includes('この記録の動画ではないようです') &&
+      (await videoRows()).join(',') === String(recordA),
+  );
+  await tid('attach-current-file').setInputFiles(videoB);
+  await tid('stage-video-current').waitFor({ timeout: 20_000 });
+  await waitStageVideos();
+  check(
+    '記録を作ったときの動画を選ぶと、動画が付き、案内が消える',
+    (await tid('compare-no-video').count()) === 0 &&
+      (await videoRows()).join(',') === `${recordA},${recordB}` &&
+      (await stageVideo('current')).width > 0,
+  );
+  await tid('time-current-shot').click();
+  await waitStageVideos();
 
   // ── F：差分表
   let diffs = await diffTable();
@@ -714,7 +1010,7 @@ try {
     '同じカメラ位置の 2 件では、カメラの位置の案内は出ない',
     (await tid('compare-camera-moved').count()) === 0,
   );
-  await tid('layout-side').click();
+  await tid('toggle-side').click();
   await tid('compare-side').waitFor();
   const sideBase = await skeleton('still-skeleton', 'still-base');
   const sideCurrent = await skeleton('still-skeleton', 'still-current');
@@ -728,7 +1024,7 @@ try {
   );
   const sideBoxes = await page.evaluate(() =>
     ['still-base', 'still-current'].map((id) => {
-      const svg = document.querySelector(`[data-testid=${id}]`);
+      const svg = document.querySelector(`[data-testid=${id}-svg]`);
       const r = svg.getBoundingClientRect();
       const [, , w, h] = svg.getAttribute('viewBox').split(' ').map(Number);
       return {
@@ -756,7 +1052,12 @@ try {
   );
   check('横に並べている間は、揃え方の切替を出さない', (await tid('align-raw').count()) === 0);
   await page.screenshot({ path: join(outDir, `compare-${browserName}-side.png`), fullPage: true });
-  await tid('layout-overlay').click();
+  await waitStageVideos();
+  check(
+    '横に並べても、それぞれの動画が出る',
+    (await stageVideo('base')).width > 0 && (await stageVideo('current')).width > 0,
+  );
+  await tid('toggle-side').click();
   await tid('align-normalized').click();
 
   // ── K：記録の選び直し
@@ -866,6 +1167,22 @@ try {
   await tid('confirm-ok').click();
   await page.waitForFunction(
     () => document.querySelectorAll('[data-testid=lib-item]').length === 2,
+  );
+  check(
+    '記録を削除すると、動画本体も消える',
+    (await videoRows()).join(',') === `${recordA},${recordB}`,
+    (await videoRows()).join(','),
+  );
+  check(
+    'ライブラリに、端末で使っている保存容量が出る',
+    /約 \d+ MB/.test(
+      (await tid('library-usage')
+        .textContent()
+        .catch(() => '')) ?? '',
+    ),
+    await tid('library-usage')
+      .textContent()
+      .catch(() => '（表示なし）'),
   );
   await tid('tab-compare').click();
   await tid('compare-choose-rest').waitFor();
@@ -1041,6 +1358,12 @@ try {
       (await tid('detail-level').getAttribute('data-has-level')) === 'false' &&
       (await tid('detail-date').textContent()) === '9/20（日）10:00',
     old.shoulderTilt,
+  );
+  await tid('detail-video').waitFor();
+  check(
+    '版 1 の記録は「動画：なし」と出て、動画を付けるボタンがある',
+    (await tid('detail-video').getAttribute('data-has-video')) === 'false' &&
+      (await tid('detail-attach').count()) === 1,
   );
   await tid('detail-level-open').click();
   await tid('level-editor').waitFor();

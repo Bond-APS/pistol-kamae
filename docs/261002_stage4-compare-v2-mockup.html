@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>段階④ 比較画面の改訂案（モックアップ）</title>
+<style>
+/* 段階③までのトークン（値は変えない） */
+:root {
+  --color-bg: #ffffff; --color-fg: #1a1a1a; --color-muted: #6b6b6b; --color-border: #d9d9d9;
+  --color-accent: #0a66c2; --color-accent-fg: #ffffff; --color-danger: #c62828; --color-surface: #f4f4f4;
+  --color-border-strong: #8a8a8a; --color-accent-soft: #e6f0fa;
+  --color-success: #1b7a3d; --color-success-soft: #e8f5ec;
+  --color-danger-fg: #ffffff; --color-danger-soft: #fdecea;
+  --color-fav: #b26a00; --color-scrim: rgba(0,0,0,.5);
+  --space-1: 4px; --space-2: 8px; --space-3: 16px; --space-4: 24px; --space-5: 32px;
+  --font-size-base: 16px; --font-size-small: 14px; --font-size-large: 20px;
+  --tap-size: 44px; --tap-size-primary: 52px;
+  --radius-s: 8px; --radius-l: 16px; --radius-pill: 999px;
+  --page: #e6e6e6;
+  /* 段階④で追加するトークン */
+  --color-warn-soft: #fff1c7;      /* 差の色分け：やや差がある（黄） */
+  --skel-current: rgb(0, 220, 90); /* 今回の骨格（今までと同じ緑） */
+  --skel-base: rgb(255, 110, 210); /* 基準の骨格（紫がかった桃色・点線） */
+  --level-line: #ffd400;           /* 水平の線 */
+}
+:root[data-theme='dark'] {
+  --color-bg: #121212; --color-fg: #ededed; --color-muted: #9a9a9a; --color-border: #3a3a3a;
+  --color-accent: #6cb4ff; --color-accent-fg: #0a0a0a; --color-danger: #ff6b6b; --color-surface: #1e1e1e;
+  --color-border-strong: #7a7a7a; --color-accent-soft: #16324d;
+  --color-success: #5fd38a; --color-success-soft: #163222;
+  --color-danger-fg: #0a0a0a; --color-danger-soft: #3a1c1c;
+  --color-fav: #ffc940; --page: #000000;
+  --color-warn-soft: #4a3c0c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--page); color: var(--color-fg);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; font-size: 16px; line-height: 1.5; }
+.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+.top h1 { font-size: 20px; margin: 0; flex: 1; min-width: 12em; }
+.board { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.shot { width: 375px; max-width: 100%; }
+.shot > .cap { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+.shot > .note { font-size: 13px; color: var(--color-muted); margin: 6px 2px 0; }
+.phone { position: relative; background: var(--color-bg); border: 1px solid var(--color-border-strong); border-radius: 28px; overflow: hidden; padding: 16px; }
+.phone h1 { font-size: 16px; margin: 0; }
+.phone h2 { font-size: var(--font-size-large); margin: 12px 0 8px; }
+.phone h3 { font-size: 16px; margin: 16px 0 4px; }
+.phone p { margin: 8px 0; }
+.muted { color: var(--color-muted); } .small { font-size: 14px; } .num { font-variant-numeric: tabular-nums; }
+.btn, .input, .select { min-height: var(--tap-size); font: inherit; border-radius: var(--radius-s); padding: 0 16px; color: var(--color-fg); }
+.btn { border: 1px solid var(--color-border); background: var(--color-surface); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.btn.primary { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); min-height: var(--tap-size-primary); font-weight: 700; }
+.btn.danger { background: var(--color-bg); color: var(--color-danger); border-color: var(--color-danger); }
+.btn.icon { width: 44px; padding: 0; border: 0; background: transparent; font-size: 24px; }
+.btn.full { display: flex; width: 100%; }
+.btn.compact { padding: 0 12px; font-size: 14px; }
+.select { width: 100%; border: 1px solid var(--color-border-strong); background: var(--color-bg); display: flex; align-items: center; }
+.select::after { content: '▾'; margin-left: auto; color: var(--color-muted); }
+.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.row > .grow { flex: 1; }
+.fav-on { color: var(--color-fav); } .fav-off { color: var(--color-muted); }
+.chip { min-height: var(--tap-size); padding: 0 16px; border-radius: var(--radius-pill); border: 1px solid var(--color-border-strong); background: var(--color-bg); display: inline-flex; align-items: center; font-size: 14px; }
+.chip.on { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent); font-weight: 700; }
+.tabs { display: flex; border-bottom: 1px solid var(--color-border); margin: 8px -16px 0; padding: 0 8px; }
+.tab { flex: 1 1 auto; min-height: var(--tap-size); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--color-muted); border-bottom: 3px solid transparent; white-space: nowrap; padding: 0 4px; }
+.tab.on { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.notice { border-radius: var(--radius-s); padding: 12px; margin: 12px 0; border: 1px solid var(--color-border); background: var(--color-surface); }
+.notice.ok { background: var(--color-success-soft); border-color: var(--color-success); }
+.notice.ok strong { color: var(--color-success); }
+.notice.err { background: var(--color-danger-soft); border-color: var(--color-danger); }
+.notice.err strong { color: var(--color-danger); }
+.notice p { margin: 2px 0 0; }
+.still { background: #3d444d; border-radius: var(--radius-s); overflow: hidden; display: block; width: 100%; }
+.thumb { width: 60px; height: 80px; flex: none; border-radius: var(--radius-s); background: #3d444d; overflow: hidden; }
+.thumb.s { width: 48px; height: 64px; }
+.item { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+.item .main { flex: 1; min-width: 0; }
+.item .l1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; }
+.item .score { font-size: var(--font-size-large); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.item .score small { font-size: 14px; font-weight: 400; margin-left: 2px; }
+.item .l2 { font-size: 14px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item.sel { background: var(--color-accent-soft); margin: 0 -8px; padding: 8px; border-radius: var(--radius-s); }
+.seg { display: flex; border: 1px solid var(--color-border-strong); border-radius: var(--radius-s); overflow: hidden; margin: 8px 0; }
+.seg span { flex: 1; min-height: var(--tap-size); display: flex; align-items: center; justify-content: center; font-size: 14px; text-align: center; }
+.seg .on { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 700; }
+.divider { border: 0; border-top: 2px dashed var(--color-border-strong); margin: 20px -16px 12px; }
+.proposal { display: inline-block; font-size: 12px; font-weight: 700; border: 1px solid var(--color-accent); color: var(--color-accent); border-radius: 4px; padding: 0 4px; }
+
+/* ④：比べる 2 件の欄 */
+.pair { border: 1px solid var(--color-border); border-radius: var(--radius-s); margin: 8px 0 12px; }
+.pair .who { display: flex; gap: 10px; align-items: center; padding: 8px; }
+.pair .who + .who { border-top: 1px solid var(--color-border); }
+.pair .main { flex: 1; min-width: 0; }
+.pair .l1 { font-weight: 700; white-space: nowrap; line-height: 1.3; }
+.pair .role { display: flex; line-height: 1.3; }
+.pair .l2 { font-size: 14px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; }
+.key { display: inline-block; width: 22px; height: 0; border-top: 4px solid var(--skel-current); vertical-align: middle; }
+.key.base { border-top: 4px dashed var(--skel-base); }
+.legend { display: flex; gap: 16px; font-size: 14px; margin: 6px 0 0; }
+/* ④：差分表（項目・基準・今回・差） */
+.dt { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
+.dt th { font-size: 13px; color: var(--color-muted); padding: 10px 0 4px; border-bottom: 1px solid var(--color-border-strong); text-align: right; font-weight: 700; white-space: nowrap; }
+.dt th:first-child { text-align: left; }
+.dt td { padding: 8px 0; border-bottom: 1px solid var(--color-border); vertical-align: middle; font-size: 15px; }
+.dt td small { display: block; font-size: 13px; color: var(--color-muted); }
+.dt td.v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 14px; padding-left: 9px; }
+.dt td.d { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; font-size: 15px; padding: 8px 4px 8px 6px; }
+.dt td.d.y { background: var(--color-warn-soft); }
+.dt td.d.r { background: var(--color-danger-soft); color: var(--color-danger); }
+.dt tr.na td { color: var(--color-muted); font-weight: 400; }
+.side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.side p { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+.lvl { display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-s); padding: 8px 8px 8px 12px; margin: 8px 0; }
+.lvl .grow { flex: 1; font-size: 14px; }
+.readout { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 8px 0 0; }
+.tl { border: 1px solid var(--color-border); border-radius: var(--radius-s); padding: 8px 10px; margin: 8px 0; }
+.tl .hd { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; }
+.tl .hd .t { margin-left: auto; font-variant-numeric: tabular-nums; }
+.tl input { width: 100%; min-height: 36px; margin: 2px 0; accent-color: var(--color-accent); }
+.tl .bt { display: flex; gap: 8px; }
+.tl .bt .btn { flex: 1; padding: 0 8px; font-size: 14px; }
+.hold { position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; background: rgba(0,0,0,.65); color: #fff; font-size: 13px; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.wrap { position: relative; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <!-- 今回の骨格：緑・実線（今までと同じ） -->
+  <symbol id="cur" viewBox="0 0 100 110">
+    <g stroke="rgba(0,0,0,.75)" stroke-width="5" stroke-linecap="round" fill="none">
+      <path d="M40 32H60M43 62H57M50 32V62M40 32L5 29M60 32L59 58M43 62L37 100M57 62L62 100M50 32L46 18"/>
+    </g>
+    <g stroke="var(--skel-current)" stroke-width="2.5" stroke-linecap="round" fill="none">
+      <path d="M40 32H60M43 62H57M50 32V62M40 32L5 29M60 32L59 58M43 62L37 100M57 62L62 100M50 32L46 18"/>
+    </g>
+    <g fill="var(--skel-current)" stroke="rgba(0,0,0,.75)" stroke-width="1">
+      <circle cx="46" cy="18" r="3"/><circle cx="40" cy="32" r="3"/><circle cx="60" cy="32" r="3"/>
+      <circle cx="43" cy="62" r="3"/><circle cx="57" cy="62" r="3"/><circle cx="5" cy="29" r="3"/>
+      <circle cx="59" cy="58" r="3"/><circle cx="37" cy="100" r="3"/><circle cx="62" cy="100" r="3"/>
+    </g>
+  </symbol>
+  <!-- 基準の骨格：別の色・点線・半透明 -->
+  <symbol id="base" viewBox="0 0 100 110">
+    <g opacity=".85">
+      <g stroke="rgba(0,0,0,.6)" stroke-width="4.5" stroke-linecap="round" fill="none">
+        <path d="M40 30.5L60 33.5M43 62H57M50 32V62M40 30.5L5 24.5M60 33.5L60.5 58M43 62L35.5 100M57 62L64 100M50 32L48 17.5"/>
+      </g>
+      <g stroke="var(--skel-base)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4.5 3.5" fill="none">
+        <path d="M40 30.5L60 33.5M43 62H57M50 32V62M40 30.5L5 24.5M60 33.5L60.5 58M43 62L35.5 100M57 62L64 100M50 32L48 17.5"/>
+      </g>
+      <g fill="var(--skel-base)" stroke="rgba(0,0,0,.6)" stroke-width="1">
+        <circle cx="48" cy="17.5" r="2.6"/><circle cx="40" cy="30.5" r="2.6"/><circle cx="60" cy="33.5" r="2.6"/>
+        <circle cx="43" cy="62" r="2.6"/><circle cx="57" cy="62" r="2.6"/><circle cx="5" cy="24.5" r="2.6"/>
+        <circle cx="60.5" cy="58" r="2.6"/><circle cx="35.5" cy="100" r="2.6"/><circle cx="64" cy="100" r="2.6"/>
+      </g>
+    </g>
+  </symbol>
+  <!-- 写真の代わりの人影 -->
+  <symbol id="body" viewBox="0 0 100 110">
+    <g fill="#59626d">
+      <ellipse cx="47" cy="17" rx="7" ry="8.5"/>
+      <path d="M36 28H64L62 66H38Z"/><path d="M38 27L4 25L4 32L38 36Z"/>
+      <path d="M38 62L32 104H42L50 66L58 104H67L62 62Z"/>
+    </g>
+  </symbol>
+</svg>
+
+<div class="top">
+  <h1>段階④ 比較画面の改訂案（モックアップ）</h1>
+  <button class="btn" id="theme">ライト／ダークを切り替える</button>
+</div>
+<p class="small" style="margin:0 0 16px;max-width:60em">絵と数値は見本です。変えるのは比較画面の「図」と「時点の選び方」で、差分表・色分け・水平の線・記録の選び方は今のままです。写真は、保存のときに撃発の前後を連続写真として残したもの（案 C）を使う想定で描いています。</p>
+
+<div class="board">
+
+<section class="shot">
+  <p class="cap">1. 比較画面（写真どうしを半透明で重ねる・時点を別々に選ぶ）</p>
+  <div class="phone">
+    <h2 style="margin-top:0">比較</h2>
+    <p class="muted small" style="margin:0">… 基準と今回の 2 件の欄（今のまま）</p>
+    <div class="wrap">
+    <svg class="still" viewBox="0 0 343 320" style="margin-top:8px">
+      <use href="#body" x="36" y="12" width="272" height="300"/>
+      <g opacity=".5"><use href="#body" x="30" y="6" width="278" height="306" style="filter:hue-rotate(40deg) brightness(1.35)"/></g>
+      <use href="#base" x="36" y="12" width="272" height="300"/>
+      <use href="#cur" x="36" y="12" width="272" height="300"/>
+    </svg>
+    <span class="hold">写真を押している間：基準だけを表示</span>
+    </div>
+    <div class="row" style="margin:6px 0 0"><span class="small" style="white-space:nowrap">基準の写真の濃さ</span><input class="grow" type="range" value="50" style="accent-color:var(--color-accent)"></div>
+    <div class="row" style="margin:0"><span class="chip on">✓ 骨格を表示</span><span class="chip">横に並べる</span></div>
+
+    <div class="tl">
+      <div class="hd"><span class="key base"></span>基準<span class="t">撃発の 1.2 秒前</span></div>
+      <input type="range" value="72" aria-label="基準の時点">
+      <div class="bt"><span class="btn">◀ 1 コマ</span><span class="btn">撃発へ</span><span class="btn">1 コマ ▶</span></div>
+    </div>
+    <div class="tl">
+      <div class="hd"><span class="key"></span>今回<span class="t">撃発の 1.0 秒前</span></div>
+      <input type="range" value="76" aria-label="今回の時点">
+      <div class="bt"><span class="btn">◀ 1 コマ</span><span class="btn">撃発へ</span><span class="btn">1 コマ ▶</span></div>
+    </div>
+    <span class="chip">2 本を一緒に動かす</span>
+
+    <h3>選んだ時点の差</h3>
+    <p class="muted small" style="margin:0">基準：撃発の 1.2 秒前／今回：撃発の 1.0 秒前。差＝今回 − 基準</p>
+    <table class="dt">
+      <tr><th>角度</th><th>基準</th><th>今回</th><th>差</th></tr>
+      <tr><td>肩線の傾き<small>水平基準 (a)</small></td><td class="v">+12.1°</td><td class="v">+13.0°</td><td class="d r">◆ +0.9°</td></tr>
+      <tr><td>体軸の傾き<small>鉛直基準 (c)</small></td><td class="v">−9.6°</td><td class="v">−9.9°</td><td class="d">−0.3°</td></tr>
+    </table>
+    <p class="muted small">… 表の残りと凡例は今のまま</p>
+  </div>
+  <p class="note">開いた直後は、どちらも撃発の瞬間（今と同じ図と表）。バーを動かすと、その時点の写真・骨格・差分表に変わる。基準の写真は、骨格と同じく腰の中心と体幹の長さを揃えて重ねる。「2 本を一緒に動かす」を入れると、片方を動かしたとき、もう片方も同じ秒数だけ動く。「位置と大きさを揃える／撮ったまま」の切替は今のまま残す（図では省略）。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">2. 写真を押している間（基準だけ）／離したとき（今回だけ）</p>
+  <div class="phone">
+    <p class="muted small" style="margin-top:0">「基準の写真の濃さ」を 0 にして、押して見比べる使い方</p>
+    <div class="side">
+      <div><p><span class="role"><span class="key base"></span>押している間</span></p>
+        <svg class="still" viewBox="0 0 166 200"><use href="#body" x="-1" y="5" width="168" height="186" style="filter:hue-rotate(40deg) brightness(1.35)"/><use href="#base" x="2" y="8" width="164" height="182"/></svg></div>
+      <div><p><span class="role"><span class="key"></span>離したとき</span></p>
+        <svg class="still" viewBox="0 0 166 200"><use href="#body" x="2" y="8" width="164" height="182"/><use href="#cur" x="2" y="8" width="164" height="182"/></svg></div>
+    </div>
+    <p class="muted small">同じ枠の中で入れ替わるので、姿勢の違うところだけが動いて見える。</p>
+    <hr class="divider">
+    <p class="muted small" style="margin-top:0">連続写真のない記録（今までに保存した記録）</p>
+    <div class="notice"><strong>この記録には撃発の瞬間の写真しかありません</strong><p class="small">バーを動かすと骨格と差分表は変わりますが、写真は出ません。動画を読み込み直して保存すると、前後の写真も残ります。</p></div>
+  </div>
+  <p class="note">半透明と「押して切替」は両方入れる（濃さのつまみが 0 なら押して切替、50 なら半透明）。</p>
+</section>
+
+<section class="shot">
+  <p class="cap">3. 保存のとき（マーク画面）</p>
+  <div class="phone">
+    <div class="notice"><strong>保存しています…</strong><p class="small num">撃発の前後の写真を保存中 35 / 70 枚</p>
+      <progress value="35" max="70" style="width:100%;height:12px"></progress></div>
+    <p class="muted small">撃発の 6 秒前〜1 秒後を 0.1 秒おきに、70 枚ほど。iPhone で 5〜10 秒かかる見込み（実測して報告）。1 件あたり 3〜5 MB。</p>
+  </div>
+  <p class="note">動画そのものは今までどおり保存しない。骨格と角度は全コマ分あるので、バーは 1 コマずつ動き、写真は一番近い 1 枚を出す。</p>
+</section>
+
+</div>
+<script>
+  const root = document.documentElement;
+  if (matchMedia('(prefers-color-scheme: dark)').matches) root.dataset.theme = 'dark';
+  document.getElementById('theme').addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+</script>
+</body>
+</html>

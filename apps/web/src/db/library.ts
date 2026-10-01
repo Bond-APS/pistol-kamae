@@ -79,6 +79,43 @@ export interface RecordImages {
   thumb: StoredImage;
 }
 
+/** 保存する動画本体（選んだファイルそのもの） */
+export interface VideoSource {
+  bytes: ArrayBuffer;
+  type: string;
+}
+
+/**
+ * 記録に動画本体を付ける（付け直す）。端末の空き容量が足りないと失敗する。
+ * 動画は大きいので、記録そのものとは別に保存する（動画の保存に失敗しても、記録は残る）。
+ */
+export async function setRecordVideo(id: number, video: VideoSource): Promise<void> {
+  await db.recordVideos.put({ id, bytes: video.bytes, type: video.type });
+  // 端末の空きが減ったときに、ブラウザが保存データを勝手に消しにくくなるよう頼む（断られても支障はない）
+  void navigator.storage?.persist?.().catch(() => {});
+}
+
+/** 記録の動画本体。保存していなければ null */
+export async function getRecordVideo(id: number): Promise<VideoSource | null> {
+  const row = await db.recordVideos.get(id);
+  return row ? { bytes: row.bytes, type: row.type } : null;
+}
+
+/** 記録に動画本体が保存されているか（中身は読まない） */
+export async function hasRecordVideo(id: number): Promise<boolean> {
+  return (await db.recordVideos.where('id').equals(id).count()) > 0;
+}
+
+/** このサイトが端末内で使っている保存容量（バイト）。調べられないブラウザでは null */
+export async function storageUsage(): Promise<number | null> {
+  try {
+    const estimate = await navigator.storage?.estimate?.();
+    return typeof estimate?.usage === 'number' ? estimate.usage : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 新しい記録を保存し、その番号を返す */
 export async function addRecord(
   fields: RecordFields,
@@ -137,9 +174,10 @@ export async function setRecordFavorite(id: number, favorite: boolean): Promise<
 }
 
 export async function deleteRecord(id: number): Promise<void> {
-  await db.transaction('rw', db.records, db.recordData, async () => {
+  await db.transaction('rw', db.records, db.recordData, db.recordVideos, async () => {
     await db.records.delete(id);
     await db.recordData.delete(id);
+    await db.recordVideos.delete(id);
   });
 }
 
