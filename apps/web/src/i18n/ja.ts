@@ -16,7 +16,7 @@ export const ja = {
   app: {
     title: 'Pistol Kamae',
     subtitle: 'AP 射撃姿勢解析',
-    stageNote: '開発中の検証用画面（段階④を確認中）',
+    stageNote: '開発中の検証用画面（段階④まで完了）',
     dbUnavailable:
       'このブラウザでは保存の機能を使えません。プライベートブラウズを切るか、別のブラウザで開いてください。',
   },
