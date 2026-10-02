@@ -1,20 +1,16 @@
 import {
-  bodyAnchor,
   formatScore,
   frameIndexAt,
-  hasUsableLevel,
-  levelInfo,
   parseLocalDateTime,
   shotMarkOf,
   shotMetricsOfRecord,
-  type LevelLine,
   type Rect,
 } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AttachVideo } from '../components/AttachVideo';
 import { ConfirmDialog } from '../components/Dialog';
-import { LevelEditor } from '../components/LevelEditor';
 import { MetricTable } from '../components/MetricTable';
+import { NumbersFold } from '../components/NumbersFold';
 import { RecordForm } from '../components/RecordForm';
 import { Score } from '../components/Score';
 import { StillView } from '../components/StillView';
@@ -24,7 +20,6 @@ import {
   hasRecordVideo,
   openRecord,
   setRecordFavorite,
-  setRecordLevel,
   updateRecordFields,
   type OpenedRecord,
   type RecordFields,
@@ -49,15 +44,13 @@ interface Props {
 type State = { kind: 'loading' } | { kind: 'notFound' } | { kind: 'open'; opened: OpenedRecord };
 
 /**
- * ライブラリから開いた 1 件。静止画＋骨格と、撃発の瞬間の角度表。動画は保存していないので出ない。
- * 水平の線（カメラの傾きの補正）もここで引く。
+ * ライブラリから開いた 1 件。撃発の瞬間の静止画＋骨格と、角度表（ボタンで出す）。
  */
 export function RecordDetail(props: Props) {
   const { recordId, shooters, onShootersChanged, onClose, onChanged, onDeleted, onCompare } = props;
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [fit, setFit] = useState<'person' | 'whole'>('person');
   const [editing, setEditing] = useState(false);
-  const [leveling, setLeveling] = useState(false);
   /** 動画本体が保存されているか。調べ終わるまでは null */
   const [hasVideo, setHasVideo] = useState<boolean | null>(null);
   const checkVideo = useCallback(
@@ -147,17 +140,6 @@ export function RecordDetail(props: Props) {
     setEditing(false);
     onChanged(row.id);
   };
-  const saveLevel = async (line: LevelLine | null) => {
-    await setRecordLevel(row.id, line);
-    await reload();
-    setLeveling(false);
-    onChanged(row.id);
-  };
-  // 線はあるが、今の基準（長さ・傾き）に合わず補正に使っていないとき
-  const unusableLevel = record.level !== null && !hasUsableLevel(record);
-  const tiltText = hasUsableLevel(record)
-    ? ja.level.tilt(levelInfo(record.level!)?.tiltDeg ?? 0)
-    : null;
   const remove = async () => {
     setRemoveBusy(true);
     setRemoveFailed(false);
@@ -222,25 +204,8 @@ export function RecordDetail(props: Props) {
       </div>
       <p className="muted small">{ja.player.legend}</p>
 
-      <div className="level-row" data-testid="detail-level" data-has-level={record.level !== null}>
-        <span className="grow small">
-          <strong>{tiltText === null ? ja.level.rowNone : ja.level.rowSet}</strong>
-          <br />
-          <span className="muted num">
-            {unusableLevel
-              ? ja.level.rowUnusableHint
-              : tiltText === null
-                ? ja.level.rowNoneHint
-                : ja.level.rowSetHint(tiltText)}
-          </span>
-        </span>
-        <button data-testid="detail-level-open" onClick={() => setLeveling(true)}>
-          {record.level === null ? ja.level.draw : ja.level.redraw}
-        </button>
-      </div>
-
       {hasVideo !== null && (
-        <div className="level-row" data-testid="detail-video" data-has-video={hasVideo}>
+        <div className="detail-row" data-testid="detail-video" data-has-video={hasVideo}>
           <span className="grow small">
             <strong>{hasVideo ? ja.video.rowSaved : ja.video.rowNone}</strong>
             {!hasVideo && (
@@ -274,13 +239,10 @@ export function RecordDetail(props: Props) {
         </button>
       </div>
 
-      <h3>{ja.mark.tableTitle}</h3>
       {metrics && (
-        <MetricTable
-          metrics={metrics}
-          testId="detail-table"
-          {...(tiltText === null ? {} : { note: ja.level.tableNote(tiltText) })}
-        />
+        <NumbersFold title={ja.mark.tableTitle} testId="detail-numbers">
+          <MetricTable metrics={metrics} testId="detail-table" />
+        </NumbersFold>
       )}
 
       <p className="muted small" data-testid="detail-info">
@@ -312,17 +274,6 @@ export function RecordDetail(props: Props) {
           onSubmit={saveEdit}
           onCancel={() => setEditing(false)}
           onShootersChanged={onShootersChanged}
-        />
-      )}
-
-      {leveling && (
-        <LevelEditor
-          image={still}
-          size={size}
-          initial={record.level}
-          personX={shotLandmarks ? (bodyAnchor(shotLandmarks, size)?.hipCenter.x ?? null) : null}
-          onSave={saveLevel}
-          onCancel={() => setLeveling(false)}
         />
       )}
 

@@ -17,6 +17,7 @@ import {
 import { useMemo, useState, type RefObject } from 'react';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { MetricTable } from '../components/MetricTable';
+import { NumbersFold } from '../components/NumbersFold';
 import { RecordForm } from '../components/RecordForm';
 import { addRecord, overwriteRecordMarks, setRecordVideo, type RecordFields } from '../db/library';
 import type { ShooterRow } from '../db/schema';
@@ -333,18 +334,20 @@ export function MarkScreen(props: Props) {
         </ul>
       )}
 
-      <h3>{ja.mark.tableTitle}</h3>
       {!shotMetrics ? (
-        <p className="muted small" data-testid="shot-table-empty">
-          {ja.mark.tableNoShot}
-        </p>
-      ) : (
         <>
+          <h3>{ja.mark.tableTitle}</h3>
+          <p className="muted small" data-testid="shot-table-empty">
+            {ja.mark.tableNoShot}
+          </p>
+        </>
+      ) : (
+        <NumbersFold title={ja.mark.tableTitle} testId="shot-numbers">
           <p className="muted small">
             {ja.mark.tableFrame(shotMetrics.frameIndex, shotMetrics.timeSec)}
           </p>
           <MetricTable metrics={shotMetrics} testId="shot-table" />
-        </>
+        </NumbersFold>
       )}
 
       {formOpen && shooter && (

@@ -21,6 +21,7 @@ import {
 import { AttachVideo } from '../components/AttachVideo';
 import { CompareStage, type StageLayer } from '../components/CompareStage';
 import { DiffTable } from '../components/DiffTable';
+import { NumbersFold } from '../components/NumbersFold';
 import { skeletonParts } from '../components/skeleton';
 import { SkeletonLayer } from '../components/SkeletonLayer';
 import { relativeTimeLabel } from '../components/relativeTime';
@@ -61,6 +62,18 @@ function sideOf(opened: OpenedRecord) {
     bounds: sequenceBounds(frames, size),
   };
   return { opened, frames, size, fps, shotIndex, tiltDeg, pose };
+}
+
+/**
+ * 時刻にいちばん近いフレームの番号（範囲の外は端のフレーム）。
+ * 連動で相手の時点を求めるとき、求めた時刻がフレームの境目ぴったりになりやすく、
+ * 「その時刻を含むフレーム」で選ぶと、計算の丸めで 1 コマ手前になることがあるため
+ */
+function nearestFrameIndex(frames: ReadonlyArray<LandmarkFrame>, timeSec: number): number {
+  const i = Math.max(frameIndexAt(frames, Math.max(timeSec, 0)), 0);
+  const next = frames[i + 1];
+  if (!next) return i;
+  return next.timeSec - timeSec < timeSec - frames[i]!.timeSec ? i + 1 : i;
 }
 
 /** フレームの時刻（秒） */
@@ -157,8 +170,7 @@ export function CompareView({ base, current }: Props) {
     if (linkOffset !== null) {
       const own_t = timeOf(own.frames, index);
       const target = role === 'base' ? own_t + linkOffset : own_t - linkOffset;
-      const last = other.frames.length - 1;
-      setOther(Math.min(Math.max(frameIndexAt(other.frames, Math.max(target, 0)), 0), last));
+      setOther(nearestFrameIndex(other.frames, target));
     }
   };
   const toggleLinked = () =>
@@ -451,20 +463,24 @@ export function CompareView({ base, current }: Props) {
       )}
       {layout === 'side' && <p className="muted small">{ja.compare.sideNote}</p>}
 
-      <h3 data-testid="diff-title">{atShot ? ja.compare.tableTitle : ja.compare.tableTitleAt}</h3>
-      <p className="muted small num" data-testid="diff-times">
-        {ja.compare.tableTimes(
-          relativeTimeLabel(b.frames, baseIndex, b.shotIndex),
-          relativeTimeLabel(c.frames, currentIndex, c.shotIndex),
-        )}
-      </p>
-      {diffs ? (
-        <DiffTable diffs={diffs} testId="diff-table" />
-      ) : (
-        <p className="danger small" data-testid="diff-none">
-          {ja.metricTable.noPerson}
+      <NumbersFold
+        title={atShot ? ja.compare.tableTitle : ja.compare.tableTitleAt}
+        testId="diff-numbers"
+      >
+        <p className="muted small num" data-testid="diff-times">
+          {ja.compare.tableTimes(
+            relativeTimeLabel(b.frames, baseIndex, b.shotIndex),
+            relativeTimeLabel(c.frames, currentIndex, c.shotIndex),
+          )}
         </p>
-      )}
+        {diffs ? (
+          <DiffTable diffs={diffs} testId="diff-table" />
+        ) : (
+          <p className="danger small" data-testid="diff-none">
+            {ja.metricTable.noPerson}
+          </p>
+        )}
+      </NumbersFold>
     </>
   );
 }

@@ -18,23 +18,15 @@ mkdirSync(outDir, { recursive: true });
 
 /** 撃発の代わりに使う時刻（秒）。6 本とも据銃中 */
 const SHOT_SEC = 16;
-/**
- * 動画ごとの水平校正の線（元の動画の画素座標）。射手のすぐ右にある鏡の枠（鉛直）の上端と下端。
- * 静止画の縁を画像処理で追って求めた（2026-10-01、当てはめの残差 0.5 画素以下）。
- */
-const VIDEOS = [
-  { name: 'good-1', level: { x1: 886, y1: 87, x2: 882, y2: 548 } },
-  { name: 'good-2', level: { x1: 847, y1: 49, x2: 841, y2: 506 } },
-  { name: 'good-3', level: { x1: 824, y1: 68, x2: 820, y2: 523 } },
-  { name: 'bad-1', level: { x1: 831, y1: 18, x2: 823, y2: 476 } },
-  { name: 'bad-2', level: { x1: 816, y1: 2, x2: 809, y2: 353 } },
-  { name: 'bad-3', level: { x1: 830, y1: 2, x2: 817, y2: 442 } },
-];
+// 水平校正（カメラの傾きの補正）は初期バージョンから外したので、線は引かない（2026-10-03）
+const VIDEOS = ['good-1', 'good-2', 'good-3', 'bad-1', 'bad-2', 'bad-3'].map((name) => ({ name }));
 
 const launcher = { chromium, webkit }[browserName];
 if (!launcher) throw new Error(`unknown browser: ${browserName}`);
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 const page = await browser.newPage({ viewport: { width: 393, height: 760 } });
+// 角度の数値は既定では隠れている。このテストは数値を読むので、最初から「表示」にしておく
+await page.addInitScript(() => window.localStorage.setItem('kamae.showNumbers', '1'));
 const tid = (id) => page.locator(`[data-testid=${id}]`);
 
 const slideTo = async (index) => {
@@ -86,33 +78,6 @@ const diffTable = () =>
         }),
       ),
     );
-const levelEnd = async (n) => ({
-  x: Number(await tid(`level-handle-${n}`).getAttribute('data-x')),
-  y: Number(await tid(`level-handle-${n}`).getAttribute('data-y')),
-});
-/** 線の端 n を、画像の座標 (x, y) まで動かす。引きずったあと、矢印キーで 1 画素以内に合わせる */
-const moveEnd = async (n, x, y) => {
-  const from = await levelEnd(n);
-  const box = await tid(`level-handle-${n}`).boundingBox();
-  const scale = await tid('level-svg').evaluate((svg) => svg.getScreenCTM().a);
-  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(start.x + (x - from.x) * scale, start.y + (y - from.y) * scale, {
-    steps: 6,
-  });
-  await page.mouse.up();
-  await tid(`level-handle-${n}`).focus();
-  for (let i = 0; i < 40; i++) {
-    const at = await levelEnd(n);
-    const dx = Math.round(x - at.x);
-    const dy = Math.round(y - at.y);
-    if (dx === 0 && dy === 0) break;
-    if (dx !== 0) await page.keyboard.press(dx > 0 ? 'ArrowRight' : 'ArrowLeft');
-    if (dy !== 0) await page.keyboard.press(dy > 0 ? 'ArrowDown' : 'ArrowUp');
-  }
-};
-
 // 関節の順は engine の LANDMARK_NAMES
 const NAMES = [
   'nose',
@@ -140,7 +105,7 @@ try {
   await tid('shooter-submit').click();
   await tid('shooter-dialog').waitFor({ state: 'detached' });
 
-  // ── 6 本を読み込み、保存し、水平の線を引く
+  // ── 6 本を読み込み、保存する
   for (const [i, video] of VIDEOS.entries()) {
     console.log(`  ${video.name}：姿勢推定を実行中…`);
     await tid('tab-load').click();
@@ -169,22 +134,8 @@ try {
     await tid('save-done').waitFor({ timeout: 30_000 });
     const id = Number(await tid('save-block').getAttribute('data-saved-id'));
 
-    await tid('save-view').click();
-    await page
-      .locator(`[data-testid=lib-item][data-record-id="${id}"] [data-testid=lib-open]`)
-      .click();
-    await tid('detail-table').waitFor();
-    await tid('detail-level-open').click();
-    await tid('level-editor').waitFor();
-    await moveEnd(1, video.level.x1, video.level.y1);
-    await moveEnd(2, video.level.x2, video.level.y2);
-    const tilt = Number(await tid('level-readout').getAttribute('data-tilt'));
-    const kind = await tid('level-readout').getAttribute('data-kind');
-    await tid('level-submit').click();
-    await tid('level-editor').waitFor({ state: 'detached' });
-    summary.records.push({ name: video.name, id, tilt, kind });
-    console.log(`  ${video.name}：保存（記録 ${id}）、カメラの傾き ${tilt.toFixed(2)}°（${kind}）`);
-    await tid('detail-back').click();
+    summary.records.push({ name: video.name, id });
+    console.log(`  ${video.name}：保存（記録 ${id}）`);
   }
 
   // ── 1 本目を基準に、残りと重ねる

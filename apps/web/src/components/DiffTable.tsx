@@ -70,6 +70,8 @@ export function DiffTable({ diffs, testId }: Props) {
         {ja.compare.legend(DEFAULT_DIFF_FACTORS.notable, DEFAULT_DIFF_FACTORS.large)}
         <br />
         {ja.compare.legendNone}
+        <br />
+        {ja.compare.cameraNote}
       </p>
     </>
   );

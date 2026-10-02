@@ -40,6 +40,8 @@ const check = (name, ok, detail = '') => {
 // 約 50 秒で止まるので、HEADLESS=1 を付けて画面を出さずに動かす（操作の確認用。速度の計測には使わない）
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 const page = await browser.newPage({ viewport: { width: 430, height: 900 } });
+// 角度の数値は既定では隠れている。このテストは数値を読むので、最初から「表示」にしておく
+await page.addInitScript(() => window.localStorage.setItem('kamae.showNumbers', '1'));
 const logs = [];
 page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);

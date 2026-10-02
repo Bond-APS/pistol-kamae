@@ -4,8 +4,6 @@ import { METRIC_GROUPS, formatMetric } from './formatMetric';
 
 interface Props {
   metrics: FrameMetrics;
-  /** 表の上に出す補足（水平校正で補正した値であること、など） */
-  note?: string;
   testId?: string;
 }
 
@@ -13,15 +11,10 @@ interface Props {
  * 1 フレーム分の計測値の表。マーク画面と、ライブラリで開いた記録の両方で使う。
  * 項目は「名称」と「基準・記号」の 2 行、値は右寄せ。計測できない項目は「—」とグレー。
  */
-export function MetricTable({ metrics, note, testId }: Props) {
+export function MetricTable({ metrics, testId }: Props) {
   return (
     <>
       <p className="muted small">{ja.metricTable.signNote}</p>
-      {note && (
-        <p className="muted small" data-testid="metric-note">
-          {note}
-        </p>
-      )}
       {!metrics.values && <p className="danger small">{ja.metricTable.noPerson}</p>}
       <table className="metric-table" data-testid={testId} data-frame-index={metrics.frameIndex}>
         {METRIC_GROUPS.map((group) => (

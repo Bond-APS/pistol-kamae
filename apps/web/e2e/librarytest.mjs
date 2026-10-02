@@ -34,6 +34,8 @@ const check = (name, ok, detail = '') => {
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 // iPhone に近い幅と高さで確かめる
 const page = await browser.newPage({ viewport: { width: 393, height: 760 } });
+// 角度の数値は既定では隠れている。このテストは数値を読むので、最初から「表示」にしておく
+await page.addInitScript(() => window.localStorage.setItem('kamae.showNumbers', '1'));
 const logs = [];
 page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);

@@ -106,7 +106,7 @@ export const ja = {
   mark: {
     title: 'マーク付け',
     intro:
-      '上の動画を撃発の瞬間まで動かし、「撃発マークを付ける」を押します。撃発の瞬間の角度が下の表に出ます。',
+      '上の動画を撃発の瞬間まで動かし、「撃発マークを付ける」を押します。角度の数値は、下の「撃発の瞬間の角度」を押すと出ます。',
     noResult: 'まだ処理済みの動画がありません。「読込」タブで姿勢推定を実行してください。',
     setShot: '撃発マークを付ける',
     resetShot: '撃発マークをここに付け直す',
@@ -123,7 +123,7 @@ export const ja = {
     remove: '削除',
     removeAria: (name: string) => `マーク「${name}」を削除`,
     tableTitle: '撃発の瞬間の角度',
-    tableNoShot: '撃発マークを付けると、その瞬間の角度がここに表示されます。',
+    tableNoShot: '撃発マークを付けると、その瞬間の角度の数値を、ここで表示できます。',
     tableFrame: (index: number, sec: number) =>
       `撃発フレーム：${index + 1} フレーム目（${sec.toFixed(3)} 秒）`,
   },
@@ -202,6 +202,10 @@ export const ja = {
     notFound: '！ この記録を開けませんでした。',
     compare: '基準と比べる',
   },
+  numbers: {
+    hintHidden: '（数値を表示）',
+    hintShown: '（数値を隠す）',
+  },
   video: {
     attach: '動画を付ける（ファイルを選ぶ）',
     attaching: '動画を確かめています…',
@@ -215,22 +219,14 @@ export const ja = {
     rowNoneHint: '比較画面で、撃発の瞬間以外の絵が出ません',
     usage: (mb: number) => `この端末で使っている保存容量：約 ${mb} MB（動画を含む）`,
   },
+  // 水平の線を引く画面（components/LevelEditor.tsx）の文言。水平校正は初期バージョンから外したので、
+  // 今はどの画面からも使っていない（2026-10-03）
   level: {
-    rowNone: '水平の線：なし',
-    rowNoneHint: 'カメラの傾きを補正していません',
-    rowUnusableHint: '引いてある線が短すぎるか傾きすぎで、補正に使えません。引き直してください。',
-    rowSet: '✓ 水平の線：あり',
-    rowSetHint: (tilt: string) => `カメラの傾き ${tilt} を補正`,
-    draw: '線を引く',
-    redraw: '引き直す',
-    tableNote: (tilt: string) => `カメラの傾き ${tilt} を補正した値です。`,
     title: '水平の線を引く',
     intro:
       '射手のすぐ近くにある、本当は鉛直なもの（柱・ドア枠など）か、本当は水平なもの（床と壁の境目など）に、線を合わせてください。両端の ● を指で動かします。線は長いほど正確です。',
     imageAlt: '撃発の瞬間の静止画と、水平の線',
     handle: (n: 1 | 2) => `線の端 ${n}（矢印キーでも動かせます）`,
-    /** カメラの傾きの大きさ。例：1.0° */
-    tilt: (deg: number) => `${Math.abs(deg).toFixed(1)}°`,
     /** 線の向きごとの、写り方の説明。例：水平なものが右下がりに 1.0° 傾いて写っています */
     readout: (kind: 'horizontal' | 'vertical', deg: number) => {
       const abs = Math.abs(deg).toFixed(1);
@@ -295,7 +291,7 @@ export const ja = {
     noVideoBoth: 'どちらの記録にも動画がありません',
     noVideoOne: (role: string) => `「${role}」の記録に動画がありません`,
     noVideoBody:
-      '動画のない記録は、撃発の瞬間の写真と骨格だけが出ます（バーを動かすと、骨格と差分表は変わります）。記録を作ったときと同じ動画ファイルを選ぶと、動画を付けられます。',
+      '動画のない記録は、撃発の瞬間の写真と骨格だけが出ます（バーを動かすと、骨格と数値は変わります）。記録を作ったときと同じ動画ファイルを選ぶと、動画を付けられます。',
     attachFor: (role: string) => `「${role}」の動画`,
     overlayAlt: '今回の動画に、基準の動画と骨格を重ねた図',
     layoutOverlay: '重ねる',
@@ -304,7 +300,6 @@ export const ja = {
     alignRaw: '撮ったまま',
     normalizedNote:
       '腰の中心を重ね、体幹の長さ（腰の中心→肩の中心）が同じになるよう基準を拡大・縮小しています。',
-    normalizedLevelNote: 'どちらも水平の線でカメラの傾きを補正済み。',
     rawNote:
       '画面の中の位置と大きさをそのまま重ねます。カメラを動かさずに続けて撮った 2 本で、立ち位置のずれを見るときに使います。',
     sideNote: 'それぞれの写真に、それぞれの骨格。人物が同じ大きさに見えるよう寄せて表示。',
@@ -313,14 +308,10 @@ export const ja = {
       '肩か腰がよく見えない記録があるため、位置と大きさを揃えられません。「撮ったまま」で重ねています。',
     cannotOverlayTitle: 'この 2 件は重ねられません',
     cannotOverlayBody:
-      '肩か腰がよく見えない記録があるため位置と大きさを揃えられず、画面の縦横比も違うため撮ったままでも重ねられません。差分表だけを見てください。',
+      '肩か腰がよく見えない記録があるため位置と大きさを揃えられず、画面の縦横比も違うため撮ったままでも重ねられません。下の見出しを押して、数値で比べてください。',
     cameraMovedTitle: 'カメラの位置が違うようです',
     cameraMovedBody: (percent: number) =>
       `人物の大きさが ${percent}% 違います。「位置と大きさを揃える」で比べてください。`,
-    noLevelBoth: '！ どちらにも水平の線がありません',
-    noLevelOne: (role: string) => `！ 「${role}」に水平の線がありません`,
-    noLevelBody: '水平基準・鉛直基準の角度の差には、カメラの傾きの違いが混ざります。',
-    drawLevel: (role: string) => `「${role}」に水平の線を引く`,
     handednessTitle: '利き手が違う 2 人です',
     handednessBody: (name: string, handedness: 'right' | 'left') =>
       `「位置と大きさを揃える」では、基準（${name}・${handednessName[handedness]}）の骨格を左右反転して重ねます。角度は、どちらも銃側を＋として比べています。`,
@@ -340,6 +331,8 @@ export const ja = {
     ariaLarge: '差がある',
     legend: (notable: number, large: number) =>
       `◇ 測定の揺れの ${notable} 倍以上の差、◆ ${large} 倍以上の差`,
+    cameraNote:
+      '水平基準・鉛直基準の差には、撮ったときのカメラの傾きの違いも含まれます（身体基準と体幹長比の項目は影響を受けません）。',
     legendNone:
       '測定の揺れ＝同じ姿勢でも 1 コマごとに値がばらつく幅。印のない差は、その揺れと区別できません。「—」は計測できなかった項目。',
     notFound: '！ 選んでいた記録が見つかりません。選び直してください。',
@@ -414,7 +407,7 @@ export const ja = {
     signNote: '＋ は銃側へ傾く・上がる向き',
     noPerson: '！ このフレームでは人物を検出できなかったため、計測できません。',
     legend:
-      '「—」は関節が十分に見えない、または画面の外にあって計測できなかった項目。水平・鉛直は、ライブラリで水平の線を引くまではカメラの向きが基準。',
+      '「—」は関節が十分に見えない、または画面の外にあって計測できなかった項目。水平・鉛直はカメラの向きが基準（カメラの傾きは補正しない）。',
     na: '—',
   },
   units: {

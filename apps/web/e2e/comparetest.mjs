@@ -1,4 +1,4 @@
-// 段階④（2 件の比較・水平校正）の自動テスト。実際の画面をブラウザで操作して確かめる。
+// 段階④（2 件の比較、角度の数値の表示切替）の自動テスト。実際の画面をブラウザで操作して確かめる。
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/comparetest.mjs webkit   … Safari と同じ描画エンジン
 //   node apps/web/e2e/comparetest.mjs chromium … Chrome と同じ描画エンジン
@@ -43,6 +43,9 @@ const watch = (p) => {
   });
   p.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 };
+// 角度の数値は既定では隠れている。このテストは数値を読むので、最初から「表示」にしておく
+// （既定で隠れていることと、ボタンでの切替は、最後の Q で確かめる）
+await page.addInitScript(() => window.localStorage.setItem('kamae.showNumbers', '1'));
 watch(page);
 
 const tid = (id) => page.locator(`[data-testid=${id}]`);
@@ -289,33 +292,6 @@ const pairIds = async () => [
   await tid('pair-current').getAttribute('data-record-id'),
 ];
 
-/** 水平の線を引く画面：読み取りと操作 */
-const level = {
-  readout: async () => ({
-    tilt: Number(await tid('level-readout').getAttribute('data-tilt')),
-    kind: await tid('level-readout').getAttribute('data-kind'),
-    text: await tid('level-readout').textContent(),
-  }),
-  end: async (n) => ({
-    x: Number(await tid(`level-handle-${n}`).getAttribute('data-x')),
-    y: Number(await tid(`level-handle-${n}`).getAttribute('data-y')),
-  }),
-  /** 線の端 n を、画像の座標 (x, y) まで、つまみを引きずって動かす */
-  dragTo: async (n, x, y) => {
-    const from = await level.end(n);
-    const box = await tid(`level-handle-${n}`).boundingBox();
-    // 画像の 1 画素が画面上で何 px か
-    const scale = await tid('level-svg').evaluate((svg) => svg.getScreenCTM().a);
-    const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    const goal = { x: start.x + (x - from.x) * scale, y: start.y + (y - from.y) * scale };
-    await page.mouse.move(start.x, start.y);
-    await page.mouse.down();
-    await page.mouse.move((start.x + goal.x) / 2, (start.y + goal.y) / 2, { steps: 4 });
-    await page.mouse.move(goal.x, goal.y, { steps: 4 });
-    await page.mouse.up();
-  },
-};
-
 let fatal = null;
 const summary = {};
 try {
@@ -383,18 +359,14 @@ try {
   const recordB = await analyzeAndSave(videoB, 0.5, { score: '9.1', shotAt: '2026-09-30T13:52' });
   check('保存した直後の帯に「基準と比べる」が出る', (await tid('save-compare').count()) === 1);
 
-  // それぞれの記録の角度（水平の線を引く前）と、骨格の位置を控えておく
+  // それぞれの記録の角度と、骨格の位置を控えておく
   await openDetail(recordA);
   const rawA = await detailTable();
   const skeletonA = await skeleton('still-skeleton');
   check(
-    '開いた記録に「水平の線：なし」と「線を引く」が出る',
-    (await tid('detail-level').getAttribute('data-has-level')) === 'false' &&
-      (await tid('detail-level').textContent()).includes('水平の線：なし') &&
-      (await tid('detail-level-open').textContent()) === '線を引く',
-    await tid('detail-level').textContent(),
+    '開いた記録に、水平の線の欄は出ない（初期バージョンから外した）',
+    (await tid('detail-level').count()) === 0 && (await tid('metric-note').count()) === 0,
   );
-  check('線を引く前は、角度表に補正の注記が出ない', (await tid('metric-note').count()) === 0);
   await tid('detail-video').waitFor();
   check(
     '保存した記録に、動画本体が保存されている',
@@ -488,7 +460,7 @@ try {
     '開いた直後は、どちらも撃発の瞬間',
     (await tid('time-base-label').textContent()) === '撃発の瞬間' &&
       (await tid('time-current-label').textContent()) === '撃発の瞬間' &&
-      (await tid('diff-title').textContent()) === '撃発の瞬間の差',
+      (await tid('diff-numbers-title').textContent()) === '撃発の瞬間の差',
     `${shotA} / ${shotB}`,
   );
   summary.shotPictureGap = pictureGap(vBase.sig, stillSigA);
@@ -510,7 +482,7 @@ try {
   check(
     '時点が「撃発の 1.00 秒前」と出て、表の題が「選んだ時点の差」になる',
     (await tid('time-base-label').textContent()) === '撃発の 1.00 秒前' &&
-      (await tid('diff-title').textContent()) === '選んだ時点の差' &&
+      (await tid('diff-numbers-title').textContent()) === '選んだ時点の差' &&
       (await tid('diff-times').textContent()) === '基準：撃発の 1.00 秒前／今回：撃発の瞬間',
     await tid('diff-times').textContent(),
   );
@@ -549,7 +521,8 @@ try {
   await tid('time-current-shot').click();
   await tid('time-base-shot').click();
   await page.waitForFunction(
-    () => document.querySelector('[data-testid=diff-title]')?.textContent === '撃発の瞬間の差',
+    () =>
+      document.querySelector('[data-testid=diff-numbers-title]')?.textContent === '撃発の瞬間の差',
   );
   await waitStageVideos();
   const diffsBack = await diffTable();
@@ -703,7 +676,7 @@ try {
     '動画がなくても、バーを動かすと骨格と差分表は変わる（写真は出ない）',
     (await tid('stage-still-current').count()) === 0 &&
       (await skeleton('still-skeleton'))?.lines === 20 &&
-      (await tid('diff-title').textContent()) === '選んだ時点の差' &&
+      (await tid('diff-numbers-title').textContent()) === '選んだ時点の差' &&
       Object.keys(diffsNoVideo).length === 9,
   );
   await tid('attach-current-file').setInputFiles(videoA);
@@ -788,217 +761,14 @@ try {
   );
   summary.levels = Object.fromEntries(ids.map((id) => [id, diffs[id].level]));
 
-  // ── G：水平の線がないと案内が出る。比較画面から線を引ける
   check(
-    'どちらにも水平の線がないと、案内と 2 つのボタンが出る',
-    (await tid('compare-no-level').textContent()).includes('どちらにも水平の線がありません') &&
-      (await tid('compare-level-base').count()) === 1 &&
-      (await tid('compare-level-current').count()) === 1,
+    '比較画面に、水平の線の案内は出ない（初期バージョンから外した）',
+    (await tid('compare-no-level').count()) === 0,
   );
   await page.screenshot({ path: join(outDir, `compare-${browserName}.png`), fullPage: true });
 
-  await tid('compare-level-current').click();
-  await tid('level-editor').waitFor();
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=level-loupe] image') !== null,
-  );
-  let readout = await level.readout();
-  check(
-    '線を引く画面：最初の線は水平（傾き 0°）で、そのまま決められる',
-    readout.tilt === 0 &&
-      readout.kind === 'horizontal' &&
-      !(await tid('level-submit').isDisabled()),
-    readout.text,
-  );
-  check('まだ線のない記録では「線を消す」が出ない', (await tid('level-remove').count()) === 0);
-  const sizeB = await tid('level-svg').evaluate((svg) => {
-    const image = svg.querySelector('image');
-    return {
-      width: Number(image.getAttribute('width')),
-      height: Number(image.getAttribute('height')),
-    };
-  });
-  // つまみが指で押せる大きさ（44px 以上）か
-  const grab = await tid('level-handle-1').boundingBox();
-  check(
-    'つまみは指で押せる大きさ（44px 以上）で、線の端より下にある',
-    grab.width >= 44 &&
-      grab.height >= 44 &&
-      (await tid('level-handle-1').evaluate(
-        (c) => Number(c.getAttribute('cy')) > Number(c.dataset.y),
-      )),
-    `${grab.width.toFixed(1)}×${grab.height.toFixed(1)}`,
-  );
-  // 右の端を下げる → 右下がり
-  const end2 = await level.end(2);
-  await level.dragTo(2, end2.x, end2.y + sizeB.height * 0.03);
-  readout = await level.readout();
-  const moved2 = await level.end(2);
-  check(
-    'つまみを引きずると線の端が動く（指の位置からのずれを保つ）',
-    Math.abs(moved2.y - (end2.y + sizeB.height * 0.03)) < 3 && Math.abs(moved2.x - end2.x) < 3,
-    `${moved2.x.toFixed(1)}, ${moved2.y.toFixed(1)}`,
-  );
-  check(
-    '右の端を下げると「右下がり」と出て、傾きは正',
-    readout.tilt > 1 && readout.tilt < 5 && readout.text.includes('右下がり'),
-    readout.text,
-  );
-  // 矢印キーで 1 画素ずつ動かせる
-  await tid('level-handle-1').focus();
-  const before1 = await level.end(1);
-  await page.keyboard.press('ArrowUp');
-  await page.keyboard.press('Shift+ArrowLeft');
-  const after1 = await level.end(1);
-  check(
-    '矢印キーで 1 画素、Shift を押しながらで 10 画素動く',
-    Math.abs(after1.y - (before1.y - 1)) < 1e-6 && Math.abs(after1.x - (before1.x - 10)) < 1e-6,
-    `${after1.x}, ${after1.y}`,
-  );
-  await page.screenshot({ path: join(outDir, `compare-${browserName}-level.png`) });
-  readout = await level.readout();
-  const tiltB = readout.tilt;
-  await tid('level-submit').click();
-  await tid('level-editor').waitFor({ state: 'detached' });
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=compare-level-current]') === null,
-  );
-  check(
-    '決めると窓が閉じ、案内は「基準」だけになる',
-    (await tid('compare-no-level').textContent()).includes('「基準」に水平の線がありません') &&
-      (await tid('compare-level-base').count()) === 1,
-    await tid('compare-no-level').textContent(),
-  );
-  diffs = await diffTable();
-  summary.tiltB = tiltB;
-  // 右利き：画面が時計回りに回って写っていた分、肩線・腰線・腕の角度は減り、体軸は増える
-  const shift = (id) => diffs[id].current - round(id, rawB[id]);
-  check(
-    '今回の水平基準の角度が、カメラの傾きの分だけ補正される',
-    Math.abs(shift('shoulderTilt') + tiltB) < 0.11 &&
-      Math.abs(shift('armElevation') + tiltB) < 0.11 &&
-      Math.abs(shift('trunkTilt') - tiltB) < 0.11,
-    `傾き ${tiltB.toFixed(2)}、肩線 ${shift('shoulderTilt').toFixed(2)}、体軸 ${shift('trunkTilt').toFixed(2)}`,
-  );
-  check(
-    '身体基準の角度と、基準の列は変わらない',
-    Math.abs(shift('armShoulderAngle')) < 1e-9 &&
-      ids.every((id) => sameNumber(diffs[id].base, rawA[id] === null ? null : round(id, rawA[id]))),
-  );
-
-  // ── H：ライブラリで開いた記録から線を引く（鉛直な線、使えない線）
-  await openDetail(recordA);
-  await tid('detail-level-open').click();
-  await tid('level-editor').waitFor();
-  const sizeA = sizeB; // どちらも同じ元動画からの切り出しで、同じ大きさ
-  // 使えない線 1：傾きすぎ（約 20°）
-  await level.dragTo(1, sizeA.width * 0.2, sizeA.height * 0.5);
-  await level.dragTo(
-    2,
-    sizeA.width * 0.8,
-    sizeA.height * 0.5 + sizeA.width * 0.6 * Math.tan(Math.PI / 9),
-  );
-  readout = await level.readout();
-  check(
-    '10° を超える傾きは案内が出て、決められない',
-    (await tid('level-too-tilted').count()) === 1 && (await tid('level-submit').isDisabled()),
-    readout.text,
-  );
-  // 使えない線 2：短すぎ
-  await level.dragTo(2, sizeA.width * 0.3, sizeA.height * 0.5);
-  check(
-    '短すぎる線は案内が出て、決められない',
-    (await tid('level-too-short').count()) === 1 && (await tid('level-submit').isDisabled()),
-  );
-  // 射手から離れた鉛直な線：決められるが、注意が出る
-  await level.dragTo(1, sizeA.width * 0.1, sizeA.height * 0.15);
-  await level.dragTo(2, sizeA.width * 0.1, sizeA.height * 0.85);
-  check(
-    '射手から離れた鉛直の線には注意が出る（決めることはできる）',
-    (await tid('level-far').count()) === 1 && !(await tid('level-submit').isDisabled()),
-  );
-  // 鉛直な線：上の端が右へ倒れている（時計回り）→ カメラの傾きは正
-  await level.dragTo(1, sizeA.width * 0.72, sizeA.height * 0.15);
-  await level.dragTo(2, sizeA.width * 0.7, sizeA.height * 0.85);
-  readout = await level.readout();
-  const tiltA = readout.tilt;
-  summary.tiltA = tiltA;
-  check(
-    '立った線は鉛直の線として扱い、鉛直からのずれを傾きとする',
-    readout.kind === 'vertical' &&
-      tiltA > 0.5 &&
-      tiltA < 3 &&
-      (await tid('level-editor').textContent()).includes('鉛直なもの'),
-    readout.text,
-  );
-  check('射手の近くの鉛直の線には注意が出ない', (await tid('level-far').count()) === 0);
-  const drawnA = [await level.end(1), await level.end(2)];
-  await tid('level-submit').click();
-  await tid('level-editor').waitFor({ state: 'detached' });
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=detail-level]')?.dataset.hasLevel === 'true',
-  );
-  check(
-    '開いた記録に「水平の線：あり」と補正した傾きが出る',
-    (await tid('detail-level').textContent()).includes('✓ 水平の線：あり') &&
-      (await tid('detail-level').textContent()).includes(`${tiltA.toFixed(1)}° を補正`) &&
-      (await tid('detail-level-open').textContent()) === '引き直す',
-    await tid('detail-level').textContent(),
-  );
-  const leveledA = await detailTable();
-  check(
-    '角度表が補正した値になり、その注記が出る',
-    Math.abs(leveledA.shoulderTilt - (rawA.shoulderTilt - tiltA)) < 1e-6 &&
-      Math.abs(leveledA.trunkTilt - (rawA.trunkTilt + tiltA)) < 1e-6 &&
-      (await tid('metric-note').textContent()).includes('を補正した値です'),
-    `肩線 ${rawA.shoulderTilt.toFixed(2)} → ${leveledA.shoulderTilt.toFixed(2)}`,
-  );
-  check(
-    '写真の上の骨格は回さない（写真と合ったまま）',
-    (await skeleton('still-skeleton')).points.every((p, i) => dist(p, skeletonA.points[i]) < 1e-6),
-  );
-  await tid('detail-level-open').click();
-  await tid('level-editor').waitFor();
-  const reopened = [await level.end(1), await level.end(2)];
-  check(
-    '引き直すときは、保存した線が出る',
-    reopened.every((p, i) => dist(p, drawnA[i]) < 1e-6) &&
-      (await tid('level-remove').count()) === 1,
-  );
-  await level.dragTo(2, sizeA.width * 1.3, sizeA.height * 1.2);
-  const outside = await level.end(2);
-  check(
-    '端を写真の外へ引きずっても、写真の中に留まる',
-    Math.abs(outside.x - sizeA.width) < 1e-6 && Math.abs(outside.y - sizeA.height) < 1e-6,
-    `${outside.x}, ${outside.y}`,
-  );
-  await tid('level-cancel').click();
-  await tid('level-editor').waitFor({ state: 'detached' });
-  check(
-    '動かしてからキャンセルすると、保存した線は変わらない',
-    (await tid('detail-level').textContent()).includes(`${tiltA.toFixed(1)}° を補正`),
-  );
-
-  // 線を消す（今回の記録 B で）
-  await openDetail(recordB);
-  check(
-    '比較画面から引いた線が、開いた記録にも出る',
-    (await tid('detail-level').getAttribute('data-has-level')) === 'true',
-  );
-  await tid('detail-level-open').click();
-  await tid('level-remove').click();
-  await tid('level-editor').waitFor({ state: 'detached' });
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=detail-level]')?.dataset.hasLevel === 'false',
-  );
-  const removedB = await detailTable();
-  check(
-    '「線を消す」で補正をやめ、角度が元に戻る',
-    ids.every((id) => sameNumber(removedB[id], rawB[id])) &&
-      (await tid('metric-note').count()) === 0,
-  );
-
   // ── I：開いた記録の「基準と比べる」。基準は前回のまま
+  await openDetail(recordB);
   await tid('detail-compare').click();
   await waitCompare();
   check(
@@ -1006,55 +776,6 @@ try {
     (await pairIds()).join(',') === `${recordA},${recordB}` &&
       (await tid('record-picker').count()) === 0,
   );
-  check(
-    '線を消した「今回」だけ、水平の線の案内が出る',
-    (await tid('compare-no-level').textContent()).includes('「今回」に水平の線がありません') &&
-      (await tid('compare-level-base').count()) === 0,
-  );
-  // もう一度引く（今度は右上がり）
-  await tid('compare-level-current').click();
-  await tid('level-editor').waitFor();
-  const e2 = await level.end(2);
-  await level.dragTo(2, e2.x, e2.y - sizeB.height * 0.02);
-  readout = await level.readout();
-  const tiltB2 = readout.tilt;
-  check(
-    '右の端を上げると「右上がり」と出て、傾きは負',
-    tiltB2 < -0.5 && readout.text.includes('右上がり'),
-    readout.text,
-  );
-  await tid('level-submit').click();
-  await tid('level-editor').waitFor({ state: 'detached' });
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=compare-no-level]') === null,
-  );
-  check('両方に線があると、案内は出ない', true);
-  diffs = await diffTable();
-  check(
-    '両方を補正した値どうしの差になる',
-    Math.abs(diffs.shoulderTilt.base - round('shoulderTilt', rawA.shoulderTilt - tiltA)) < 1e-9 &&
-      Math.abs(diffs.shoulderTilt.current - round('shoulderTilt', rawB.shoulderTilt - tiltB2)) <
-        1e-9,
-    `基準 ${diffs.shoulderTilt.base} / 今回 ${diffs.shoulderTilt.current}`,
-  );
-  // カメラの傾きの差の分だけ、基準の骨格を回して重ねる
-  const current2 = await skeleton('still-skeleton');
-  const base2 = await skeleton('still-skeleton-base');
-  const angleOf = (points) =>
-    (Math.atan2(points[3].y - points[4].y, points[3].x - points[4].x) * 180) / Math.PI;
-  const turned = angleOf(base2.points) - angleOf(skeletonA.points);
-  summary.overlayRotation = { turned, expected: tiltB2 - tiltA };
-  check(
-    '重ね描きの基準の骨格は、2 件のカメラの傾きの差の分だけ回る',
-    Math.abs(turned - (tiltB2 - tiltA)) < 1e-6,
-    `${turned.toFixed(3)}° / ${(tiltB2 - tiltA).toFixed(3)}°`,
-  );
-  check(
-    '回しても、腰の中心と体幹の長さは揃ったまま',
-    dist(anchorOf(base2.points).hip, anchorOf(current2.points).hip) < 0.01 &&
-      Math.abs(anchorOf(base2.points).trunk / anchorOf(current2.points).trunk - 1) < 1e-6,
-  );
-
   // ── J：表示の切替
   await tid('align-raw').click();
   const baseRaw = await skeleton('still-skeleton-base');
@@ -1163,7 +884,7 @@ try {
   diffs = await diffTable();
   check(
     '左利きにした今回の角度は、銃側を＋として符号が逆になる',
-    Math.abs(diffs.shoulderTilt.current + round('shoulderTilt', rawB.shoulderTilt - tiltB2)) < 0.11,
+    Math.abs(diffs.shoulderTilt.current + round('shoulderTilt', rawB.shoulderTilt)) < 0.11,
     diffs.shoulderTilt.current,
   );
   await tid('pick-base').click();
@@ -1201,7 +922,7 @@ try {
       (await tid('compare').textContent()).includes('人物を検出できなかった'),
   );
 
-  // ── N：開き直しても、選んだ 2 件と水平の線が残る
+  // ── N：開き直しても、選んだ 2 件と記録が残る
   await page.reload();
   await tid('tab-compare').click();
   await tid('compare-overlay').waitFor();
@@ -1213,9 +934,8 @@ try {
   await openDetail(recordA);
   const reloadedA = await detailTable();
   check(
-    '開き直しても、水平の線と補正した角度が残る',
-    (await tid('detail-level').getAttribute('data-has-level')) === 'true' &&
-      ids.every((id) => sameNumber(reloadedA[id], leveledA[id])),
+    '開き直しても、記録の角度が同じ',
+    ids.every((id) => sameNumber(reloadedA[id], rawA[id])),
   );
 
   // ── O：比べていた記録を削除すると、選び直しになる
@@ -1407,13 +1127,23 @@ try {
   );
   check('版 1 で保存した記録が、一覧に残っている', true);
   await tid('lib-open').click();
+  await tid('detail-numbers').waitFor();
+  check(
+    '角度の数値は、既定では隠れている（ボタンだけが出る）',
+    (await tid('detail-numbers').getAttribute('data-shown')) === 'false' &&
+      (await tid('detail-table').count()) === 0 &&
+      (await tid('detail-numbers-toggle').getAttribute('aria-expanded')) === 'false' &&
+      (await tid('detail-numbers-title').textContent()) === '撃発の瞬間の角度',
+    await tid('detail-numbers-toggle').textContent(),
+  );
+  await tid('detail-numbers-toggle').click();
   await tid('detail-table').waitFor();
   const old = await detailTable();
   check(
-    '版 1 の記録を開け、角度が出て、水平の線は「なし」',
+    'ボタンを押すと角度表が出る。版 1 の記録を開け、角度が出る',
     Math.abs(old.shoulderTilt - 5.71) < 0.01 &&
-      (await tid('detail-level').getAttribute('data-has-level')) === 'false' &&
-      (await tid('detail-date').textContent()) === '9/20（日）10:00',
+      (await tid('detail-date').textContent()) === '9/20（日）10:00' &&
+      (await tid('detail-numbers-toggle').getAttribute('aria-expanded')) === 'true',
     old.shoulderTilt,
   );
   await tid('detail-video').waitFor();
@@ -1422,30 +1152,51 @@ try {
     (await tid('detail-video').getAttribute('data-has-video')) === 'false' &&
       (await tid('detail-attach').count()) === 1,
   );
-  await tid('detail-level-open').click();
-  await tid('level-editor').waitFor();
-  const oldEnd = await level.end(2);
-  await level.dragTo(2, oldEnd.x, oldEnd.y + 12);
-  const oldTilt = (await level.readout()).tilt;
-  await tid('level-submit').click();
-  await tid('level-editor').waitFor({ state: 'detached' });
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=detail-level]')?.dataset.hasLevel === 'true',
-  );
-  const oldLeveled = await detailTable();
-  check(
-    '版 1 だった記録にも水平の線を引いて保存できる',
-    Math.abs(oldLeveled.shoulderTilt - (old.shoulderTilt - oldTilt)) < 1e-6,
-    `${old.shoulderTilt.toFixed(2)} → ${oldLeveled.shoulderTilt.toFixed(2)}`,
+  // 以前の版で引いた水平の線がデータベースに残っていても、角度の計算には使わない
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('pistol-kamae');
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('recordData', 'readwrite');
+          const store = tx.objectStore('recordData');
+          const get = store.get(1);
+          get.onsuccess = () =>
+            store.put({ ...get.result, level: { x1: 100, y1: 400, x2: 540, y2: 430 } });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
   );
   await page.reload();
   await tid('tab-library').click();
   await tid('lib-open').click();
   await tid('detail-table').waitFor();
+  const afterReload = await detailTable();
   check(
-    '開き直しても残っている',
-    (await tid('detail-level').getAttribute('data-has-level')) === 'true',
+    '開き直しても、数値の表示は覚えている（押さなくても表が出る）',
+    (await tid('detail-numbers').getAttribute('data-shown')) === 'true',
   );
+  check(
+    '以前に引いた水平の線が残っていても、角度は補正しない（線の欄も出ない）',
+    Math.abs(afterReload.shoulderTilt - old.shoulderTilt) < 1e-9 &&
+      (await tid('detail-level').count()) === 0,
+    afterReload.shoulderTilt,
+  );
+  await tid('detail-numbers-toggle').click();
+  check(
+    'もう一度押すと隠れる',
+    (await tid('detail-table').count()) === 0 &&
+      (await tid('detail-numbers').getAttribute('data-shown')) === 'false',
+  );
+  await tid('tab-mark').click();
+  await tid('tab-compare').click();
+  check('比較画面を開いてもエラーにならない', (await tid('compare').count()) === 1);
 } catch (e) {
   fatal = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   const state = await page

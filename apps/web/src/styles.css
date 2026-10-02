@@ -807,8 +807,8 @@ button.lib-open {
   font-weight: 700;
 }
 
-/* 開いた記録の「水平の線」の欄 */
-.level-row {
+/* 開いた記録の、状態を 1 行で示す欄（動画：保存済み／なし） */
+.detail-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -818,7 +818,8 @@ button.lib-open {
   margin: var(--space-2) 0;
 }
 
-/* 水平の線を引く画面。写真の下の余白に、線の端を動かすつまみが出る */
+/* 水平の線を引く画面（LevelEditor）。水平校正は初期バージョンから外したので、今は使っていない。
+   写真の下の余白に、線の端を動かすつまみが出る */
 .level-box {
   display: block;
   width: 100%;
@@ -924,4 +925,28 @@ button.lib-open {
   flex: 1;
   padding: 0 var(--space-1);
   font-size: var(--font-size-small);
+}
+
+/* 角度の数値の折りたたみ（既定は閉じている） */
+.numbers-fold {
+  margin: var(--space-3) 0 var(--space-2);
+}
+.numbers-fold h3 {
+  margin: 0 0 var(--space-1);
+}
+/* 見出しを兼ねた開閉ボタン。操作のボタンと見分けられるよう、枠と地を付けず、下線で区切る */
+.numbers-fold h3 button {
+  text-align: left;
+  font-weight: 700;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-strong);
+  border-radius: 0;
+  background: transparent;
+}
+.numbers-hint {
+  font-size: var(--font-size-small);
+  font-weight: 400;
+  color: var(--color-accent);
+  margin-left: var(--space-1);
 }

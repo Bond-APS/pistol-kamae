@@ -4,7 +4,6 @@ import {
   RECORD_FORMAT_VERSION,
   checkShotRecord,
   type Handedness,
-  type LevelLine,
   type Mark,
   type RecordAnalysis,
   type ShotRecord,
@@ -156,15 +155,6 @@ export async function overwriteRecordMarks(
   });
 }
 
-/** 水平校正の線を保存する。null なら線を消す（補正をやめる） */
-export async function setRecordLevel(id: number, level: LevelLine | null): Promise<void> {
-  await db.transaction('rw', db.records, db.recordData, async () => {
-    const updated = await db.recordData.update(id, { level });
-    if (updated === 0) throw new Error('record not found');
-    await db.records.update(id, { updatedAt: Date.now() });
-  });
-}
-
 export async function updateRecordFields(id: number, fields: RecordFields): Promise<void> {
   await db.records.update(id, { ...fields, updatedAt: Date.now() });
 }
@@ -204,7 +194,9 @@ export function toShotRecord(row: RecordRow, data: RecordDataRow, shooter: Shoot
     formatVersion: RECORD_FORMAT_VERSION,
     analysis: data.analysis,
     marks: data.marks,
-    level: data.level ?? null,
+    // 水平校正（カメラの傾きの補正）は初期バージョンから外した（2026-10-03、開発者の決定）。
+    // 以前に引いた線はデータベースに残すが、角度の計算には使わない
+    level: null,
     meta: {
       shotAt: row.shotAt,
       shooterName: shooter.name,
