@@ -42,6 +42,11 @@ interface Props {
   noAudio?: boolean;
   markers?: BarMarker[];
   handles?: ClipHandles;
+  /**
+   * つまみの形。arrow：先の尖った ▲ と縦線（撃発ポイントのように瞬間を指すとき。音の山に目で合わせられる）。
+   * 省略すれば通常の丸いつまみ
+   */
+  pointer?: 'arrow';
   /** 両端に出す文字 */
   startLabel: string;
   endLabel: string;
@@ -130,7 +135,11 @@ export function WaveBar(props: Props) {
   };
 
   return (
-    <div className="wave-bar" data-testid={props.testId} data-value-sec={valueSec.toFixed(3)}>
+    <div
+      className={props.pointer === 'arrow' ? 'wave-bar arrow' : 'wave-bar'}
+      data-testid={props.testId}
+      data-value-sec={valueSec.toFixed(3)}
+    >
       {waves && waves.length > 0 ? (
         <svg
           className="wave"
@@ -163,6 +172,9 @@ export function WaveBar(props: Props) {
             <span>{m.label}</span>
           </div>
         ))}
+        {props.pointer === 'arrow' && (
+          <div className="wave-arrow" aria-hidden="true" style={{ left: pct(valueSec) }} />
+        )}
         <input
           type="range"
           className="slider wave-slider"

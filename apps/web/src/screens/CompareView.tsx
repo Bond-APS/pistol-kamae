@@ -1,5 +1,6 @@
 import {
   IDENTITY,
+  checkClip,
   clipOf,
   commonWindow,
   compareMetrics,
@@ -11,7 +12,7 @@ import {
   type LandmarkFrame,
 } from '@pistol-kamae/engine';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { nearestFrameIndex, seekTimeForFrame } from '../analysis/frames';
+import { nearestFrameIndex, seekTimeForFrame, snapToFrame } from '../analysis/frames';
 import { useAudioEnvelope } from '../audio/useAudioEnvelope';
 import {
   canNormalize,
@@ -31,7 +32,7 @@ import { SkeletonLayer } from '../components/SkeletonLayer';
 import { TransportControls } from '../components/TransportControls';
 import { useRecordVideoUrl } from '../components/useRecordVideoUrl';
 import { WaveBar, type WaveSeries } from '../components/WaveBar';
-import type { OpenedRecord } from '../db/library';
+import { updateRecordClip, type OpenedRecord } from '../db/library';
 import { ja } from '../i18n/ja';
 import { usePlayback, type PlaybackVideo } from '../video/usePlayback';
 import type { PlayerMode } from './RecordPlayer';
@@ -39,10 +40,12 @@ import type { PlayerMode } from './RecordPlayer';
 interface Props {
   base: OpenedRecord;
   current: OpenedRecord;
-  /** 「撃発ポイントの修正」「切り抜き範囲の修正」で、どちらかの動画を直す画面を開く */
+  /** 「撃発ポイントの修正」で、どちらかの動画を直す画面を開く */
   onFix: (role: Role, mode: PlayerMode) => void;
   /** 動画を付け直したとき */
   onVideoAttached: (role: Role) => void;
+  /** 切り抜きの範囲を書き換えたとき（読み直してもらう） */
+  onClipsChanged: () => void;
 }
 
 export type Role = 'base' | 'current';
@@ -83,6 +86,8 @@ function sideOf(opened: OpenedRecord) {
     pose,
     window: shotWindow(record.clip, durationSec, shotSec),
     clip,
+    durationSec,
+    recordId: opened.row.id,
   };
 }
 
@@ -90,11 +95,20 @@ function sideOf(opened: OpenedRecord) {
  * 比較画面の本体（①基準と②比較が決まっているとき）。
  * 2 本の動画を重ね（または横に並べ）、撃発を 0 とした 1 本のバーで 2 本を一緒に動かし、再生・速さ・繰り返しを持つ。
  */
-export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
+export function CompareView({ base, current, onFix, onVideoAttached, onClipsChanged }: Props) {
   const b = useMemo(() => sideOf(base), [base]);
   const c = useMemo(() => sideOf(current), [current]);
   // 2 本に共通する区間（撃発の前後それぞれ短い方）
   const win = useMemo(() => commonWindow(b.window, c.window), [b, c]);
+  // 切り抜きを直すときに動ける最大の範囲：切り抜きを無視した、動画そのものの共通する区間
+  const extent = useMemo(
+    () =>
+      commonWindow(
+        shotWindow(null, b.durationSec, b.shotSec),
+        shotWindow(null, c.durationSec, c.shotSec),
+      ),
+    [b, c],
+  );
 
   const [layout, setLayout] = useState<'overlay' | 'side'>('overlay');
   const [align, setAlign] = useState<AlignMode>('normalized');
@@ -106,6 +120,16 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
   /** バーの時刻（秒）。0 ＝ 撃発。開いた直後は 0 */
   const [t, setT] = useState(0);
   const [fixing, setFixing] = useState<PlayerMode | null>(null);
+  /**
+   * 切り抜き範囲の修正（重ねたまま）。撃発を 0 とした開始・終了を 1 組決め、①②の両方に当てはめる
+   * （2026-10-03、開発者の希望。片方ずつ別の画面で直すのではなく、重ねた絵を見ながら双方を切る）
+   */
+  const [clipEdit, setClipEdit] = useState<{ startT: number; endT: number } | null>(null);
+  const [clipStatus, setClipStatus] = useState<'none' | 'saving' | 'failed' | 'invalid'>('none');
+  // バーの範囲：ふだんは共通の区間、切り抜きを直している間は動画そのものの共通する区間
+  const bar = clipEdit
+    ? { start: -extent.beforeSec, end: extent.afterSec }
+    : { start: -win.beforeSec, end: win.afterSec };
 
   const baseVideo = useRecordVideoUrl(base.row.id, 0);
   const currentVideo = useRecordVideoUrl(current.row.id, 0);
@@ -139,15 +163,56 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
   );
   const playback = usePlayback({
     videos,
-    startT: -win.beforeSec,
-    endT: win.afterSec,
+    startT: bar.start,
+    endT: bar.end,
     rate,
     loop,
     onTick,
   });
   const select = (next: number) => {
     if (playback.playing) playback.pause();
-    setT(Math.min(Math.max(next, -win.beforeSec), win.afterSec));
+    setT(Math.min(Math.max(next, bar.start), bar.end));
+  };
+  /** 撃発を 0 とした時刻を、②比較のコマの時刻に吸着させる */
+  const snapT = (next: number) => snapToFrame(c.frames, c.shotSec + next) - c.shotSec;
+  const setClipEditSnapped = (startT: number, endT: number) => {
+    const s0 = Math.max(snapT(startT), -extent.beforeSec);
+    const e0 = Math.min(snapT(endT), extent.afterSec);
+    if (e0 - s0 >= 1 / c.fps) setClipEdit({ startT: s0, endT: e0 });
+  };
+  const beginClipEdit = () => {
+    playback.pause();
+    setFixing(null);
+    setClipStatus('none');
+    setClipEdit({ startT: -win.beforeSec, endT: win.afterSec });
+  };
+  /** 決めた開始・終了を、①②それぞれの動画の時刻に直して保存する */
+  const saveClips = async () => {
+    if (!clipEdit || clipStatus === 'saving') return;
+    const sides = [b, c];
+    const clips = sides.map((side) => {
+      const startSec = Math.max(snapToFrame(side.frames, side.shotSec + clipEdit.startT), 0);
+      const endSec = Math.min(
+        snapToFrame(side.frames, side.shotSec + clipEdit.endT),
+        side.durationSec,
+      );
+      const clip = { startSec, endSec };
+      const whole = startSec <= 0 && endSec >= side.durationSec;
+      return { side, clip: whole ? null : clip };
+    });
+    if (clips.some(({ side, clip }) => checkClip(clip, side.durationSec, side.shotSec) !== null)) {
+      setClipStatus('invalid');
+      return;
+    }
+    setClipStatus('saving');
+    try {
+      for (const { side, clip } of clips) await updateRecordClip(side.recordId, clip);
+      setClipEdit(null);
+      setClipStatus('none');
+      onClipsChanged();
+    } catch {
+      setClipStatus('failed');
+    }
   };
   const step = (delta: number) => {
     const frame = c.frames[Math.min(Math.max(currentIndex + delta, 0), c.frames.length - 1)];
@@ -182,9 +247,7 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
   const bothVideos = baseVideo.state === 'ready' && currentVideo.state === 'ready';
   // 重ねられない 2 件は、重ねる表示では基準の動画を置かないので、横に並べたときだけ再生できる
   const canPlay =
-    bothVideos &&
-    !(layout === 'overlay' && cannotOverlay) &&
-    win.beforeSec + win.afterSec >= 1 / c.fps;
+    bothVideos && !(layout === 'overlay' && cannotOverlay) && bar.end - bar.start >= 1 / c.fps;
 
   const layerOf = (role: Role, opacity: number): StageLayer => {
     const s = role === 'base' ? b : c;
@@ -375,27 +438,85 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
         {timeLabel}
       </p>
       <WaveBar
-        startSec={-win.beforeSec}
-        endSec={win.afterSec}
+        startSec={bar.start}
+        endSec={bar.end}
         valueSec={t}
         stepSec={1 / c.fps}
         onChange={select}
         waves={waves}
         noAudio={baseEnvelope.state === 'none' && currentEnvelope.state === 'none'}
         markers={[{ key: 'shot', sec: 0, label: ja.compare.shotMarker }]}
-        startLabel={ja.compare.relLabel(-win.beforeSec)}
-        endLabel={ja.compare.relLabel(win.afterSec)}
+        {...(clipEdit
+          ? {
+              handles: {
+                startSec: clipEdit.startT,
+                endSec: clipEdit.endT,
+                onChange: setClipEditSnapped,
+                snap: snapT,
+              },
+            }
+          : {})}
+        startLabel={ja.compare.relLabel(bar.start)}
+        endLabel={ja.compare.relLabel(bar.end)}
         ariaLabel={ja.compare.timeSlider}
         testId="compare-bar"
       />
+      {clipEdit && (
+        <div className="notice" data-testid="compare-clip-edit">
+          <strong>{ja.compare.clipEditTitle}</strong>
+          <p className="small">{ja.compare.clipEditBody}</p>
+          <div className="row nowrap">
+            <button
+              data-testid="clip-set-start"
+              onClick={() => setClipEditSnapped(t, Math.max(clipEdit.endT, t + 1 / c.fps))}
+            >
+              {ja.clip.setStart}
+            </button>
+            <button
+              data-testid="clip-set-end"
+              onClick={() => setClipEditSnapped(Math.min(clipEdit.startT, t - 1 / c.fps), t)}
+            >
+              {ja.clip.setEnd}
+            </button>
+          </div>
+          <p className="small num" data-testid="clip-length">
+            {ja.compare.clipEditRange(clipEdit.startT, clipEdit.endT)}
+          </p>
+          {clipStatus === 'invalid' && <p className="danger small">{ja.clip.invalid}</p>}
+          {clipStatus === 'failed' && <p className="danger small">{ja.library.fixFailed}</p>}
+          <div className="row nowrap">
+            <button
+              data-testid="clip-cancel"
+              disabled={clipStatus === 'saving'}
+              onClick={() => {
+                setClipEdit(null);
+                setClipStatus('none');
+                // 共通の区間へ戻る
+                if (playback.playing) playback.pause();
+                setT(Math.min(Math.max(t, -win.beforeSec), win.afterSec));
+              }}
+            >
+              {ja.common.cancel}
+            </button>
+            <button
+              className="primary grow"
+              data-testid="clip-confirm"
+              disabled={clipStatus === 'saving'}
+              onClick={() => void saveClips()}
+            >
+              {clipStatus === 'saving' ? ja.save.saving : ja.common.decide}
+            </button>
+          </div>
+        </div>
+      )}
       <TransportControls
         playing={playback.playing}
         onPlay={() => playback.play()}
         onPause={playback.pause}
         onPrev={() => step(-1)}
         onNext={() => step(1)}
-        canPrev={t > -win.beforeSec + 1e-6}
-        canNext={t < win.afterSec - 1e-6}
+        canPrev={t > bar.start + 1e-6}
+        canNext={t < bar.end - 1e-6}
         canPlay={canPlay}
         transport={{ rate, loop, onRate: setRate, onLoop: setLoop }}
         testId="compare"
@@ -459,21 +580,27 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
       {layout === 'side' && <p className="muted small">{ja.compare.sideNote}</p>}
 
       <div className="stack spaced">
-        {(['shot', 'clip'] as const).map((m) => (
-          <button
-            key={m}
-            className="full"
-            data-testid={`compare-fix-${m}`}
-            aria-expanded={fixing === m}
-            disabled={!bothVideos}
-            onClick={() => {
-              playback.pause();
-              setFixing(fixing === m ? null : m);
-            }}
-          >
-            {m === 'shot' ? ja.compare.fixShot : ja.compare.fixClip}
-          </button>
-        ))}
+        <button
+          className="full"
+          data-testid="compare-fix-shot"
+          aria-expanded={fixing === 'shot'}
+          disabled={!bothVideos}
+          onClick={() => {
+            playback.pause();
+            setFixing(fixing === 'shot' ? null : 'shot');
+          }}
+        >
+          {ja.compare.fixShot}
+        </button>
+        <button
+          className="full"
+          data-testid="compare-fix-clip"
+          aria-pressed={clipEdit !== null}
+          disabled={!bothVideos || clipEdit !== null}
+          onClick={beginClipEdit}
+        >
+          {ja.compare.fixClip}
+        </button>
       </div>
       {fixing && (
         <div className="notice" data-testid="compare-fix-which">

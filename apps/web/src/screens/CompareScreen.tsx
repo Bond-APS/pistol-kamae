@@ -149,6 +149,10 @@ export function CompareScreen(props: Props) {
         base={base}
         current={current}
         onFix={(role, mode) => setFixing({ role, mode })}
+        onClipsChanged={() => {
+          setVersion((v) => v + 1);
+          onRecordChanged(pair.baseId ?? 0);
+        }}
         onVideoAttached={(role) => {
           forgetEnvelope((role === 'base' ? base : current).row.id);
           setVersion((v) => v + 1);

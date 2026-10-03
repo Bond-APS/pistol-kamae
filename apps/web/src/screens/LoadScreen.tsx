@@ -129,6 +129,18 @@ export function LoadScreen(props: Props) {
 
   const busy = status.kind === 'preparing' || status.kind === 'running';
 
+  // 動画を選んだ直後（メタ情報とフレームレートの推定）は、「しばらくお待ちください」だけを出す
+  // （2026-10-03、開発者の希望。写真アプリから選ぶと、ここで数秒かかる）
+  if (status.kind === 'loading') {
+    return (
+      <section data-testid="load-waiting">
+        <p className="waiting" role="status" aria-live="polite">
+          {ja.load.pleaseWait}
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section>
       <p className="muted small">
@@ -154,7 +166,6 @@ export function LoadScreen(props: Props) {
         />
       </label>
 
-      {status.kind === 'loading' && <p>{ja.load.loadingVideo}</p>}
       {status.kind === 'unsupported' && (
         <div className="notice err">
           <strong>{ja.load.unsupportedTitle}</strong>

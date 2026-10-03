@@ -846,6 +846,35 @@ button.lib-open {
   z-index: 1;
   display: block;
 }
+/* ▲ のつまみ：本来の丸いつまみは透明にして（指で掴める大きさは残す）、▲ と縦線を重ねる */
+.wave-bar.arrow .wave-slider::-webkit-slider-thumb {
+  opacity: 0;
+}
+.wave-bar.arrow .wave-slider::-moz-range-thumb {
+  opacity: 0;
+}
+.wave-arrow {
+  position: absolute;
+  top: calc(50% - 2px);
+  width: 0;
+  height: 0;
+  margin-left: -9px;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 14px solid var(--color-accent);
+  pointer-events: none;
+  z-index: 2;
+}
+.wave-arrow::before {
+  /* 山の上まで届く細い縦線 */
+  content: '';
+  position: absolute;
+  left: -1px;
+  bottom: 0;
+  width: 2px;
+  height: 64px;
+  background: var(--color-accent);
+}
 .wave-dim {
   position: absolute;
   top: calc(50% - 8px);
@@ -1005,4 +1034,26 @@ button.lib-open {
 }
 .record-form .field {
   margin-top: var(--space-2);
+}
+
+/* 動画を選んだ直後の待ち表示。ゆっくり点滅する */
+.waiting {
+  text-align: center;
+  font-size: var(--font-size-large);
+  margin: var(--space-5) 0;
+  animation: waiting-blink 2s ease-in-out infinite;
+}
+@keyframes waiting-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .waiting {
+    animation: none;
+  }
 }

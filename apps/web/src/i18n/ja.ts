@@ -46,7 +46,7 @@ export const ja = {
   handedness: handednessName,
   load: {
     pickVideo: '手順 1：下のボタンを押して動画を選ぶ',
-    loadingVideo: '動画を読み込んでいます…（フレームレートの推定に数秒かかります）',
+    pleaseWait: 'しばらくお待ちください',
     formatHint:
       '読める形式：MP4（H.264）、MOV（H.264）、WebM。iPhone の HEVC 形式は Windows の Chrome などで再生できないことがあります。',
     formatHintIphone: 'iPhone は「設定 → カメラ → フォーマット → 互換性優先」で撮影してください。',
@@ -339,6 +339,11 @@ export const ja = {
       `人物の大きさが ${percent}% 違います。「位置と大きさを揃える」で比べてください。`,
     fixShot: '撃発ポイントの修正',
     fixClip: '切り抜き範囲の修正',
+    clipEditTitle: '切り抜き範囲の修正（①②の両方）',
+    clipEditBody:
+      '撃発を 0 とした開始と終了を決めます。取っ手を引くか、バーを動かして「ここを開始に」「ここを終了に」。決定すると、①②の両方の動画がこの範囲に切り抜かれます。',
+    clipEditRange: (startT: number, endT: number) =>
+      `範囲：撃発の ${Math.abs(startT).toFixed(1)} 秒${startT < 0 ? '前' : '後'}〜${Math.abs(endT).toFixed(1)} 秒${endT < 0 ? '前' : '後'}（${(endT - startT).toFixed(1)} 秒）`,
     fixWhich: 'どちらの動画を直しますか',
     fixRole: (n: 1 | 2, role: string, title: string) => `${n === 1 ? '①' : '②'}${role}：${title}`,
     handednessTitle: '利き手が違う 2 人です',

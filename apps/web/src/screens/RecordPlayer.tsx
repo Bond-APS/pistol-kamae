@@ -187,6 +187,7 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
           {...(waves ? { waves } : {})}
           noAudio={envelope.state === 'none'}
           markers={markers}
+          {...(mode === 'shot' ? { pointer: 'arrow' as const } : {})}
           {...(mode === 'clip'
             ? {
                 handles: {

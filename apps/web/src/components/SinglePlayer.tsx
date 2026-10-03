@@ -27,6 +27,8 @@ interface Props {
   noAudio?: boolean;
   markers?: BarMarker[];
   handles?: ClipHandles;
+  /** つまみの形（撃発ポイントを指すときは ▲） */
+  pointer?: 'arrow';
   /** 速さと繰り返し。渡さなければ ◀1 コマ／▶ 再生／1 コマ▶ だけ */
   transport?: Transport;
   /** 時刻の表示（つまみの位置の説明）。撃発からの秒数など */
@@ -140,6 +142,7 @@ export function SinglePlayer(props: Props) {
         {...(props.noAudio ? { noAudio: true } : {})}
         {...(props.markers ? { markers: props.markers } : {})}
         {...(props.handles ? { handles: props.handles } : {})}
+        {...(props.pointer ? { pointer: props.pointer } : {})}
         startLabel={ja.player.secLabel(startSec)}
         endLabel={ja.player.secLabel(endSec)}
         ariaLabel={ja.player.slider}

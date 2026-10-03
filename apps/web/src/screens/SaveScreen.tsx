@@ -347,6 +347,7 @@ export function SaveScreen(props: Props) {
             {...(waves ? { waves } : {})}
             noAudio={envelope.state === 'none'}
             markers={shotMarkers}
+            pointer="arrow"
             timeLabel={timeLabel}
             onVideo={onVideo}
             active={props.active}

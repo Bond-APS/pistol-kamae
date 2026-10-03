@@ -306,15 +306,49 @@ try {
     near(-min2, fixedShot - 1.0, 0.1),
     `${min2} (expected -${(fixedShot - 1.0).toFixed(2)})`,
   );
+  // 切り抜き範囲の修正：重ねたまま、撃発を 0 とした開始・終了を決め、①②の両方に当てはめる
   await tid('compare-fix-clip').click();
-  await tid('compare-fix-current').click();
-  await tid('record-player').waitFor();
+  await tid('compare-clip-edit').waitFor();
+  const editMin = Number(await tid('compare-bar-slider').getAttribute('min'));
+  const editMax = Number(await tid('compare-bar-slider').getAttribute('max'));
+  // 直している間は、切り抜きを無視した動画そのものの共通する区間を動ける：A は前 ≈ 2.5・後 ≈ 2.5、B は前 2.0・後 ≈ 2.03
   check(
-    '比較の切り抜き範囲の修正が開く',
-    (await tid('record-player').getAttribute('data-mode')) === 'clip' &&
-      (await tid('player-title').textContent()) === '音声なし',
+    '修正中はバーが動画そのものの共通する区間に広がる',
+    near(-editMin, 2.0, 0.1) && near(editMax, 2.03, 0.1),
+    `${editMin}〜${editMax}`,
   );
-  await tid('player-back').click();
+  check('取っ手が 2 つ出る', (await page.locator('.wave-handle').count()) === 2);
+  await slideTo('compare-bar', 1.0);
+  await waitBothReady();
+  await tid('clip-set-end').click();
+  await page.screenshot({
+    path: join(here, 'results', `compare-${browserName}-clipedit.png`),
+    fullPage: true,
+  });
+  check(
+    '「ここを終了に」で終了が +1.0 秒になる',
+    /1\.0 秒後（/.test(await tid('clip-length').textContent()),
+    await tid('clip-length').textContent(),
+  );
+  await tid('clip-confirm').click();
+  await tid('compare-clip-edit').waitFor({ state: 'detached', timeout: 15_000 });
+  await tid('compare-bar').waitFor();
+  await waitBothReady();
+  const min3 = Number(await tid('compare-bar-slider').getAttribute('min'));
+  const max3 = Number(await tid('compare-bar-slider').getAttribute('max'));
+  check(
+    '決定すると両方の動画が切り抜かれ、共通の区間が +1.0 秒までになる',
+    near(max3, 1.0, 0.05) && near(min3, min2, 0.05),
+    `${min3}〜${max3}`,
+  );
+  // ライブラリの詳細にも反映されている（②音声なし：撃発 2.0 → 0.53〜3.0 秒）
+  await tid('compare-back').click();
+  await item(b.id).locator('[data-testid=lib-open]').click();
+  await tid('record-detail').waitFor();
+  const lengthB = await tid('detail-length').textContent();
+  check('②の詳細の範囲が更新される', /〜3\.0 秒/.test(lengthB), lengthB);
+  await tid('detail-back').click();
+  await tid('pick-compare').click();
   await tid('compare-bar').waitFor();
 
   // ライブラリへ戻る
