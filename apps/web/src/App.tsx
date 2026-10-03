@@ -1,13 +1,10 @@
-import type { Mark } from '@pistol-kamae/engine';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { AnalysisResult } from './analysis/runAnalysis';
 import { DevErrorBanner } from './components/DevErrorBanner';
-import { VideoPlayer } from './components/VideoPlayer';
 import {
   EMPTY_PAIR,
   getComparePair,
   getLastShooterId,
-  getRecordRow,
   listShooters,
   setComparePair,
   setLastShooterId,
@@ -15,41 +12,33 @@ import {
 } from './db/library';
 import type { ShooterRow } from './db/schema';
 import { ja } from './i18n/ja';
-import { hasUnsavedMarks, type SavedState } from './library/savedState';
 import { CompareScreen } from './screens/CompareScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
-import { LoadScreen } from './screens/LoadScreen';
-import { MarkScreen } from './screens/MarkScreen';
 import { NoiseScreen } from './screens/NoiseScreen';
+import { SaveScreen } from './screens/SaveScreen';
 
-type Tab = 'load' | 'mark' | 'library' | 'compare' | 'noise';
-const TABS: Tab[] = ['load', 'mark', 'library', 'compare', 'noise'];
-/** プレイヤー（動画）を出す画面 */
-const PLAYER_TABS: ReadonlySet<Tab> = new Set(['load', 'mark']);
+/** 入口は 2 つ。比較はライブラリから入る（タブではない）。ノイズ測定は開発用で、?noise=1 のときだけ */
+type Tab = 'save' | 'library' | 'noise';
+type View = Tab | 'compare';
 
 // 開発サーバ限定の自動テストモード（?autotest=1）。公開ビルドでは読み込まない
 const AutoTest = import.meta.env.DEV ? lazy(() => import('./dev/AutoTest')) : null;
-const autoTestRequested =
-  import.meta.env.DEV && new URLSearchParams(window.location.search).has('autotest');
+const params = new URLSearchParams(window.location.search);
+const autoTestRequested = import.meta.env.DEV && params.has('autotest');
+const TABS: Tab[] = params.has('noise') ? ['save', 'library', 'noise'] : ['save', 'library'];
 
 export function App() {
-  const [tab, setTab] = useState<Tab>('load');
+  const [view, setView] = useState<View>('save');
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [shooters, setShooters] = useState<ShooterRow[]>([]);
   const [shooterId, setShooterId] = useState<number | null>(null);
   const [dbFailed, setDbFailed] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
-  /** 読み込んだ動画ファイル。保存のとき、動画本体と撮影日時の初期値に使う */
-  const [file, setFile] = useState<File | null>(null);
-  const [marks, setMarks] = useState<Mark[]>([]);
-  const [saved, setSaved] = useState<SavedState | null>(null);
-  const [frameIndex, setFrameIndex] = useState(0);
-  // 比較画面で比べる 2 件（基準と今回）。端末に覚えておき、次に開いたときも同じ 2 件を出す
+  const [unsaved, setUnsaved] = useState(false);
+  // 比較する 2 件（①基準・②比較）。端末に覚えておき、次に開いたときも同じ 2 件を出す
   const [pair, setPair] = useState<ComparePair>(EMPTY_PAIR);
-  // 「基準と比べる」で比較画面を開いたとき、基準が未選択なら先に選ぶ窓を出す（1 回だけ）
-  const [autoPickBase, setAutoPickBase] = useState(false);
-  // video 要素もプレイヤーも 1 つだけ作り、読込画面とマーク画面で共有する。
-  // Safari は video 要素を画面の別の場所へ移し替えると、その後のシークが終わらなくなるため、
-  // 一度置いたら動かさない（並び順と表示・非表示は CSS で切り替える）
+  /** ライブラリの一覧を読み直してもらうための番号（保存・修正のたびに増やす） */
+  const [libraryVersion, setLibraryVersion] = useState(0);
+  // 推定に使う video 要素。読込画面が作り、推定が終わったら解放する
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const reloadShooters = useCallback(async () => {
@@ -60,7 +49,7 @@ export function App() {
     }
   }, []);
 
-  // 起動時：射手の一覧を読み、前回の射手を選んでおく
+  // 起動時：射手の一覧を読み、前回の射手と比較の 2 件を選んでおく
   useEffect(() => {
     void (async () => {
       try {
@@ -87,72 +76,26 @@ export function App() {
     void setLastShooterId(id).catch(() => {});
   }, []);
 
-  // 動画を選び直す・推定をやり直すと、マークと保存先の対応は消える
-  const onResult = useCallback((r: AnalysisResult | null, f: File | null) => {
-    setResult(r);
-    setFile(f);
-    setMarks([]);
-    setSaved(null);
-    setFrameIndex(0);
-  }, []);
-
-  const changeTab = useCallback((t: Tab) => {
-    // プレイヤーのない画面へ移るときは、見えないまま再生が続かないよう止める
-    if (!PLAYER_TABS.has(t)) videoRef.current?.pause();
-    setTab(t);
+  const changeView = useCallback((v: View) => {
+    setView(v);
     window.scrollTo(0, 0);
   }, []);
-  const goLoad = useCallback(() => changeTab('load'), [changeTab]);
-  const goMark = useCallback(() => changeTab('mark'), [changeTab]);
-  const goLibrary = useCallback(() => changeTab('library'), [changeTab]);
-  const autoPickHandled = useCallback(() => setAutoPickBase(false), []);
+  const [newRequest, setNewRequest] = useState(0);
+  const goLoad = useCallback(() => {
+    setNewRequest((n) => n + 1);
+    changeView('save');
+  }, [changeView]);
+  const goLibrary = useCallback(() => changeView('library'), [changeView]);
+  const goCompare = useCallback(() => changeView('compare'), [changeView]);
 
   const changePair = useCallback((next: ComparePair) => {
     setPair(next);
     void setComparePair(next).catch(() => {});
   }, []);
-  /** 記録を「今回」として比較画面を開く。基準は前回のまま（同じ記録が基準だったら、基準を選び直してもらう） */
-  const openCompare = useCallback(
-    (recordId: number) => {
-      changePair({ baseId: pair.baseId === recordId ? null : pair.baseId, currentId: recordId });
-      setAutoPickBase(true);
-      changeTab('compare');
-    },
-    [pair, changePair, changeTab],
-  );
-
-  const onSaved = useCallback(
-    (s: SavedState) => {
-      setSaved(s);
-      // 保存時に射手を替えたら、以後の角度表もその射手の利き手で出す
-      changeShooter(s.fields.shooterId);
-    },
-    [changeShooter],
-  );
-
-  // ライブラリ側で、いま読み込んでいる解析の保存先が編集・削除されたときに合わせる
-  const onRecordChanged = useCallback((id: number) => {
-    void getRecordRow(id).then((row) => {
-      if (!row) return;
-      setSaved((s) =>
-        s && s.recordId === id
-          ? {
-              ...s,
-              fields: {
-                shooterId: row.shooterId,
-                shotAt: row.shotAt,
-                score: row.score,
-                memo: row.memo,
-                favorite: row.favorite,
-              },
-            }
-          : s,
-      );
-    });
-  }, []);
+  const bumpLibrary = useCallback(() => setLibraryVersion((v) => v + 1), []);
   const onRecordDeleted = useCallback(
     (id: number) => {
-      setSaved((s) => (s && s.recordId === id ? null : s));
+      bumpLibrary();
       // 比較に選んでいた記録が削除されたら、選び直しの状態に戻す
       if (pair.baseId === id || pair.currentId === id) {
         changePair({
@@ -161,7 +104,7 @@ export function App() {
         });
       }
     },
-    [pair, changePair],
+    [pair, changePair, bumpLibrary],
   );
 
   if (AutoTest && autoTestRequested) {
@@ -175,7 +118,7 @@ export function App() {
     );
   }
 
-  const unsaved = hasUnsavedMarks(marks, saved);
+  const tab: Tab | null = view === 'compare' ? null : view;
 
   return (
     <main className="app">
@@ -198,10 +141,10 @@ export function App() {
             className={tab === t ? 'tab active' : 'tab'}
             data-testid={`tab-${t}`}
             aria-current={tab === t ? 'page' : undefined}
-            onClick={() => changeTab(t)}
+            onClick={() => changeView(t)}
           >
             {ja.tabs[t]}
-            {t === 'mark' && unsaved && (
+            {t === 'save' && unsaved && (
               <span
                 className="status-dot"
                 data-testid="unsaved-dot"
@@ -215,71 +158,47 @@ export function App() {
       </nav>
 
       <div className="screens">
-        {/* 読込画面は隠すだけにして、処理状態を保つ */}
-        <div hidden={tab !== 'load'}>
-          <LoadScreen
+        {/* 保存の流れは隠すだけにして、処理状態を保つ */}
+        <div hidden={view !== 'save'}>
+          <SaveScreen
             videoRef={videoRef}
             shooters={shooters}
             shooter={shooter}
             onShooterChange={changeShooter}
             onShootersChanged={reloadShooters}
-            result={result}
-            onResult={onResult}
-            hasUnsaved={unsaved}
-            onGoMark={goMark}
-          />
-        </div>
-        {tab === 'mark' && (
-          <MarkScreen
-            videoRef={videoRef}
-            result={result}
-            frameIndex={frameIndex}
-            shooters={shooters}
-            shooter={shooter}
-            marks={marks}
-            onMarksChange={setMarks}
-            file={file}
-            saved={saved}
-            onSaved={onSaved}
-            onShootersChanged={reloadShooters}
-            onGoLoad={goLoad}
+            onUnsavedChange={setUnsaved}
+            onResultChange={setResult}
+            newRequest={newRequest}
             onGoLibrary={goLibrary}
-            onCompare={openCompare}
+            onSaved={bumpLibrary}
           />
-        )}
+        </div>
         {/* ライブラリも隠すだけにして、絞り込みの状態を保つ */}
-        <div hidden={tab !== 'library'}>
+        <div hidden={view !== 'library'}>
           <LibraryScreen
-            active={tab === 'library'}
+            active={view === 'library'}
+            version={libraryVersion}
             shooters={shooters}
             onShootersChanged={reloadShooters}
             onGoLoad={goLoad}
-            onRecordChanged={onRecordChanged}
+            onRecordChanged={bumpLibrary}
             onRecordDeleted={onRecordDeleted}
-            onCompare={openCompare}
+            pair={pair}
+            onPairChange={changePair}
+            onCompare={goCompare}
           />
         </div>
-        {tab === 'compare' && (
+        {view === 'compare' && (
           <CompareScreen
             shooters={shooters}
             pair={pair}
             onPairChange={changePair}
-            autoPickBase={autoPickBase}
-            onAutoPickHandled={autoPickHandled}
             onGoLibrary={goLibrary}
-            onGoLoad={goLoad}
+            onRecordChanged={bumpLibrary}
           />
         )}
-        {tab === 'noise' && (
+        {view === 'noise' && (
           <NoiseScreen result={result} handedness={handedness} onGoLoad={goLoad} />
-        )}
-        {result && (
-          <div
-            className={tab === 'mark' ? 'player-slot player-first' : 'player-slot'}
-            hidden={!PLAYER_TABS.has(tab)}
-          >
-            <VideoPlayer videoRef={videoRef} result={result} onFrameIndex={setFrameIndex} />
-          </div>
         )}
       </div>
     </main>

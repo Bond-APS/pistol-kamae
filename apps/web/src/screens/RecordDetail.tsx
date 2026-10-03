@@ -1,18 +1,15 @@
 import {
-  formatScore,
+  clipDurationSec,
+  clipOf,
   frameIndexAt,
   parseLocalDateTime,
   shotMarkOf,
-  shotMetricsOfRecord,
-  type Rect,
 } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { forgetEnvelope } from '../audio/useAudioEnvelope';
 import { AttachVideo } from '../components/AttachVideo';
-import { ConfirmDialog } from '../components/Dialog';
-import { MetricTable } from '../components/MetricTable';
-import { NumbersFold } from '../components/NumbersFold';
+import { ConfirmDialog, Dialog } from '../components/Dialog';
 import { RecordForm } from '../components/RecordForm';
-import { Score } from '../components/Score';
 import { StillView } from '../components/StillView';
 import { StoredImg } from '../components/StoredImg';
 import {
@@ -27,6 +24,7 @@ import {
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import { personCrop } from '../library/crop';
+import { RecordPlayer, type PlayerMode } from './RecordPlayer';
 
 interface Props {
   recordId: number;
@@ -34,23 +32,21 @@ interface Props {
   onShootersChanged: () => Promise<void>;
   /** 一覧へ戻る */
   onClose: () => void;
-  /** 内容（射手・点数・お気に入りなど）が変わったとき */
+  /** 内容（タイトル・撃発ポイント・範囲など）が変わったとき */
   onChanged: (id: number) => void;
   onDeleted: (id: number) => void;
-  /** この記録を「今回」として、基準と比べる（比較画面へ移る） */
-  onCompare: (id: number) => void;
 }
 
 type State = { kind: 'loading' } | { kind: 'notFound' } | { kind: 'open'; opened: OpenedRecord };
 
 /**
- * ライブラリから開いた 1 件。撃発の瞬間の静止画＋骨格と、角度表（ボタンで出す）。
+ * ライブラリから開いた 1 本の動画。撃発の瞬間の静止画＋骨格、情報、編集・修正・再生・削除。
  */
 export function RecordDetail(props: Props) {
-  const { recordId, shooters, onShootersChanged, onClose, onChanged, onDeleted, onCompare } = props;
+  const { recordId, shooters, onShootersChanged, onClose, onChanged, onDeleted } = props;
   const [state, setState] = useState<State>({ kind: 'loading' });
-  const [fit, setFit] = useState<'person' | 'whole'>('person');
   const [editing, setEditing] = useState(false);
+  const [player, setPlayer] = useState<PlayerMode | null>(null);
   /** 動画本体が保存されているか。調べ終わるまでは null */
   const [hasVideo, setHasVideo] = useState<boolean | null>(null);
   const checkVideo = useCallback(
@@ -82,7 +78,6 @@ export function RecordDetail(props: Props) {
   }, [reload, shooters]);
 
   const opened = state.kind === 'open' ? state.opened : null;
-  const metrics = useMemo(() => (opened ? shotMetricsOfRecord(opened.record) : null), [opened]);
   const shotLandmarks = useMemo(() => {
     if (!opened) return null;
     const shot = shotMarkOf(opened.record.marks);
@@ -117,17 +112,29 @@ export function RecordDetail(props: Props) {
     );
   }
 
+  if (player) {
+    return (
+      <RecordPlayer
+        opened={opened}
+        mode={player}
+        backLabel={ja.library.backToDetail}
+        onClose={() => setPlayer(null)}
+        onChanged={(id) => {
+          void reload();
+          onChanged(id);
+        }}
+      />
+    );
+  }
+
   const { row, shooter, record, still } = opened;
   const { analysis } = record;
   const size = { width: analysis.width, height: analysis.height };
-  const whole: Rect = { x: 0, y: 0, ...size };
-  const view = fit === 'person' ? personCrop(shotLandmarks, size) : whole;
+  const view = personCrop(shotLandmarks, size);
   const date = parseLocalDateTime(row.shotAt);
-  const summary = ja.record.summary(
-    date,
-    shooter.name,
-    row.score === null ? null : formatScore(row.score),
-  );
+  const shot = shotMarkOf(record.marks)!;
+  const clip = clipOf(record.clip, analysis.durationSec);
+  const clipSec = clipDurationSec(record.clip, analysis.durationSec);
 
   const toggleFavorite = async () => {
     await setRecordFavorite(row.id, !row.favorite);
@@ -145,6 +152,7 @@ export function RecordDetail(props: Props) {
     setRemoveFailed(false);
     try {
       await deleteRecord(row.id);
+      forgetEnvelope(row.id);
       onDeleted(row.id);
     } catch {
       setRemoveFailed(true);
@@ -154,11 +162,20 @@ export function RecordDetail(props: Props) {
 
   return (
     <section data-testid="record-detail" data-record-id={row.id}>
+      {back}
+
+      <StillView
+        image={still}
+        width={analysis.width}
+        height={analysis.height}
+        landmarks={shotLandmarks}
+        view={view}
+      />
+
       <div className="row nowrap">
-        <button data-testid="detail-back" onClick={onClose}>
-          {ja.library.back}
-        </button>
-        <span className="grow" />
+        <h2 className="grow ellipsis" data-testid="detail-title">
+          {row.title}
+        </h2>
         <button
           className={row.favorite ? 'icon fav-on' : 'icon fav-off'}
           data-testid="detail-favorite"
@@ -169,40 +186,60 @@ export function RecordDetail(props: Props) {
           {row.favorite ? '★' : '☆'}
         </button>
       </div>
+      <dl className="kv small">
+        <dt>{ja.library.detailShooter}</dt>
+        <dd data-testid="detail-shooter">
+          {ja.library.shooterLine(shooter.name, shooter.handedness)}
+        </dd>
+        <dt>{ja.library.detailShotAt}</dt>
+        <dd className="num" data-testid="detail-date">
+          {date ? ja.record.dateTime(date) : row.shotAt}
+        </dd>
+        <dt>{ja.library.detailLength}</dt>
+        <dd className="num" data-testid="detail-length">
+          {ja.library.detailLengthValue(clipSec, analysis.durationSec, clip.startSec, clip.endSec)}
+        </dd>
+        <dt>{ja.library.detailShot}</dt>
+        <dd className="num" data-testid="detail-shot">
+          {ja.library.detailShotValue(shot.timeSec)}
+        </dd>
+        {row.memo !== '' && (
+          <>
+            <dt>{ja.library.detailMemo}</dt>
+            <dd data-testid="detail-memo">{row.memo}</dd>
+          </>
+        )}
+      </dl>
 
-      <div className="detail-head">
-        <h2 data-testid="detail-date">{date ? ja.record.dateTime(date) : row.shotAt}</h2>
-        <Score value={row.score} big />
+      <div className="stack">
+        <button
+          className="full"
+          data-testid="detail-play"
+          disabled={hasVideo !== true}
+          onClick={() => setPlayer('play')}
+        >
+          {ja.library.play}
+        </button>
+        <button className="full" data-testid="detail-edit" onClick={() => setEditing(true)}>
+          {ja.library.edit}
+        </button>
+        <button
+          className="full"
+          data-testid="detail-fix-shot"
+          disabled={hasVideo !== true}
+          onClick={() => setPlayer('shot')}
+        >
+          {ja.library.fixShot}
+        </button>
+        <button
+          className="full"
+          data-testid="detail-fix-clip"
+          disabled={hasVideo !== true}
+          onClick={() => setPlayer('clip')}
+        >
+          {ja.library.fixClip}
+        </button>
       </div>
-      <p className="small" data-testid="detail-shooter">
-        {ja.library.shooterLine(shooter.name, shooter.handedness)}
-      </p>
-      {row.memo !== '' && (
-        <p className="small memo" data-testid="detail-memo">
-          {ja.library.memo(row.memo)}
-        </p>
-      )}
-
-      <StillView
-        image={still}
-        width={analysis.width}
-        height={analysis.height}
-        landmarks={shotLandmarks}
-        view={view}
-      />
-      <div className="seg spaced">
-        {(['person', 'whole'] as const).map((f) => (
-          <button
-            key={f}
-            data-testid={`fit-${f}`}
-            aria-pressed={fit === f}
-            onClick={() => setFit(f)}
-          >
-            {f === 'person' ? ja.library.fitPerson : ja.library.fitWhole}
-          </button>
-        ))}
-      </div>
-      <p className="muted small">{ja.player.legend}</p>
 
       {hasVideo !== null && (
         <div className="detail-row" data-testid="detail-video" data-has-video={hasVideo}>
@@ -221,28 +258,12 @@ export function RecordDetail(props: Props) {
         <AttachVideo
           recordId={row.id}
           analysis={analysis}
-          onAttached={() => void checkVideo()}
+          onAttached={() => {
+            forgetEnvelope(row.id);
+            void checkVideo();
+          }}
           testId="detail-attach"
         />
-      )}
-
-      <button
-        className="primary full"
-        data-testid="detail-compare"
-        onClick={() => onCompare(row.id)}
-      >
-        {ja.library.compare}
-      </button>
-      <div className="row">
-        <button data-testid="detail-edit" onClick={() => setEditing(true)}>
-          {ja.library.edit}
-        </button>
-      </div>
-
-      {metrics && (
-        <NumbersFold title={ja.mark.tableTitle} testId="detail-numbers">
-          <MetricTable metrics={metrics} testId="detail-table" />
-        </NumbersFold>
       )}
 
       <p className="muted small" data-testid="detail-info">
@@ -256,25 +277,32 @@ export function RecordDetail(props: Props) {
       </p>
 
       <div className="gap-destructive" />
-      <button className="danger" data-testid="detail-remove" onClick={() => setRemoving(true)}>
+      <button className="danger full" data-testid="detail-remove" onClick={() => setRemoving(true)}>
         {ja.library.remove}
       </button>
 
       {editing && (
-        <RecordForm
-          mode="edit"
-          shooters={shooters}
-          initial={{
-            shooterId: row.shooterId,
-            shotAt: row.shotAt,
-            score: row.score,
-            memo: row.memo,
-            favorite: row.favorite,
-          }}
-          onSubmit={saveEdit}
+        <Dialog
+          variant="sheet"
+          title={ja.record.formEditTitle}
           onCancel={() => setEditing(false)}
-          onShootersChanged={onShootersChanged}
-        />
+          testId="edit-dialog"
+        >
+          <RecordForm
+            mode="edit"
+            shooters={shooters}
+            initial={{
+              title: row.title,
+              shooterId: row.shooterId,
+              shotAt: row.shotAt,
+              memo: row.memo,
+              favorite: row.favorite,
+            }}
+            onSubmit={saveEdit}
+            onCancel={() => setEditing(false)}
+            onShootersChanged={onShootersChanged}
+          />
+        </Dialog>
       )}
 
       {removing && (
@@ -289,7 +317,7 @@ export function RecordDetail(props: Props) {
         >
           <div className="dialog-target">
             <StoredImg image={row.thumb} className="thumb" alt="" />
-            <p className="small num">{summary}</p>
+            <p className="small num">{row.title}</p>
           </div>
           <p className="small">{ja.library.removeBody}</p>
           {removeFailed && <p className="danger small">{ja.library.removeFailed}</p>}

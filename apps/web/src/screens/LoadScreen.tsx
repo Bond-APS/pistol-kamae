@@ -23,9 +23,10 @@ interface Props {
   result: AnalysisResult | null;
   /** file は選んだ動画ファイル（保存のとき、動画本体と撮影日時の初期値に使う） */
   onResult: (r: AnalysisResult | null, file: File | null) => void;
-  /** 保存していないマークがあるか。あれば、動画を選び直す前に確認する */
+  /** 保存していない動画があるか。あれば、動画を選び直す前に確認する */
   hasUnsaved: boolean;
-  onGoMark: () => void;
+  /** 推定が終わったあと、切り抜きへ進む */
+  onGoClip: () => void;
 }
 
 interface VideoInfo {
@@ -103,7 +104,9 @@ export function LoadScreen(props: Props) {
         onPreparing: () => setStatus({ kind: 'preparing' }),
         onProgress: (done, total) => setStatus({ kind: 'running', done, total }),
       });
-      video.currentTime = 0;
+      // 推定に使った video はここで解放する（以後の表示は、ファイルから作り直したプレイヤーが受け持つ）
+      releaseVideo(video);
+      videoRef.current = null;
       props.onResult(analyzed, fileRef.current);
       setStatus({
         kind: 'done',
@@ -128,7 +131,6 @@ export function LoadScreen(props: Props) {
 
   return (
     <section>
-      <p className="muted small">{ja.load.trimHint}</p>
       <p className="muted small">
         {ja.load.formatHint} {ja.load.formatHintIphone}
       </p>
@@ -239,8 +241,8 @@ export function LoadScreen(props: Props) {
             {status.notes.includes('gpuFallback') ? `（${ja.load.gpuFallback}）` : ''}
           </p>
           <div className="stack">
-            <button className="primary full" data-testid="go-mark" onClick={props.onGoMark}>
-              {ja.load.goMark}
+            <button className="primary full" data-testid="go-clip" onClick={props.onGoClip}>
+              {ja.load.goClip}
             </button>
           </div>
         </div>

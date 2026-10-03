@@ -6,12 +6,14 @@ import type { LandmarkFrame } from '../landmarks/types';
 import type { Mark } from '../marks/types';
 import type { Handedness } from '../normalize/handedness';
 import type { LevelLine } from '../normalize/level';
+import type { Clip } from './clip';
 
 /**
  * 保存形式の版番号。形式を変えたら上げ、古い版を読むときの変換を足す。
- * 1：段階③。2：段階④で水平校正の線（level）を追加
+ * 1：段階③。2：段階④で水平校正の線（level）を追加。
+ * 3：段階⑤で切り抜きの範囲（clip）とタイトル（meta.title）を追加
  */
-export const RECORD_FORMAT_VERSION = 2;
+export const RECORD_FORMAT_VERSION = 3;
 
 /** 姿勢推定の結果（動画 1 本分） */
 export interface RecordAnalysis {
@@ -21,6 +23,7 @@ export interface RecordAnalysis {
   width: number;
   height: number;
   fps: number;
+  /** 元の動画の長さ（秒）。切り抜きの範囲はこの中に収まる */
   durationSec: number;
   /** 関節の位置の時系列（共通ランドマーク形式）。左利きでも左右反転していない生の座標 */
   frames: LandmarkFrame[];
@@ -28,12 +31,14 @@ export interface RecordAnalysis {
 
 /** 記録に付ける情報 */
 export interface RecordMeta {
+  /** タイトル。初期値は撮影日時（'YYYY-MM-DD HH:mm'）で、利用者が自由に変えられる。版 3 で追加 */
+  title: string;
   /** 撮影日時。端末の現地時刻で 'YYYY-MM-DDTHH:mm'（時差の情報は持たない） */
   shotAt: string;
   shooterName: string;
   /** 射手の利き手。角度の符号と銃側・非銃側の判定に使う */
   handedness: Handedness;
-  /** この 1 発の点数（0〜10.9）。未入力は null */
+  /** この 1 発の点数（0〜10.9）。未入力は null。段階⑤で画面から外したが、保存済みの値は残す */
   score: number | null;
   memo: string;
   favorite: boolean;
@@ -42,8 +47,10 @@ export interface RecordMeta {
 export interface ShotRecord {
   formatVersion: typeof RECORD_FORMAT_VERSION;
   analysis: RecordAnalysis;
-  /** 撃発マーク（必須）と任意マーク */
+  /** 撃発ポイント（必須・1 つ）と任意マーク（段階⑤で画面からは外した） */
   marks: Mark[];
+  /** 切り抜きの範囲（元の動画の媒体時刻）。全体を使うなら null。版 3 で追加 */
+  clip: Clip | null;
   /** 水平校正の線（元の動画の画素座標）。引いていなければ null */
   level: LevelLine | null;
   meta: RecordMeta;

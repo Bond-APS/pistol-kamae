@@ -1,8 +1,7 @@
-// 撃発フレームの静止画を作る。動画本体は保存しないので、ライブラリで開いたときはこの静止画を表示する。
+// 撃発フレームの静止画を作る。一覧の小さい写真と、動画本体のない記録の表示に使う。
 
-import { frameIndexAt, type Rect } from '@pistol-kamae/engine';
+import { frameIndexAt, type LandmarkFrame, type Rect } from '@pistol-kamae/engine';
 import { seekTimeForFrame } from '../analysis/frames';
-import type { AnalysisResult } from '../analysis/runAnalysis';
 import type { RecordImages } from '../db/library';
 import type { StoredImage } from '../db/schema';
 import { THUMB_ASPECT, thumbCrop } from '../library/crop';
@@ -63,7 +62,7 @@ function drawToJpeg(
  */
 export async function captureShotImages(
   video: HTMLVideoElement,
-  result: AnalysisResult,
+  result: { frames: LandmarkFrame[]; width: number; height: number; fps: number },
   shotTimeSec: number,
 ): Promise<RecordImages> {
   const index = frameIndexAt(result.frames, shotTimeSec);

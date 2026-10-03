@@ -8,6 +8,15 @@ import {
 } from '../src/record/dateTime';
 import { formatScore, isValidScore, parseScore } from '../src/record/score';
 import { hasShooterName, normalizeShooterName } from '../src/record/shooter';
+import {
+  checkClip,
+  clipContains,
+  clipDurationSec,
+  clipOf,
+  commonWindow,
+  shotWindow,
+} from '../src/record/clip';
+import { defaultTitle, normalizeMemo, normalizeTitle } from '../src/record/title';
 import { RECORD_FORMAT_VERSION, type ShotRecord } from '../src/record/types';
 import {
   checkShotRecord,
@@ -54,8 +63,10 @@ function record(): ShotRecord {
       frames,
     },
     marks: addCustomMark(setShotMark([], 1 / 30), { id: 'c1', label: '振り上げ開始', timeSec: 0 }),
+    clip: null,
     level: null,
     meta: {
+      title: '2026-09-30 14:05',
       shotAt: '2026-09-30T14:05',
       shooterName: '山田',
       handedness: 'right',
@@ -208,7 +219,7 @@ describe('保存形式の検査', () => {
 
   it('版番号が違えば unsupportedVersion', () => {
     expect(checkShotRecord({ ...record(), formatVersion: 1 })).toBe('unsupportedVersion');
-    expect(checkShotRecord({ ...record(), formatVersion: 3 })).toBe('unsupportedVersion');
+    expect(checkShotRecord({ ...record(), formatVersion: 4 })).toBe('unsupportedVersion');
     expect(checkShotRecord({ ...record(), formatVersion: undefined })).toBe('unsupportedVersion');
   });
 
@@ -272,16 +283,55 @@ describe('保存形式の検査', () => {
     );
   });
 
-  it('版 1 の記録は、水平校正の線を「なし」として版 2 に直せる', () => {
-    const v1: Record<string, unknown> = { ...record(), formatVersion: 1 };
+  it('版 1・版 2 の記録は、線なし・範囲なし・タイトルは撮影日時として今の版に直せる', () => {
+    const v2: Record<string, unknown> = { ...record(), formatVersion: 2 };
+    delete v2.clip;
+    v2.meta = { ...(v2.meta as object) };
+    delete (v2.meta as Record<string, unknown>).title;
+    const v1: Record<string, unknown> = { ...v2, formatVersion: 1 };
     delete v1.level;
-    expect(checkShotRecord(v1)).toBe('unsupportedVersion');
-    const upgraded = upgradeShotRecord(v1);
-    expect(checkShotRecord(upgraded)).toBeNull();
-    expect(upgraded).toEqual(record());
+    for (const old of [v1, v2]) {
+      expect(checkShotRecord(old)).toBe('unsupportedVersion');
+      const upgraded = upgradeShotRecord(old);
+      expect(checkShotRecord(upgraded)).toBeNull();
+      expect(upgraded).toEqual(record());
+    }
     // 今の版はそのまま
     expect(upgradeShotRecord(record())).toEqual(record());
     expect(upgradeShotRecord(null)).toBeNull();
+  });
+
+  it('切り抜きの範囲は、なし（null）か、動画の中に収まり撃発ポイントを含む区間であること', () => {
+    // 撃発は 1/30 秒、動画は 0.1 秒
+    expect(checkShotRecord({ ...record(), clip: { startSec: 0.02, endSec: 0.08 } })).toBeNull();
+    expect(checkShotRecord({ ...record(), clip: { startSec: 0, endSec: 0.1 } })).toBeNull();
+    const missing: Record<string, unknown> = { ...record() };
+    delete missing.clip;
+    expect(checkShotRecord(missing)).toBe('invalidClip');
+    expect(checkShotRecord({ ...record(), clip: { startSec: 0 } })).toBe('invalidClip');
+    expect(checkShotRecord({ ...record(), clip: { startSec: -0.01, endSec: 0.08 } })).toBe(
+      'invalidClip',
+    );
+    expect(checkShotRecord({ ...record(), clip: { startSec: 0, endSec: 0.11 } })).toBe(
+      'invalidClip',
+    );
+    expect(checkShotRecord({ ...record(), clip: { startSec: 0.05, endSec: 0.05 } })).toBe(
+      'invalidClip',
+    );
+    expect(checkShotRecord({ ...record(), clip: { startSec: 0.05, endSec: 0.09 } })).toBe(
+      'shotOutsideClip',
+    );
+  });
+
+  it('タイトルは空でなく、前後に空白がなく、60 字以内であること', () => {
+    for (const title of ['', ' 題名', '題名 ', 'あ'.repeat(61)]) {
+      const r = record();
+      r.meta = { ...r.meta, title };
+      expect(checkShotRecord(r)).toBe('invalidMeta');
+    }
+    const r = record();
+    r.meta = { ...r.meta, title: 'あ'.repeat(60) };
+    expect(checkShotRecord(r)).toBeNull();
   });
 
   it('メタ情報が不正なら invalidMeta', () => {
@@ -333,5 +383,61 @@ describe('記録の撃発フレームの角度', () => {
     r.meta.handedness = 'left';
     expect(shotMetricsOfRecord(r)?.values?.shoulderTilt).toBeCloseTo(-(5.71 - 3), 2);
     expect(tiltDegOfRecord(record())).toBe(0);
+  });
+});
+
+describe('タイトルとメモ', () => {
+  it('初期値のタイトルは撮影日時。日時が不正なら空', () => {
+    expect(defaultTitle('2026-10-03T14:25')).toBe('2026-10-03 14:25');
+    expect(defaultTitle('2026-10-03')).toBe('');
+  });
+
+  it('タイトルは前後の空白を除く。空と 60 字超は null', () => {
+    expect(normalizeTitle(' 10/1 の良かった 1 発 ')).toBe('10/1 の良かった 1 発');
+    expect(normalizeTitle('   ')).toBeNull();
+    expect(normalizeTitle('あ'.repeat(60))).toHaveLength(60);
+    expect(normalizeTitle('あ'.repeat(61))).toBeNull();
+  });
+
+  it('メモは空でもよく、100 字超は null', () => {
+    expect(normalizeMemo('  ')).toBe('');
+    expect(normalizeMemo('あ'.repeat(100))).toHaveLength(100);
+    expect(normalizeMemo('あ'.repeat(101))).toBeNull();
+  });
+});
+
+describe('切り抜きの範囲', () => {
+  it('範囲なし（null）は動画の全体', () => {
+    expect(clipOf(null, 14)).toEqual({ startSec: 0, endSec: 14 });
+    expect(clipDurationSec(null, 14)).toBe(14);
+    expect(clipDurationSec({ startSec: 1.8, endSec: 7 }, 14)).toBeCloseTo(5.2);
+    expect(clipContains(null, 14, 13.9)).toBe(true);
+    expect(clipContains({ startSec: 1.8, endSec: 7 }, 14, 1.8)).toBe(true);
+    expect(clipContains({ startSec: 1.8, endSec: 7 }, 14, 7.01)).toBe(false);
+  });
+
+  it('範囲の検査：動画の中に収まり、開始＜終了、撃発を含む', () => {
+    expect(checkClip(null, 14)).toBeNull();
+    expect(checkClip({ startSec: 1.8, endSec: 7 }, 14, 3.4)).toBeNull();
+    expect(checkClip({ startSec: 1.8, endSec: 7 }, 14, 1.8)).toBeNull();
+    expect(checkClip({ startSec: -1, endSec: 7 }, 14)).toBe('invalidClip');
+    expect(checkClip({ startSec: 1, endSec: 14.5 }, 14)).toBe('invalidClip');
+    expect(checkClip({ startSec: 7, endSec: 7 }, 14)).toBe('invalidClip');
+    expect(checkClip({ startSec: NaN, endSec: 7 }, 14)).toBe('invalidClip');
+    expect(checkClip({ startSec: 1.8, endSec: 7 }, 14, 7.5)).toBe('shotOutsideClip');
+    expect(checkClip(null, 14, 15)).toBe('shotOutsideClip');
+  });
+
+  it('撃発を 0 とした前後の長さと、2 本に共通する区間（短い方に合わせる）', () => {
+    const a = shotWindow({ startSec: 1.8, endSec: 7 }, 14, 3.4);
+    expect(a.beforeSec).toBeCloseTo(1.6);
+    expect(a.afterSec).toBeCloseTo(3.6);
+    const b = shotWindow(null, 6, 4);
+    expect(b).toEqual({ beforeSec: 4, afterSec: 2 });
+    const common = commonWindow(a, b);
+    expect(common.beforeSec).toBeCloseTo(1.6);
+    expect(common.afterSec).toBeCloseTo(2);
+    // 壊れた値でも負にはならない
+    expect(commonWindow({ beforeSec: -1, afterSec: 1 }, b)).toEqual({ beforeSec: 0, afterSec: 1 });
   });
 });

@@ -3,6 +3,9 @@
 
 import {
   RECORD_FORMAT_VERSION,
+  clipDurationSec,
+  defaultTitle,
+  type Clip,
   type Handedness,
   type LevelLine,
   type Mark,
@@ -31,10 +34,15 @@ export interface ShooterRow {
 /** 記録の見出し部分（一覧に出す情報）。重い中身は RecordDataRow に分けて、一覧を軽くする */
 export interface RecordRow {
   id: number;
+  /** タイトル。初期値は撮影日時。版 4 で追加 */
+  title: string;
   shooterId: number;
   /** 撮影日時。端末の現地時刻で 'YYYY-MM-DDTHH:mm' */
   shotAt: string;
+  /** 点数。段階⑤で画面から外した（保存済みの値は残す。新しい記録は null） */
   score: number | null;
+  /** 切り抜いたあとの長さ（秒）。一覧に出す。版 4 で追加 */
+  clipSec: number;
   memo: string;
   favorite: boolean;
   /** 一覧用の小さい静止画（人物を中心に切り抜いたもの） */
@@ -49,6 +57,8 @@ export interface RecordDataRow {
   formatVersion: number;
   analysis: RecordAnalysis;
   marks: Mark[];
+  /** 切り抜きの範囲（元の動画の媒体時刻）。全体なら null。保存形式の版 3 で追加 */
+  clip: Clip | null;
   /** 水平校正の線（元の動画の画素座標）。引いていなければ null。保存形式の版 2 で追加 */
   level: LevelLine | null;
   still: StoredImage;
@@ -95,13 +105,37 @@ export class KamaeDb extends Dexie {
         .toCollection()
         .modify((row) => {
           if (row.formatVersion === 1) {
-            row.formatVersion = RECORD_FORMAT_VERSION;
+            row.formatVersion = 2;
             row.level = null;
           }
         }),
     );
     // 版 3（段階④の仕様変更）：動画本体の表を足した。それまでの記録は「動画なし」のまま残る
     this.version(3).stores({ recordVideos: 'id' });
+    // 版 4（段階⑤）：記録にタイトル（初期値は撮影日時）と切り抜きの範囲（全体 = null）を足した。
+    // 保存形式は版 3 になる。表の構成は同じ
+    this.version(4).upgrade(async (tx) => {
+      const data = tx.table<RecordDataRow, number>('recordData');
+      await data.toCollection().modify((row) => {
+        if (row.formatVersion === 2) {
+          row.formatVersion = RECORD_FORMAT_VERSION;
+          row.clip = null;
+        }
+      });
+      const durations = new Map<number, number>();
+      await data.each((row) => {
+        durations.set(row.id, clipDurationSec(row.clip ?? null, row.analysis.durationSec));
+      });
+      await tx
+        .table<RecordRow, number>('records')
+        .toCollection()
+        .modify((row) => {
+          if (typeof row.title !== 'string' || row.title === '') {
+            row.title = defaultTitle(row.shotAt);
+          }
+          if (typeof row.clipSec !== 'number') row.clipSec = durations.get(row.id) ?? 0;
+        });
+    });
   }
 }
 

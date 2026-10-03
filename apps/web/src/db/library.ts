@@ -3,6 +3,8 @@
 import {
   RECORD_FORMAT_VERSION,
   checkShotRecord,
+  clipDurationSec,
+  type Clip,
   type Handedness,
   type Mark,
   type RecordAnalysis,
@@ -66,9 +68,9 @@ export async function setLastShooterId(id: number): Promise<void> {
 
 /** 記録に付ける情報（保存時と編集時に入力するもの） */
 export interface RecordFields {
+  title: string;
   shooterId: number;
   shotAt: string;
-  score: number | null;
   memo: string;
   favorite: boolean;
 }
@@ -120,12 +122,15 @@ export async function addRecord(
   fields: RecordFields,
   analysis: RecordAnalysis,
   marks: Mark[],
+  clip: Clip | null,
   images: RecordImages,
 ): Promise<number> {
   return db.transaction('rw', db.records, db.recordData, async () => {
     const now = Date.now();
     const id = await db.records.add({
       ...fields,
+      score: null,
+      clipSec: clipDurationSec(clip, analysis.durationSec),
       thumb: images.thumb,
       createdAt: now,
       updatedAt: now,
@@ -135,6 +140,7 @@ export async function addRecord(
       formatVersion: RECORD_FORMAT_VERSION,
       analysis,
       marks,
+      clip,
       level: null,
       still: images.still,
     });
@@ -142,7 +148,7 @@ export async function addRecord(
   });
 }
 
-/** 保存済みの記録のマークと静止画を差し替える（保存後にマークを変えたときの上書き保存） */
+/** 保存済みの記録の撃発ポイント（マーク）と静止画を差し替える */
 export async function overwriteRecordMarks(
   id: number,
   marks: Mark[],
@@ -152,6 +158,19 @@ export async function overwriteRecordMarks(
     const updated = await db.records.update(id, { thumb: images.thumb, updatedAt: Date.now() });
     if (updated === 0) throw new Error('record not found');
     await db.recordData.update(id, { marks, still: images.still });
+  });
+}
+
+/** 保存済みの記録の切り抜きの範囲を差し替える（撃発ポイントが範囲に入っていることは呼ぶ側が確かめる） */
+export async function updateRecordClip(id: number, clip: Clip | null): Promise<void> {
+  await db.transaction('rw', db.records, db.recordData, async () => {
+    const data = await db.recordData.get(id);
+    if (!data) throw new Error('record not found');
+    await db.records.update(id, {
+      clipSec: clipDurationSec(clip, data.analysis.durationSec),
+      updatedAt: Date.now(),
+    });
+    await db.recordData.update(id, { clip });
   });
 }
 
@@ -194,10 +213,12 @@ export function toShotRecord(row: RecordRow, data: RecordDataRow, shooter: Shoot
     formatVersion: RECORD_FORMAT_VERSION,
     analysis: data.analysis,
     marks: data.marks,
+    clip: data.clip,
     // 水平校正（カメラの傾きの補正）は初期バージョンから外した（2026-10-03、開発者の決定）。
     // 以前に引いた線はデータベースに残すが、角度の計算には使わない
     level: null,
     meta: {
+      title: row.title,
       shotAt: row.shotAt,
       shooterName: shooter.name,
       handedness: shooter.handedness,

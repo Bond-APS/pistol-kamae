@@ -5,9 +5,11 @@ import { shotMarkOf } from '../marks/operations';
 import type { Mark } from '../marks/types';
 import { metricsAtTime, type FrameMetrics } from '../metrics/atFrame';
 import { checkLevelLine, levelTiltDeg, type LevelLine } from '../normalize/level';
+import { checkClip, type Clip, type ClipProblem } from './clip';
 import { parseLocalDateTime } from './dateTime';
 import { isValidScore } from './score';
 import { normalizeShooterName } from './shooter';
+import { defaultTitle, normalizeTitle } from './title';
 import {
   RECORD_FORMAT_VERSION,
   type RecordAnalysis,
@@ -21,6 +23,7 @@ export type RecordProblem =
   | 'invalidAnalysis'
   | 'invalidMarks'
   | 'noShotMark'
+  | ClipProblem
   | 'invalidLevel'
   | 'invalidMeta';
 
@@ -73,9 +76,15 @@ function isLevelLine(v: unknown): v is LevelLine {
   );
 }
 
+function isClip(v: unknown): v is Clip {
+  return isObject(v) && isFiniteNumber(v.startSec) && isFiniteNumber(v.endSec);
+}
+
 function isMeta(v: unknown): v is RecordMeta {
   return (
     isObject(v) &&
+    typeof v.title === 'string' &&
+    normalizeTitle(v.title) === v.title &&
     typeof v.shotAt === 'string' &&
     parseLocalDateTime(v.shotAt) !== null &&
     typeof v.shooterName === 'string' &&
@@ -96,6 +105,14 @@ export function checkShotRecord(value: unknown): RecordProblem | null {
   const marks = value.marks as Mark[];
   if (marks.filter((m) => m.kind === 'shot').length !== 1) return 'noShotMark';
   if (new Set(marks.map((m) => m.id)).size !== marks.length) return 'invalidMarks';
+  // 切り抜きの範囲は、なし（null）か、動画の中に収まる区間で、撃発ポイントを含むこと
+  if (value.clip !== null && !isClip(value.clip)) return 'invalidClip';
+  const clipProblem = checkClip(
+    value.clip as Clip | null,
+    (value.analysis as RecordAnalysis).durationSec,
+    shotMarkOf(marks)!.timeSec,
+  );
+  if (clipProblem) return clipProblem;
   // 線は形だけを検査する。長さや傾きの閾値は将来変えることがあり、閾値に合わない線は
   // levelTiltDeg が「補正しない」として扱うので、記録が開けなくなることはない
   if (value.level !== null && !isLevelLine(value.level)) return 'invalidLevel';
@@ -106,12 +123,19 @@ export function checkShotRecord(value: unknown): RecordProblem | null {
 /**
  * 古い版の記録を今の版に直す。直せない形なら、そのまま返す（あとの検査で落ちる）。
  * 版 1 → 2：水平校正の線を「なし」として足す。
+ * 版 2 → 3：切り抜きの範囲を「なし（全体）」とし、タイトルを撮影日時から作る。
  */
 export function upgradeShotRecord(value: unknown): unknown {
-  if (isObject(value) && value.formatVersion === 1) {
-    return { ...value, formatVersion: 2, level: null };
+  let v = value;
+  if (isObject(v) && v.formatVersion === 1) {
+    v = { ...v, formatVersion: 2, level: null };
   }
-  return value;
+  if (isObject(v) && v.formatVersion === 2) {
+    const meta = isObject(v.meta) ? v.meta : {};
+    const shotAt = typeof meta.shotAt === 'string' ? meta.shotAt : '';
+    v = { ...v, formatVersion: 3, clip: null, meta: { ...meta, title: defaultTitle(shotAt) } };
+  }
+  return v;
 }
 
 /** 記録のカメラの傾き（度）。水平校正の線がない、または使えない線なら 0 */

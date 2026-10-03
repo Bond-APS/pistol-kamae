@@ -101,6 +101,24 @@ export {
   type ShotRecord,
 } from './record/types';
 export {
+  checkClip,
+  clipContains,
+  clipDurationSec,
+  clipOf,
+  commonWindow,
+  shotWindow,
+  type Clip,
+  type ClipProblem,
+  type ShotWindow,
+} from './record/clip';
+export {
+  MEMO_MAX_LENGTH,
+  TITLE_MAX_LENGTH,
+  defaultTitle,
+  normalizeMemo,
+  normalizeTitle,
+} from './record/title';
+export {
   SCORE_MAX,
   SCORE_MIN,
   formatScore,

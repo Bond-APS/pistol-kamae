@@ -1,14 +1,18 @@
 import {
   IDENTITY,
+  clipOf,
+  commonWindow,
   compareMetrics,
   frameIndexAt,
   metricsAtFrame,
   shotMarkOf,
+  shotWindow,
   tiltDegOfRecord,
   type LandmarkFrame,
 } from '@pistol-kamae/engine';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { seekTimeForFrame } from '../analysis/frames';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { nearestFrameIndex, seekTimeForFrame } from '../analysis/frames';
+import { useAudioEnvelope } from '../audio/useAudioEnvelope';
 import {
   canNormalize,
   overlayLayout,
@@ -24,18 +28,24 @@ import { DiffTable } from '../components/DiffTable';
 import { NumbersFold } from '../components/NumbersFold';
 import { skeletonParts } from '../components/skeleton';
 import { SkeletonLayer } from '../components/SkeletonLayer';
-import { relativeTimeLabel } from '../components/relativeTime';
-import { TimeBar } from '../components/TimeBar';
+import { TransportControls } from '../components/TransportControls';
 import { useRecordVideoUrl } from '../components/useRecordVideoUrl';
+import { WaveBar, type WaveSeries } from '../components/WaveBar';
 import type { OpenedRecord } from '../db/library';
 import { ja } from '../i18n/ja';
+import { usePlayback, type PlaybackVideo } from '../video/usePlayback';
+import type { PlayerMode } from './RecordPlayer';
 
 interface Props {
   base: OpenedRecord;
   current: OpenedRecord;
+  /** 「撃発ポイントの修正」「切り抜き範囲の修正」で、どちらかの動画を直す画面を開く */
+  onFix: (role: Role, mode: PlayerMode) => void;
+  /** 動画を付け直したとき */
+  onVideoAttached: (role: Role) => void;
 }
 
-type Role = 'base' | 'current';
+export type Role = 'base' | 'current';
 const ROLES: readonly Role[] = ['base', 'current'];
 const roleName = (role: Role): string => (role === 'base' ? ja.compare.base : ja.compare.current);
 
@@ -47,10 +57,10 @@ const DEFAULT_BASE_OPACITY = 50;
 /** 記録から、比較に使う情報をまとめる */
 function sideOf(opened: OpenedRecord) {
   const { record } = opened;
-  const { frames, width, height, fps } = record.analysis;
+  const { frames, width, height, fps, durationSec } = record.analysis;
   const size = { width, height };
-  const shot = shotMarkOf(record.marks);
-  const shotIndex = shot ? Math.max(frameIndexAt(frames, shot.timeSec), 0) : 0;
+  const shotSec = shotMarkOf(record.marks)!.timeSec;
+  const shotIndex = Math.max(frameIndexAt(frames, shotSec), 0);
   const tiltDeg = tiltDegOfRecord(record);
   // 位置合わせ（揃える）は撃発の瞬間の姿勢で決め、動画の全体を通して動かさない。
   // フレームごとに合わせ直すと、関節の位置の細かい揺れで写真が揺れ、体の動きも打ち消してしまう
@@ -61,53 +71,46 @@ function sideOf(opened: OpenedRecord) {
     handedness: record.meta.handedness,
     bounds: sequenceBounds(frames, size),
   };
-  return { opened, frames, size, fps, shotIndex, tiltDeg, pose };
+  const clip = clipOf(record.clip, durationSec);
+  return {
+    opened,
+    frames,
+    size,
+    fps,
+    shotSec,
+    shotIndex,
+    tiltDeg,
+    pose,
+    window: shotWindow(record.clip, durationSec, shotSec),
+    clip,
+  };
 }
 
 /**
- * 時刻にいちばん近いフレームの番号（範囲の外は端のフレーム）。
- * 連動で相手の時点を求めるとき、求めた時刻がフレームの境目ぴったりになりやすく、
- * 「その時刻を含むフレーム」で選ぶと、計算の丸めで 1 コマ手前になることがあるため
+ * 比較画面の本体（①基準と②比較が決まっているとき）。
+ * 2 本の動画を重ね（または横に並べ）、撃発を 0 とした 1 本のバーで 2 本を一緒に動かし、再生・速さ・繰り返しを持つ。
  */
-function nearestFrameIndex(frames: ReadonlyArray<LandmarkFrame>, timeSec: number): number {
-  const i = Math.max(frameIndexAt(frames, Math.max(timeSec, 0)), 0);
-  const next = frames[i + 1];
-  if (!next) return i;
-  return next.timeSec - timeSec < timeSec - frames[i]!.timeSec ? i + 1 : i;
-}
-
-/** フレームの時刻（秒） */
-const timeOf = (frames: ReadonlyArray<LandmarkFrame>, index: number): number =>
-  frames[index]?.timeSec ?? 0;
-
-/**
- * 比較画面の本体（基準と今回の 2 件が決まっているとき）。
- * 2 本の動画を重ね（または横に並べ）、それぞれ別のバーで時点を選び、その時点どうしの角度の差を表で示す。
- */
-export function CompareView({ base, current }: Props) {
+export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
   const b = useMemo(() => sideOf(base), [base]);
   const c = useMemo(() => sideOf(current), [current]);
+  // 2 本に共通する区間（撃発の前後それぞれ短い方）
+  const win = useMemo(() => commonWindow(b.window, c.window), [b, c]);
 
   const [layout, setLayout] = useState<'overlay' | 'side'>('overlay');
   const [align, setAlign] = useState<AlignMode>('normalized');
   const [baseOpacity, setBaseOpacity] = useState(DEFAULT_BASE_OPACITY);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [holding, setHolding] = useState(false);
-  /**
-   * 「2 本を一緒に動かす」のとき、入れた瞬間の時刻の差（今回 − 基準、秒）。切ってあれば null。
-   * 動かすたびの差分を積み上げると、端に当たったときや丸めで対応がずれるので、最初の差を保つ
-   */
-  const [linkOffset, setLinkOffset] = useState<number | null>(null);
-  const linked = linkOffset !== null;
-  const [playing, setPlaying] = useState(false);
-  /** 表示中のフレーム番号。開いた直後はどちらも撃発の瞬間 */
-  const [baseIndex, setBaseIndex] = useState(b.shotIndex);
-  const [currentIndex, setCurrentIndex] = useState(c.shotIndex);
-  /** 動画を付け直したら増やし、その記録の動画だけを読み直す */
-  const [videoVersion, setVideoVersion] = useState({ base: 0, current: 0 });
+  const [rate, setRate] = useState(1);
+  const [loop, setLoop] = useState(false);
+  /** バーの時刻（秒）。0 ＝ 撃発。開いた直後は 0 */
+  const [t, setT] = useState(0);
+  const [fixing, setFixing] = useState<PlayerMode | null>(null);
 
-  const baseVideo = useRecordVideoUrl(base.row.id, videoVersion.base);
-  const currentVideo = useRecordVideoUrl(current.row.id, videoVersion.current);
+  const baseVideo = useRecordVideoUrl(base.row.id, 0);
+  const currentVideo = useRecordVideoUrl(current.row.id, 0);
+  const baseEnvelope = useAudioEnvelope({ kind: 'record', recordId: base.row.id });
+  const currentEnvelope = useAudioEnvelope({ kind: 'record', recordId: current.row.id });
   const baseVideoRef = useRef<HTMLVideoElement | null>(null);
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const setBaseVideo = useCallback((el: HTMLVideoElement | null) => {
@@ -116,6 +119,34 @@ export function CompareView({ base, current }: Props) {
   const setCurrentVideo = useCallback((el: HTMLVideoElement | null) => {
     currentVideoRef.current = el;
   }, []);
+
+  const baseIndex = nearestFrameIndex(b.frames, b.shotSec + t);
+  const currentIndex = nearestFrameIndex(c.frames, c.shotSec + t);
+
+  // 再生は②比較を主にし、①基準を合わせる
+  const videos = useMemo<PlaybackVideo[]>(
+    () => [
+      { get: () => currentVideoRef.current, anchorSec: c.shotSec, fps: c.fps },
+      { get: () => baseVideoRef.current, anchorSec: b.shotSec, fps: b.fps },
+    ],
+    [b, c],
+  );
+  const playback = usePlayback({
+    videos,
+    startT: -win.beforeSec,
+    endT: win.afterSec,
+    rate,
+    loop,
+    onTick: setT,
+  });
+  const select = (next: number) => {
+    if (playback.playing) playback.pause();
+    setT(Math.min(Math.max(next, -win.beforeSec), win.afterSec));
+  };
+  const step = (delta: number) => {
+    const frame = c.frames[Math.min(Math.max(currentIndex + delta, 0), c.frames.length - 1)];
+    if (frame) select(frame.timeSec - c.shotSec);
+  };
 
   const normalizable = canNormalize(b.pose, c.pose);
   const rawAvailable = sameAspect(b.size, c.size);
@@ -142,80 +173,9 @@ export function CompareView({ base, current }: Props) {
     return baseValues && currentValues ? compareMetrics(baseValues, currentValues) : null;
   }, [b, c, baseIndex, currentIndex]);
 
-  /** 動画がいま表示しているコマに、骨格・バー・差分表を合わせる（読み込み前の動画は無視する） */
-  const syncIndices = useCallback(() => {
-    const bv = baseVideoRef.current;
-    const cv = currentVideoRef.current;
-    if (bv && bv.readyState >= 2) setBaseIndex(Math.max(frameIndexAt(b.frames, bv.currentTime), 0));
-    if (cv && cv.readyState >= 2) {
-      setCurrentIndex(Math.max(frameIndexAt(c.frames, cv.currentTime), 0));
-    }
-  }, [b, c]);
-  const pause = useCallback(() => {
-    const wasPlaying = [baseVideoRef.current, currentVideoRef.current].some((v) => v && !v.paused);
-    baseVideoRef.current?.pause();
-    currentVideoRef.current?.pause();
-    // 止めた位置のコマに合わせる（最後に合わせてから進んだ分のずれを残さない）
-    if (wasPlaying) syncIndices();
-    setPlaying(false);
-  }, [syncIndices]);
-
-  /** バーなどで時点を選ぶ。「2 本を一緒に動かす」なら、もう片方も同じ秒数だけ動かす */
-  const select = (role: Role, index: number) => {
-    pause();
-    const [own, other] = role === 'base' ? [b, c] : [c, b];
-    const [setOwn, setOther] =
-      role === 'base' ? [setBaseIndex, setCurrentIndex] : [setCurrentIndex, setBaseIndex];
-    setOwn(index);
-    if (linkOffset !== null) {
-      const own_t = timeOf(own.frames, index);
-      const target = role === 'base' ? own_t + linkOffset : own_t - linkOffset;
-      setOther(nearestFrameIndex(other.frames, target));
-    }
-  };
-  const toggleLinked = () =>
-    setLinkOffset(linked ? null : timeOf(c.frames, currentIndex) - timeOf(b.frames, baseIndex));
-
-  // 再生中は、動画の進みに合わせて骨格・バー・差分表を動かす
-  useEffect(() => {
-    if (!playing) return;
-    let raf = 0;
-    const tick = () => {
-      const bv = baseVideoRef.current;
-      const cv = currentVideoRef.current;
-      // どちらかが終わりまで行った・止まった・画面から外れたら、両方止める
-      if (!bv || !cv || bv.ended || cv.ended || bv.paused || cv.paused) {
-        pause();
-        return;
-      }
-      syncIndices();
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, pause, syncIndices]);
-  // 画面を離れるときは止める
-  useEffect(
-    () => () => {
-      baseVideoRef.current?.pause();
-      currentVideoRef.current?.pause();
-    },
-    [],
-  );
-
   const bothVideos = baseVideo.state === 'ready' && currentVideo.state === 'ready';
   // 重ねられない 2 件は、重ねる表示では基準の動画を置かないので、横に並べたときだけ再生できる
   const canPlay = bothVideos && !(layout === 'overlay' && cannotOverlay);
-  const play = () => {
-    const bv = baseVideoRef.current;
-    const cv = currentVideoRef.current;
-    if (!bv || !cv) return;
-    // 利用者の操作（このボタンを押したこと）の中で、2 本を同時に再生し始める
-    void Promise.all([bv.play(), cv.play()]).then(
-      () => setPlaying(true),
-      () => pause(),
-    );
-  };
 
   const layerOf = (role: Role, opacity: number): StageLayer => {
     const s = role === 'base' ? b : c;
@@ -237,7 +197,7 @@ export function CompareView({ base, current }: Props) {
     const s = role === 'base' ? b : c;
     const landmarks = s.frames[role === 'base' ? baseIndex : currentIndex]?.landmarks;
     if (!showSkeleton || !landmarks) return null;
-    // 基準を今回の写真の上に描くときは、位置合わせの移し替えで動かす
+    // 基準を比較の写真の上に描くときは、位置合わせの移し替えで動かす
     const transform = role === 'base' && onCurrent ? overlay.baseTransform : IDENTITY;
     return (
       <SkeletonLayer
@@ -249,7 +209,7 @@ export function CompareView({ base, current }: Props) {
     );
   };
 
-  // 重ねるとき：押している間は基準だけ、離すと「今回の上に、基準を半透明で」
+  // 重ねるとき：押している間は基準だけ、離すと「比較の上に、基準を半透明で」
   const showBase = !cannotOverlay;
   const overlayLayers: StageLayer[] = [
     layerOf('current', holding && showBase ? 0 : 1),
@@ -266,7 +226,31 @@ export function CompareView({ base, current }: Props) {
     (role) => (role === 'base' ? baseVideo : currentVideo).state === 'none',
   );
   const sizeGap = overlay.sizeRatio ? Math.abs(overlay.sizeRatio - 1) : 0;
-  const atShot = baseIndex === b.shotIndex && currentIndex === c.shotIndex;
+  const atShot = Math.abs(t) < 1 / (2 * c.fps);
+  const timeLabel = atShot
+    ? ja.compare.atShot
+    : t < 0
+      ? ja.compare.beforeShot(-t)
+      : ja.compare.afterShot(t);
+
+  // 音のグラフ：2 本分を、撃発が 0 になるようずらして重ねる
+  const waves: WaveSeries[] = [];
+  if (baseEnvelope.state === 'ready') {
+    waves.push({
+      key: 'base',
+      envelope: baseEnvelope.envelope,
+      shiftSec: -b.shotSec,
+      className: 'wave-base',
+    });
+  }
+  if (currentEnvelope.state === 'ready') {
+    waves.push({
+      key: 'current',
+      envelope: currentEnvelope.envelope,
+      shiftSec: -c.shotSec,
+      className: 'wave-current',
+    });
+  }
 
   return (
     <>
@@ -338,7 +322,7 @@ export function CompareView({ base, current }: Props) {
           aria-pressed={layout === 'side'}
           onClick={() => {
             // 切り替えると動画の部品が作り直されるので、先に止めて、いまの時点を保つ
-            pause();
+            playback.pause();
             setLayout(layout === 'side' ? 'overlay' : 'side');
           }}
         >
@@ -363,7 +347,7 @@ export function CompareView({ base, current }: Props) {
                   <AttachVideo
                     recordId={opened.row.id}
                     analysis={opened.record.analysis}
-                    onAttached={() => setVideoVersion((v) => ({ ...v, [role]: v[role] + 1 }))}
+                    onAttached={() => onVideoAttached(role)}
                     testId={`attach-${role}`}
                   />
                 </div>
@@ -373,37 +357,40 @@ export function CompareView({ base, current }: Props) {
         </div>
       )}
 
-      <TimeBar
-        role="base"
-        frames={b.frames}
-        index={baseIndex}
-        shotIndex={b.shotIndex}
-        onChange={(i) => select('base', i)}
+      <p
+        className="muted small num player-time"
+        data-testid="compare-time"
+        data-base-index={baseIndex}
+        data-current-index={currentIndex}
+      >
+        {timeLabel}
+      </p>
+      <WaveBar
+        startSec={-win.beforeSec}
+        endSec={win.afterSec}
+        valueSec={t}
+        stepSec={1 / c.fps}
+        onChange={select}
+        waves={waves}
+        noAudio={baseEnvelope.state === 'none' && currentEnvelope.state === 'none'}
+        markers={[{ key: 'shot', sec: 0, label: ja.compare.shotMarker }]}
+        startLabel={ja.compare.relLabel(-win.beforeSec)}
+        endLabel={ja.compare.relLabel(win.afterSec)}
+        ariaLabel={ja.compare.timeSlider}
+        testId="compare-bar"
       />
-      <TimeBar
-        role="current"
-        frames={c.frames}
-        index={currentIndex}
-        shotIndex={c.shotIndex}
-        onChange={(i) => select('current', i)}
+      <TransportControls
+        playing={playback.playing}
+        onPlay={() => playback.play()}
+        onPause={playback.pause}
+        onPrev={() => step(-1)}
+        onNext={() => step(1)}
+        canPrev={t > -win.beforeSec + 1e-6}
+        canNext={t < win.afterSec - 1e-6}
+        canPlay={canPlay}
+        transport={{ rate, loop, onRate: setRate, onLoop: setLoop }}
+        testId="compare"
       />
-      <div className="row">
-        <button
-          className="chip"
-          data-testid="toggle-linked"
-          aria-pressed={linked}
-          onClick={toggleLinked}
-        >
-          {ja.compare.linked}
-        </button>
-        <button
-          data-testid="compare-play"
-          disabled={!canPlay}
-          onClick={() => (playing ? pause() : play())}
-        >
-          {playing ? ja.player.pause : ja.compare.playBoth}
-        </button>
-      </div>
       {!bothVideos && noVideo.length > 0 && (
         <p className="muted small">{ja.compare.playUnavailable}</p>
       )}
@@ -412,7 +399,6 @@ export function CompareView({ base, current }: Props) {
           {ja.compare.playNeedsSide}
         </p>
       )}
-      {linked && <p className="muted small">{ja.compare.linkedNote}</p>}
 
       {layout === 'overlay' && cannotOverlay && (
         <div className="notice" data-testid="compare-cannot-overlay">
@@ -463,15 +449,48 @@ export function CompareView({ base, current }: Props) {
       )}
       {layout === 'side' && <p className="muted small">{ja.compare.sideNote}</p>}
 
-      <NumbersFold
-        title={atShot ? ja.compare.tableTitle : ja.compare.tableTitleAt}
-        testId="diff-numbers"
-      >
+      <div className="stack spaced">
+        {(['shot', 'clip'] as const).map((m) => (
+          <button
+            key={m}
+            className="full"
+            data-testid={`compare-fix-${m}`}
+            aria-expanded={fixing === m}
+            disabled={!bothVideos}
+            onClick={() => {
+              playback.pause();
+              setFixing(fixing === m ? null : m);
+            }}
+          >
+            {m === 'shot' ? ja.compare.fixShot : ja.compare.fixClip}
+          </button>
+        ))}
+      </div>
+      {fixing && (
+        <div className="notice" data-testid="compare-fix-which">
+          <strong>{ja.compare.fixWhich}</strong>
+          <div className="stack">
+            {ROLES.map((role, i) => (
+              <button
+                key={role}
+                className="full"
+                data-testid={`compare-fix-${role}`}
+                onClick={() => onFix(role, fixing)}
+              >
+                {ja.compare.fixRole(
+                  (i + 1) as 1 | 2,
+                  roleName(role),
+                  (role === 'base' ? base : current).row.title,
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <NumbersFold title={ja.compare.numbersTitle} testId="diff-numbers">
         <p className="muted small num" data-testid="diff-times">
-          {ja.compare.tableTimes(
-            relativeTimeLabel(b.frames, baseIndex, b.shotIndex),
-            relativeTimeLabel(c.frames, currentIndex, c.shotIndex),
-          )}
+          {ja.compare.tableTimes(timeLabel)}
         </p>
         {diffs ? (
           <DiffTable diffs={diffs} testId="diff-table" />

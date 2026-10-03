@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { RecordSummary } from '../components/RecordSummary';
-import { listRecords, setRecordFavorite, storageUsage } from '../db/library';
+import { listRecords, setRecordFavorite, storageUsage, type ComparePair } from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import {
@@ -16,13 +16,18 @@ import { RecordDetail } from './RecordDetail';
 interface Props {
   /** このタブが表示中か。表示されるたびに一覧を読み直す */
   active: boolean;
+  /** 保存・修正のたびに増える番号。変わったら一覧を読み直す */
+  version: number;
   shooters: ShooterRow[];
   onShootersChanged: () => Promise<void>;
   onGoLoad: () => void;
   onRecordChanged: (id: number) => void;
   onRecordDeleted: (id: number) => void;
-  /** 開いた記録を「今回」として、基準と比べる */
-  onCompare: (id: number) => void;
+  /** 比較に選んだ 2 件（①基準・②比較）。App が端末に覚える */
+  pair: ComparePair;
+  onPairChange: (pair: ComparePair) => void;
+  /** 2 件が選ばれた状態で「この 2 件を比較する」を押したとき */
+  onCompare: () => void;
 }
 
 /** ブラウザの「戻る」の履歴に付ける目印。記録を開いている間だけ積む */
@@ -34,9 +39,10 @@ const detailIdOf = (state: unknown): number | null => {
   return typeof id === 'number' ? id : null;
 };
 
-/** ライブラリ画面：保存した記録の一覧と、開いた 1 件 */
+/** ライブラリ画面：保存した動画の一覧（比較する 2 件の選択）と、開いた 1 本 */
 export function LibraryScreen(props: Props) {
   const { active, shooters, onShootersChanged, onGoLoad, onRecordChanged, onRecordDeleted } = props;
+  const { pair, onPairChange, version } = props;
   const [rows, setRows] = useState<RecordRow[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   /** この端末で使っている保存容量（バイト）。調べられなければ null */
@@ -63,7 +69,7 @@ export function LibraryScreen(props: Props) {
     if (active) void reload();
     // 別のタブへ移るときは、開いていた記録を閉じて一覧に戻しておく
     else if (detailIdOf(window.history.state) !== null) window.history.back();
-  }, [active, reload]);
+  }, [active, reload, version]);
 
   // 記録を開いている間は履歴を 1 つ積み、ブラウザの「戻る」（iPhone では画面左端からのスワイプ）で
   // 一覧へ戻れるようにする
@@ -111,7 +117,6 @@ export function LibraryScreen(props: Props) {
           void reload();
           onRecordChanged(id);
         }}
-        onCompare={props.onCompare}
         onDeleted={(id) => {
           void reload();
           onRecordDeleted(id);
@@ -135,6 +140,18 @@ export function LibraryScreen(props: Props) {
   };
 
   const total = rows?.length ?? 0;
+
+  // 比較に選ぶ：最初の◯が①基準、次の◯が②比較。もう一度押すと外れる。2 件あるときに 3 件目を押すと②が替わる
+  const togglePick = (id: number) => {
+    if (pair.baseId === id) onPairChange({ baseId: pair.currentId, currentId: null });
+    else if (pair.currentId === id) onPairChange({ ...pair, currentId: null });
+    else if (pair.baseId === null) onPairChange({ baseId: id, currentId: pair.currentId });
+    else onPairChange({ ...pair, currentId: id });
+  };
+  const titleOf = (id: number | null): string =>
+    id === null ? '' : (rows?.find((r) => r.id === id)?.title ?? '');
+  const pickMark = (id: number): string =>
+    pair.baseId === id ? '1' : pair.currentId === id ? '2' : '';
 
   return (
     <section data-testid="library">
@@ -179,6 +196,7 @@ export function LibraryScreen(props: Props) {
               ))}
             </select>
           )}
+          <p className="muted small">{ja.library.selectHint}</p>
           <div className="row">
             <button
               className="chip"
@@ -216,10 +234,11 @@ export function LibraryScreen(props: Props) {
                 {group.rows.map((r) => (
                   <li
                     key={r.id}
-                    className="lib-item"
+                    className={pickMark(r.id) ? 'lib-item picked' : 'lib-item'}
                     data-testid="lib-item"
                     data-record-id={r.id}
                     data-favorite={r.favorite}
+                    data-pick={pickMark(r.id)}
                   >
                     <button className="lib-open" data-testid="lib-open" onClick={() => open(r.id)}>
                       <RecordSummary
@@ -236,6 +255,19 @@ export function LibraryScreen(props: Props) {
                     >
                       {r.favorite ? '★' : '☆'}
                     </button>
+                    <button
+                      className="icon pick"
+                      data-testid="lib-pick"
+                      aria-pressed={pickMark(r.id) !== ''}
+                      aria-label={
+                        pickMark(r.id) ? ja.library.unpick(r.title) : ja.library.pick(r.title)
+                      }
+                      onClick={() => togglePick(r.id)}
+                    >
+                      <span className={pickMark(r.id) ? 'pick-circle on' : 'pick-circle'}>
+                        {pickMark(r.id)}
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -247,6 +279,34 @@ export function LibraryScreen(props: Props) {
         <p className="muted small num" data-testid="library-usage">
           {ja.video.usage(Math.round(usage / 1_000_000))}
         </p>
+      )}
+      {(pair.baseId !== null || pair.currentId !== null) && (
+        <div className="pick-bar" data-testid="pick-bar">
+          <div className="row nowrap">
+            <span className="small grow ellipsis" data-testid="pick-line">
+              {pair.baseId !== null && pair.currentId !== null
+                ? ja.library.pairLine(titleOf(pair.baseId), titleOf(pair.currentId))
+                : ja.library.pairOneLine(titleOf(pair.baseId ?? pair.currentId))}
+            </span>
+            <button
+              className="icon"
+              data-testid="pick-swap"
+              aria-label={ja.library.swapAria}
+              disabled={pair.baseId === null || pair.currentId === null}
+              onClick={() => onPairChange({ baseId: pair.currentId, currentId: pair.baseId })}
+            >
+              {ja.library.swap}
+            </button>
+          </div>
+          <button
+            className="primary full"
+            data-testid="pick-compare"
+            disabled={pair.baseId === null || pair.currentId === null}
+            onClick={props.onCompare}
+          >
+            {ja.library.compareBoth}
+          </button>
+        </div>
       )}
     </section>
   );
