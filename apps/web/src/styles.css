@@ -871,23 +871,37 @@ button.lib-open {
   color: var(--color-danger);
   white-space: nowrap;
 }
+.wave-handles {
+  position: relative;
+  height: 28px;
+  margin-top: -4px;
+}
+/* 取っ手は三角の旗。上の縦線でトラック上の位置を示す */
 .wave-handle {
   position: absolute;
-  top: calc(50% - 16px);
+  top: 0;
   width: 16px;
-  height: 32px;
+  height: 20px;
   margin-left: -8px;
-  border-radius: 4px;
+  border-radius: 0 0 4px 4px;
   background: var(--color-accent);
   touch-action: none;
-  z-index: 2;
   cursor: ew-resize;
+}
+.wave-handle::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  bottom: 100%;
+  width: 2px;
+  height: 18px;
+  background: var(--color-accent);
 }
 .wave-handle::before {
   /* 指で押しやすいよう、見た目より広い当たり判定 */
   content: '';
   position: absolute;
-  inset: -8px -14px;
+  inset: -4px -14px -12px;
 }
 .wave-handle span {
   position: absolute;
@@ -908,7 +922,10 @@ button.lib-open {
 .wave-scale {
   display: flex;
   justify-content: space-between;
-  margin-top: 14px;
+  margin-top: 2px;
+}
+.wave-bar:has(.wave-handles) .wave-scale {
+  margin-top: 16px;
 }
 
 /* 再生の操作 */

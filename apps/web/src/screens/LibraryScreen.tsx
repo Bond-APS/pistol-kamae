@@ -110,6 +110,7 @@ export function LibraryScreen(props: Props) {
       <RecordDetail
         key={openId}
         recordId={openId}
+        active={active}
         shooters={shooters}
         onShootersChanged={onShootersChanged}
         onClose={close}

@@ -15,7 +15,6 @@ const handednessName = { right: '右利き', left: '左利き' } as const;
 export const ja = {
   app: {
     title: 'Pistol Kamae',
-    subtitle: 'AP 射撃姿勢解析',
     stageNote: '開発中の検証用画面（段階⑤を実装中）',
     dbUnavailable:
       'このブラウザでは保存の機能を使えません。プライベートブラウズを切るか、別のブラウザで開いてください。',
@@ -72,7 +71,6 @@ export const ja = {
     discardConfirm: '保存せずに進む',
   },
   clip: {
-    title: '切り抜き',
     intro:
       '前後の余計な部分を外します。取っ手を引くか、動画を動かして「ここを開始に」「ここを終了に」を押してください。',
     handleStart: '切り抜きの開始',
@@ -88,10 +86,9 @@ export const ja = {
     confirm: '範囲を確定 → 撃発ポイントの指定へ',
     fixTitle: '切り抜き範囲の修正',
     shotOutside: '！ 撃発ポイントが範囲の外になります。撃発ポイントを含む範囲にしてください。',
-    tooShort: '！ 範囲が短すぎます。',
+    invalid: '！ この範囲は使えません（短すぎる、または動画の外に出ています）。',
   },
   shot: {
-    title: '撃発ポイント',
     intro:
       '発射音の瞬間に合わせてあります。1 コマずつ動かして、銃が跳ね上がる直前のコマで押してください。',
     introNoAudio:
@@ -108,6 +105,7 @@ export const ja = {
     backToClip: '← 切り抜きに戻る',
     fixTitle: '撃発ポイントの修正',
     capturing: '静止画を作っています…',
+    captureFailed: '！ 静止画を作れませんでした。もう一度押してください。',
   },
   shooter: {
     label: '射手',
@@ -154,7 +152,6 @@ export const ja = {
     legend: '緑：見えている点、灰：よく見えない点・画面の外にある点（計測から除外）',
   },
   save: {
-    needShot: '撃発ポイントを付けると保存できます。',
     saving: '保存中…',
     savedTitle: '✓ ライブラリに保存しました',
     nextVideo: '次の動画を保存する',
@@ -169,7 +166,6 @@ export const ja = {
       `切り抜き ${startSec.toFixed(1)}〜${endSec.toFixed(1)} 秒（${(endSec - startSec).toFixed(1)} 秒）`,
   },
   record: {
-    formSaveTitle: '保存',
     formEditTitle: 'タイトル・メモなどを編集',
     title: 'タイトル',
     titleHint: '初期値は撮影日時です。自由に変えられます。',
@@ -241,6 +237,8 @@ export const ja = {
     removeConfirm: '削除する',
     removeFailed: '！ 削除できませんでした。もう一度押してください。',
     notFound: '！ この動画を開けませんでした。',
+    notFoundBody:
+      '保存した内容が壊れているか、古すぎる形式です。削除して、動画を保存し直してください。',
     needVideo: 'この動画は本体を保存していないため、再生と修正はできません。',
     fixSaved: '✓ 保存しました',
     fixFailed: '！ 保存できませんでした。もう一度押してください。',
@@ -296,7 +294,6 @@ export const ja = {
     failed: '！ 保存できませんでした。もう一度押してください。',
   },
   compare: {
-    title: '比較',
     loading: '読み込んでいます…',
     base: '基準',
     current: '比較',

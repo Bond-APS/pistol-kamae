@@ -28,6 +28,8 @@ import { RecordPlayer, type PlayerMode } from './RecordPlayer';
 
 interface Props {
   recordId: number;
+  /** ライブラリが表示中か（隠れたら再生を止める） */
+  active: boolean;
   shooters: ShooterRow[];
   onShootersChanged: () => Promise<void>;
   /** 一覧へ戻る */
@@ -102,12 +104,22 @@ export function RecordDetail(props: Props) {
     );
   }
   if (!opened) {
+    // 開けない記録（形式が壊れているなど）も、削除だけはできるようにしておく
     return (
       <section>
         {back}
         <div className="notice err" data-testid="detail-not-found">
           <strong>{ja.library.notFound}</strong>
+          <p className="small">{ja.library.notFoundBody}</p>
         </div>
+        <div className="gap-destructive" />
+        <button
+          className="danger full"
+          data-testid="detail-remove"
+          onClick={() => void deleteRecord(recordId).then(() => onDeleted(recordId))}
+        >
+          {ja.library.remove}
+        </button>
       </section>
     );
   }
@@ -117,6 +129,7 @@ export function RecordDetail(props: Props) {
       <RecordPlayer
         opened={opened}
         mode={player}
+        active={props.active}
         backLabel={ja.library.backToDetail}
         onClose={() => setPlayer(null)}
         onChanged={(id) => {

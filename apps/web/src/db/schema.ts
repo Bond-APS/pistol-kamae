@@ -75,6 +75,18 @@ export interface RecordVideoRow {
   type: string;
 }
 
+/**
+ * 記録の音の大きさの時間変化（包絡線）。id は RecordRow と同じ。
+ * 動画本体から計算できるが、計算には動画全体と音声の波形をメモリに載せるので、1 回計算したら保存して使い回す
+ */
+export interface RecordAudioRow {
+  id: number;
+  values: Float32Array;
+  binSec: number;
+  offsetSec: number;
+  durationSec: number;
+}
+
 /** 前回選んだ射手など、端末ごとの小さな設定 */
 export interface SettingRow {
   key: string;
@@ -86,6 +98,7 @@ export class KamaeDb extends Dexie {
   records!: EntityTable<RecordRow, 'id'>;
   recordData!: Table<RecordDataRow, number>;
   recordVideos!: Table<RecordVideoRow, number>;
+  recordAudio!: Table<RecordAudioRow, number>;
   settings!: Table<SettingRow, string>;
 
   constructor() {
@@ -136,6 +149,8 @@ export class KamaeDb extends Dexie {
           if (typeof row.clipSec !== 'number') row.clipSec = durations.get(row.id) ?? 0;
         });
     });
+    // 版 5（段階⑤）：音の包絡線の表を足した。初めて開いたときに動画本体から計算して入れる
+    this.version(5).stores({ recordAudio: 'id' });
   }
 }
 

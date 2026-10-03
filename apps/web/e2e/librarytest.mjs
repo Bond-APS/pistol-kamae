@@ -85,13 +85,14 @@ try {
   check('推定の前は未保存の印が出ない', (await tid('unsaved-dot').count()) === 0);
   await tid('run-analysis').click({ timeout: 60_000 });
   await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
-  await tid('unsaved-dot').waitFor();
-  check(
-    '推定が終わると「動画の保存」タブに未保存の印が出る',
-    (await tid('unsaved-dot').count()) === 1,
-  );
+  check('推定しただけでは未保存の印が出ない', (await tid('unsaved-dot').count()) === 0);
   await tid('go-clip').click();
   await tid('clip-player').waitFor();
+  await tid('unsaved-dot').waitFor();
+  check(
+    '切り抜きに進むと「動画の保存」タブに未保存の印が出る',
+    (await tid('unsaved-dot').count()) === 1,
+  );
   await waitSettled('clip-player');
   await tid('save-reset').click();
   await tid('discard-dialog').waitFor();

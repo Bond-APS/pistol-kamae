@@ -161,6 +161,7 @@ export function App() {
         {/* 保存の流れは隠すだけにして、処理状態を保つ */}
         <div hidden={view !== 'save'}>
           <SaveScreen
+            active={view === 'save'}
             videoRef={videoRef}
             shooters={shooters}
             shooter={shooter}

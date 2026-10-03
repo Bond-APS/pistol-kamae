@@ -27,3 +27,34 @@ export function nearestFrameIndex(frames: ReadonlyArray<LandmarkFrame>, timeSec:
   if (!next) return i;
   return next.timeSec - timeSec < timeSec - frames[i]!.timeSec ? i + 1 : i;
 }
+
+/** 時刻にいちばん近いコマの時刻（コマがなければそのまま） */
+export function snapToFrame(frames: ReadonlyArray<LandmarkFrame>, timeSec: number): number {
+  return frames[nearestFrameIndex(frames, timeSec)]?.timeSec ?? timeSec;
+}
+
+/** 範囲 [startSec, endSec] に入るコマの番号の最初と最後。範囲にコマがなければ、いちばん近い 1 コマ */
+export function frameRange(
+  frames: ReadonlyArray<LandmarkFrame>,
+  startSec: number,
+  endSec: number,
+): { first: number; last: number } {
+  // 境目の丸めで外れないよう、ごくわずかの余裕を持たせる
+  const eps = 1e-6;
+  let first = frames.findIndex((f) => f.timeSec >= startSec - eps);
+  if (first < 0) first = frames.length - 1;
+  let last = first;
+  while (last + 1 < frames.length && frames[last + 1]!.timeSec <= endSec + eps) last++;
+  return { first, last };
+}
+
+/** 範囲の中で、時刻にいちばん近いコマの番号 */
+export function nearestFrameInRange(
+  frames: ReadonlyArray<LandmarkFrame>,
+  timeSec: number,
+  startSec: number,
+  endSec: number,
+): number {
+  const { first, last } = frameRange(frames, startSec, endSec);
+  return Math.min(Math.max(nearestFrameIndex(frames, timeSec), first), last);
+}

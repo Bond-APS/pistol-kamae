@@ -1,6 +1,6 @@
 import { IDENTITY, type LandmarkFrame, type RecordAnalysis } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { nearestFrameIndex, seekTimeForFrame } from '../analysis/frames';
+import { frameRange, nearestFrameInRange, seekTimeForFrame } from '../analysis/frames';
 import { ja } from '../i18n/ja';
 import { usePlayback, type PlaybackVideo } from '../video/usePlayback';
 import { CompareStage } from './CompareStage';
@@ -36,6 +36,8 @@ interface Props {
   onVideo?: (video: HTMLVideoElement | null) => void;
   /** 再生中かどうかが変わったとき（止めているときだけ角度表を出す、などに使う） */
   onPlayingChange?: (playing: boolean) => void;
+  /** 画面に出ているか。別のタブへ移って隠れたら再生を止める */
+  active?: boolean;
   testId: string;
   /** バーと操作の間に出すもの */
   children?: ReactNode;
@@ -58,7 +60,9 @@ export function SinglePlayer(props: Props) {
     [onVideo],
   );
 
-  const index = nearestFrameIndex(frames, valueSec);
+  // 表示するコマは、必ずバーの範囲の中から選ぶ（範囲の端は半コマ外のコマを指すことがあるため）
+  const range = frameRange(frames, startSec, endSec);
+  const index = nearestFrameInRange(frames, valueSec, startSec, endSec);
   const stepSec = 1 / fps;
   const videos = useMemo<PlaybackVideo[]>(
     () => [{ get: () => videoRef.current, anchorSec: 0, fps }],
@@ -75,6 +79,11 @@ export function SinglePlayer(props: Props) {
   useEffect(() => {
     onPlayingChange?.(playback.playing);
   }, [playback.playing, onPlayingChange]);
+  const { active = true } = props;
+  const { pause: pausePlayback } = playback;
+  useEffect(() => {
+    if (!active) pausePlayback();
+  }, [active, pausePlayback]);
 
   const clamp = (sec: number) => Math.min(Math.max(sec, startSec), endSec);
   const select = (sec: number) => {
@@ -82,7 +91,7 @@ export function SinglePlayer(props: Props) {
     onChange(clamp(sec));
   };
   const step = (delta: number) => {
-    const next = frames[Math.min(Math.max(index + delta, 0), frames.length - 1)];
+    const next = frames[Math.min(Math.max(index + delta, range.first), range.last)];
     if (next) select(next.timeSec);
   };
 
@@ -142,15 +151,14 @@ export function SinglePlayer(props: Props) {
         onPause={playback.pause}
         onPrev={() => step(-1)}
         onNext={() => step(1)}
-        canPrev={index > 0 && (frames[index - 1]?.timeSec ?? -1) >= startSec - stepSec / 2}
-        canNext={
-          index < frames.length - 1 &&
-          (frames[index + 1]?.timeSec ?? Infinity) <= endSec + stepSec / 2
-        }
+        canPrev={index > range.first}
+        canNext={index < range.last}
+        canPlay={endSec - startSec >= stepSec}
         {...(transport ? { transport } : {})}
         testId={props.testId}
       />
       {props.children}
+      {props.showSkeleton !== false && <p className="muted small">{ja.player.legend}</p>}
     </div>
   );
 }

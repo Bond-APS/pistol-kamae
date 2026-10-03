@@ -2,8 +2,10 @@
 
 import {
   RECORD_FORMAT_VERSION,
+  checkClip,
   checkShotRecord,
   clipDurationSec,
+  shotMarkOf,
   type Clip,
   type Handedness,
   type Mark,
@@ -12,6 +14,7 @@ import {
 } from '@pistol-kamae/engine';
 import {
   db,
+  type RecordAudioRow,
   type RecordDataRow,
   type RecordRow,
   type ShooterRow,
@@ -92,6 +95,8 @@ export interface VideoSource {
  */
 export async function setRecordVideo(id: number, video: VideoSource): Promise<void> {
   await db.recordVideos.put({ id, bytes: video.bytes, type: video.type });
+  // 動画を替えたら、前の動画から計算した音の包絡線は捨てる
+  await db.recordAudio.delete(id).catch(() => {});
   // 端末の空きが減ったときに、ブラウザが保存データを勝手に消しにくくなるよう頼む（断られても支障はない）
   void navigator.storage?.persist?.().catch(() => {});
 }
@@ -117,6 +122,14 @@ export async function storageUsage(): Promise<number | null> {
   }
 }
 
+/** 開けない記録を書かないための検査。撃発ポイントが 1 つあり、切り抜きの範囲がそれを含むこと */
+function assertConsistent(analysis: RecordAnalysis, marks: Mark[], clip: Clip | null): void {
+  const shot = shotMarkOf(marks);
+  if (!shot) throw new Error('no shot mark');
+  const problem = checkClip(clip, analysis.durationSec, shot.timeSec);
+  if (problem) throw new Error(problem);
+}
+
 /** 新しい記録を保存し、その番号を返す */
 export async function addRecord(
   fields: RecordFields,
@@ -125,6 +138,7 @@ export async function addRecord(
   clip: Clip | null,
   images: RecordImages,
 ): Promise<number> {
+  assertConsistent(analysis, marks, clip);
   return db.transaction('rw', db.records, db.recordData, async () => {
     const now = Date.now();
     const id = await db.records.add({
@@ -155,8 +169,10 @@ export async function overwriteRecordMarks(
   images: RecordImages,
 ): Promise<void> {
   await db.transaction('rw', db.records, db.recordData, async () => {
-    const updated = await db.records.update(id, { thumb: images.thumb, updatedAt: Date.now() });
-    if (updated === 0) throw new Error('record not found');
+    const data = await db.recordData.get(id);
+    if (!data) throw new Error('record not found');
+    assertConsistent(data.analysis, marks, data.clip);
+    await db.records.update(id, { thumb: images.thumb, updatedAt: Date.now() });
     await db.recordData.update(id, { marks, still: images.still });
   });
 }
@@ -166,6 +182,7 @@ export async function updateRecordClip(id: number, clip: Clip | null): Promise<v
   await db.transaction('rw', db.records, db.recordData, async () => {
     const data = await db.recordData.get(id);
     if (!data) throw new Error('record not found');
+    assertConsistent(data.analysis, data.marks, clip);
     await db.records.update(id, {
       clipSec: clipDurationSec(clip, data.analysis.durationSec),
       updatedAt: Date.now(),
@@ -183,11 +200,37 @@ export async function setRecordFavorite(id: number, favorite: boolean): Promise<
 }
 
 export async function deleteRecord(id: number): Promise<void> {
-  await db.transaction('rw', db.records, db.recordData, db.recordVideos, async () => {
-    await db.records.delete(id);
-    await db.recordData.delete(id);
-    await db.recordVideos.delete(id);
-  });
+  await db.transaction(
+    'rw',
+    db.records,
+    db.recordData,
+    db.recordVideos,
+    db.recordAudio,
+    async () => {
+      await db.records.delete(id);
+      await db.recordData.delete(id);
+      await db.recordVideos.delete(id);
+      await db.recordAudio.delete(id);
+    },
+  );
+}
+
+/** 記録の音の包絡線（計算済みなら）。失敗は null として扱う（なくても動く） */
+export async function getRecordAudio(id: number): Promise<RecordAudioRow | null> {
+  try {
+    return (await db.recordAudio.get(id)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 記録の音の包絡線を保存する。失敗しても支障はないので、例外は握りつぶす */
+export async function setRecordAudio(id: number, audio: Omit<RecordAudioRow, 'id'>): Promise<void> {
+  try {
+    await db.recordAudio.put({ id, ...audio });
+  } catch {
+    // 容量不足など。次に開いたときにまた計算する
+  }
 }
 
 export async function listRecords(): Promise<RecordRow[]> {

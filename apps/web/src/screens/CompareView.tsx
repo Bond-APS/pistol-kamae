@@ -131,13 +131,19 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
     ],
     [b, c],
   );
+  // 再生中の時点はコマの時刻に丸めて持つ（毎フレーム違う値で画面全体を描き直さないため）
+  const onTick = useCallback(
+    (next: number) =>
+      setT(c.frames[nearestFrameIndex(c.frames, c.shotSec + next)]!.timeSec - c.shotSec),
+    [c],
+  );
   const playback = usePlayback({
     videos,
     startT: -win.beforeSec,
     endT: win.afterSec,
     rate,
     loop,
-    onTick: setT,
+    onTick,
   });
   const select = (next: number) => {
     if (playback.playing) playback.pause();
@@ -175,7 +181,10 @@ export function CompareView({ base, current, onFix, onVideoAttached }: Props) {
 
   const bothVideos = baseVideo.state === 'ready' && currentVideo.state === 'ready';
   // 重ねられない 2 件は、重ねる表示では基準の動画を置かないので、横に並べたときだけ再生できる
-  const canPlay = bothVideos && !(layout === 'overlay' && cannotOverlay);
+  const canPlay =
+    bothVideos &&
+    !(layout === 'overlay' && cannotOverlay) &&
+    win.beforeSec + win.afterSec >= 1 / c.fps;
 
   const layerOf = (role: Role, opacity: number): StageLayer => {
     const s = role === 'base' ? b : c;

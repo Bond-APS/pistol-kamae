@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getRecordVideo } from '../db/library';
+import { getRecordAudio, getRecordVideo, setRecordAudio } from '../db/library';
 import { computeEnvelope, type AudioEnvelope } from './envelope';
 
 /** 音の包絡線の元：読み込んだ動画ファイル、または保存した記録の動画本体 */
@@ -25,11 +25,18 @@ function envelopeFor(source: EnvelopeSource): Promise<AudioEnvelope | null> {
   const hit = cache.get(key);
   if (hit) return hit;
   const promise = (async () => {
-    const bytes =
-      source.kind === 'file'
-        ? await source.file.arrayBuffer()
-        : ((await getRecordVideo(source.recordId))?.bytes ?? null);
-    return bytes ? computeEnvelope(bytes) : null;
+    if (source.kind === 'file') return computeEnvelope(await source.file.arrayBuffer());
+    // 記録：計算済みなら保存してあるものを使う。なければ動画本体から計算して保存する
+    // （動画全体と音声の波形をメモリに載せる計算を、記録ごとに 1 回で済ませるため）
+    const saved = await getRecordAudio(source.recordId);
+    if (saved) {
+      const { values, binSec, offsetSec, durationSec } = saved;
+      return { values, binSec, offsetSec, durationSec };
+    }
+    const bytes = (await getRecordVideo(source.recordId))?.bytes ?? null;
+    const envelope = bytes ? await computeEnvelope(bytes) : null;
+    if (envelope) await setRecordAudio(source.recordId, envelope);
+    return envelope;
   })();
   cache.set(key, promise);
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
@@ -39,6 +46,15 @@ function envelopeFor(source: EnvelopeSource): Promise<AudioEnvelope | null> {
 /** 記録の動画を付け直したときなど、覚えている包絡線を捨てる */
 export function forgetEnvelope(recordId: number): void {
   cache.delete(`record:${recordId}`);
+}
+
+/**
+ * 保存の流れで計算した包絡線を、保存した記録に写す（動画本体を読み直さずに済むように）。
+ * 計算していなければ何もしない（次に開いたときに計算する）
+ */
+export async function adoptEnvelope(file: File, recordId: number): Promise<void> {
+  const envelope = await (cache.get(keyOf({ kind: 'file', file })) ?? Promise.resolve(null));
+  if (envelope) await setRecordAudio(recordId, envelope);
 }
 
 export function useAudioEnvelope(source: EnvelopeSource | null): EnvelopeState {

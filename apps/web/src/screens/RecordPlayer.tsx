@@ -9,7 +9,7 @@ import {
   type Clip,
 } from '@pistol-kamae/engine';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { nearestFrameIndex } from '../analysis/frames';
+import { nearestFrameInRange, snapToFrame } from '../analysis/frames';
 import { loudestTimeSec } from '../audio/envelope';
 import { useAudioEnvelope } from '../audio/useAudioEnvelope';
 import { MetricTable } from '../components/MetricTable';
@@ -31,6 +31,8 @@ interface Props {
   /** 撃発ポイントや範囲を書き換えたとき */
   onChanged: (id: number) => void;
   backLabel: string;
+  /** 画面に出ているか。隠れたら再生を止める */
+  active?: boolean;
 }
 
 const titleOf = (mode: PlayerMode): string =>
@@ -40,7 +42,7 @@ const titleOf = (mode: PlayerMode): string =>
  * ライブラリの 1 本の動画のプレイヤー。再生（角度の表示）、撃発ポイントの修正、切り抜き範囲の修正を 1 つの画面で受け持つ。
  * 比較画面の「撃発ポイントの修正」「切り抜き範囲の修正」からも開く。
  */
-export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel }: Props) {
+export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, active }: Props) {
   const { row, record } = opened;
   const { analysis } = record;
   const { frames, fps, durationSec } = analysis;
@@ -65,8 +67,15 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel }: Pr
 
   // 再生と撃発の修正は切り抜きの範囲の中、範囲の修正は動画の全体を動く
   const range = mode === 'clip' ? { startSec: 0, endSec: durationSec } : savedClip;
-  const index = nearestFrameIndex(frames, valueSec);
+  const index = nearestFrameInRange(frames, valueSec, range.startSec, range.endSec);
   const frameSec = frames[index]?.timeSec ?? valueSec;
+  const snap = (sec: number) => snapToFrame(frames, sec);
+  /** 範囲の端はコマの時刻に吸着させ、動画の中に収め、1 コマ以上の長さを保つ */
+  const setClipSnapped = (startSec: number, endSec: number) => {
+    const s0 = Math.max(snap(startSec), 0);
+    const e0 = Math.min(snap(endSec), durationSec);
+    setClip(e0 - s0 >= 1 / fps ? { startSec: s0, endSec: e0 } : clip);
+  };
   const waves: WaveSeries[] | undefined =
     envelope.state === 'ready'
       ? [{ key: 'audio', envelope: envelope.envelope, className: 'wave-single' }]
@@ -183,7 +192,8 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel }: Pr
                 handles: {
                   startSec: clip.startSec,
                   endSec: clip.endSec,
-                  onChange: (startSec: number, endSec: number) => setClip({ startSec, endSec }),
+                  onChange: setClipSnapped,
+                  snap,
                 },
               }
             : {})}
@@ -193,25 +203,21 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel }: Pr
           timeLabel={`${timeLabel}\u3000${ja.player.timeLabel(frameSec, index, frames.length)}`}
           onVideo={onVideo}
           onPlayingChange={setPlaying}
+          active={active ?? true}
           testId="player"
         >
           {mode === 'clip' && (
             <div className="row nowrap">
               <button
                 data-testid="clip-set-start"
-                onClick={() =>
-                  setClip({ startSec: frameSec, endSec: Math.max(clip.endSec, frameSec + 1 / fps) })
-                }
+                onClick={() => setClipSnapped(frameSec, Math.max(clip.endSec, frameSec + 1 / fps))}
               >
                 {ja.clip.setStart}
               </button>
               <button
                 data-testid="clip-set-end"
                 onClick={() =>
-                  setClip({
-                    startSec: Math.min(clip.startSec, frameSec - 1 / fps),
-                    endSec: frameSec,
-                  })
+                  setClipSnapped(Math.min(clip.startSec, frameSec - 1 / fps), frameSec)
                 }
               >
                 {ja.clip.setEnd}
@@ -270,7 +276,7 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel }: Pr
           {ja.clip.shotOutside}
         </p>
       )}
-      {status === 'invalidClip' && <p className="danger small">{ja.clip.tooShort}</p>}
+      {status === 'invalidClip' && <p className="danger small">{ja.clip.invalid}</p>}
     </section>
   );
 }

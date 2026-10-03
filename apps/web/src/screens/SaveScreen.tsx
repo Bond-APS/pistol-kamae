@@ -9,10 +9,10 @@ import {
   type RecordAnalysis,
 } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { nearestFrameIndex } from '../analysis/frames';
+import { nearestFrameInRange, snapToFrame } from '../analysis/frames';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { loudestTimeSec } from '../audio/envelope';
-import { useAudioEnvelope } from '../audio/useAudioEnvelope';
+import { adoptEnvelope, useAudioEnvelope } from '../audio/useAudioEnvelope';
 import { ConfirmDialog } from '../components/Dialog';
 import { RecordForm } from '../components/RecordForm';
 import { SinglePlayer } from '../components/SinglePlayer';
@@ -33,6 +33,8 @@ const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 export type SaveStep = 'open' | 'clip' | 'shot' | 'form' | 'done';
 
 interface Props {
+  /** この画面が表示中か。隠れたら再生を止める */
+  active: boolean;
   /** 推定に使う video 要素の置き場所（開く段階だけ使う） */
   videoRef: RefObject<HTMLVideoElement | null>;
   shooters: ShooterRow[];
@@ -79,6 +81,7 @@ export function SaveScreen(props: Props) {
   const [shotSec, setShotSec] = useState<number | null>(null);
   const [images, setImages] = useState<RecordImages | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [captureFailed, setCaptureFailed] = useState(false);
   const [clipProblem, setClipProblem] = useState<'shotOutsideClip' | 'invalidClip' | null>(null);
   const [saved, setSaved] = useState<{
     recordId: number;
@@ -102,7 +105,8 @@ export function SaveScreen(props: Props) {
     [envelope, clip],
   );
 
-  const unsaved = result !== null && saved === null;
+  // 「保存していない動画」として確認を出すのは、切り抜きに進んでから（推定しただけの段階では出さない）
+  const unsaved = result !== null && saved === null && step !== 'open';
   useEffect(() => onUnsavedChange(unsaved), [unsaved, onUnsavedChange]);
   const { onResultChange, newRequest } = props;
   useEffect(() => onResultChange(result), [result, onResultChange]);
@@ -180,8 +184,19 @@ export function SaveScreen(props: Props) {
   }
 
   const { frames, fps, durationSec } = result;
-  const index = nearestFrameIndex(frames, shownSec);
+  // 表示中のコマ。切り抜きの段階は動画の全体から、撃発の段階は範囲の中から選ぶ（プレイヤーと同じ決め方）
+  const barStart = step === 'shot' ? clip.startSec : 0;
+  const barEnd = step === 'shot' ? clip.endSec : durationSec;
+  const index = nearestFrameInRange(frames, shownSec, barStart, barEnd);
   const frameSec = frames[index]?.timeSec ?? shownSec;
+  const snap = (sec: number) => snapToFrame(frames, sec);
+  /** 範囲の端はコマの時刻に吸着させ、動画の中に収め、1 コマ以上の長さを保つ */
+  const setClipSnapped = (startSec: number, endSec: number) => {
+    const s0 = Math.max(snap(startSec), 0);
+    const e0 = Math.min(snap(endSec), durationSec);
+    setClip(e0 - s0 >= 1 / fps ? { startSec: s0, endSec: e0 } : clip);
+  };
+  const shotInClip = clipContains(clip, durationSec, frameSec);
   const waves: WaveSeries[] | undefined =
     envelope.state === 'ready'
       ? [{ key: 'audio', envelope: envelope.envelope, className: 'wave-single' }]
@@ -202,8 +217,9 @@ export function SaveScreen(props: Props) {
   };
   const setShotHere = async () => {
     const video = playerVideoRef.current;
-    if (!video || capturing) return;
+    if (!video || capturing || !shotInClip) return;
     setCapturing(true);
+    setCaptureFailed(false);
     try {
       const sec = frameSec;
       // 撃発の瞬間の静止画（詳細の写真と一覧の小さい写真）は、この場で撮っておく
@@ -211,24 +227,20 @@ export function SaveScreen(props: Props) {
       setShotSec(sec);
       setImages(captured);
     } catch {
-      // 撮れなくても撃発ポイントは付ける（静止画は保存のときにもう一度試す）
-      setShotSec(frameSec);
-      setImages(null);
+      // 撮れなければ撃発ポイントは付けず、もう一度押してもらう（保存の段階ではプレイヤーがなく撮り直せない）
+      setCaptureFailed(true);
     }
     setCapturing(false);
   };
 
   const saveNew = async (fields: RecordFields) => {
-    if (shotSec === null || !file) throw new Error('nothing to save');
-    const video = playerVideoRef.current;
-    const captured = images ?? (video ? await captureShotImages(video, result, shotSec) : null);
-    if (!captured) throw new Error('no images');
+    if (shotSec === null || !file || !images) throw new Error('nothing to save');
     const recordId = await addRecord(
       fields,
       analysisOf(result),
       setShotMark([], shotSec),
       clipOrNull(clip, durationSec),
-      captured,
+      images,
     );
     // 動画本体は大きいので、記録とは別に保存する。失敗しても記録は残し、その旨を知らせる
     const tooLarge = file.size > VIDEO_MAX_BYTES;
@@ -236,6 +248,7 @@ export function SaveScreen(props: Props) {
     if (!tooLarge) {
       try {
         await setRecordVideo(recordId, { bytes: await file.arrayBuffer(), type: file.type });
+        await adoptEnvelope(file, recordId);
       } catch {
         videoFailed = true;
       }
@@ -271,28 +284,25 @@ export function SaveScreen(props: Props) {
             handles={{
               startSec: clip.startSec,
               endSec: clip.endSec,
-              onChange: (startSec, endSec) => setClip({ startSec, endSec }),
+              onChange: setClipSnapped,
+              snap,
             }}
             timeLabel={timeLabel}
             onVideo={onVideo}
+            active={props.active}
             testId="clip-player"
           >
             <div className="row nowrap">
               <button
                 data-testid="clip-set-start"
-                onClick={() =>
-                  setClip({ startSec: frameSec, endSec: Math.max(clip.endSec, frameSec + 1 / fps) })
-                }
+                onClick={() => setClipSnapped(frameSec, Math.max(clip.endSec, frameSec + 1 / fps))}
               >
                 {ja.clip.setStart}
               </button>
               <button
                 data-testid="clip-set-end"
                 onClick={() =>
-                  setClip({
-                    startSec: Math.min(clip.startSec, frameSec - 1 / fps),
-                    endSec: frameSec,
-                  })
+                  setClipSnapped(Math.min(clip.startSec, frameSec - 1 / fps), frameSec)
                 }
               >
                 {ja.clip.setEnd}
@@ -305,7 +315,7 @@ export function SaveScreen(props: Props) {
           <p className="muted small">{ja.clip.keepNote}</p>
           {clipProblem && (
             <p className="danger small" data-testid="clip-problem">
-              {clipProblem === 'shotOutsideClip' ? ja.clip.shotOutside : ja.clip.tooShort}
+              {clipProblem === 'shotOutsideClip' ? ja.clip.shotOutside : ja.clip.invalid}
             </p>
           )}
           <button className="primary full" data-testid="clip-confirm" onClick={confirmClip}>
@@ -339,16 +349,22 @@ export function SaveScreen(props: Props) {
             markers={shotMarkers}
             timeLabel={timeLabel}
             onVideo={onVideo}
+            active={props.active}
             testId="shot-player"
           />
           <button
             className={shotSec === null ? 'primary full' : 'full'}
             data-testid="shot-set"
-            disabled={capturing}
+            disabled={capturing || !shotInClip}
             onClick={() => void setShotHere()}
           >
             {capturing ? ja.shot.capturing : shotSec === null ? ja.shot.set : ja.shot.reset}
           </button>
+          {captureFailed && (
+            <p className="danger small" data-testid="shot-capture-failed">
+              {ja.shot.captureFailed}
+            </p>
+          )}
           <p className="small num" data-testid="shot-status">
             {shotSec === null
               ? ja.shot.notSet

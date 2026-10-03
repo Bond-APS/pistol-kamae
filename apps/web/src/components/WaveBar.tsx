@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { binTimeSec, type AudioEnvelope } from '../audio/envelope';
 import { ja } from '../i18n/ja';
@@ -23,6 +24,8 @@ export interface ClipHandles {
   startSec: number;
   endSec: number;
   onChange: (startSec: number, endSec: number) => void;
+  /** 取っ手の位置をコマの時刻に吸着させる（範囲の端が、実際のコマの時刻と一致するように） */
+  snap: (sec: number) => number;
 }
 
 interface Props {
@@ -85,12 +88,23 @@ export function WaveBar(props: Props) {
   /** 取っ手を引いている間の状態 */
   const drag = useRef<{ which: 'start' | 'end'; pointerId: number } | null>(null);
 
+  const clampSec = (sec: number) => Math.min(Math.max(sec, startSec), endSec);
   const secAt = (clientX: number): number => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return startSec;
     const ratio = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
-    const raw = startSec + ratio * span;
-    return Math.round(raw / stepSec) * stepSec;
+    return clampSec(startSec + ratio * span);
+  };
+  /** 取っ手を動かす。開始と終了は 1 コマ以上離し、バーの範囲の中に収め、コマの時刻に吸着させる */
+  const moveHandle = (which: 'start' | 'end', sec: number) => {
+    if (!handles) return;
+    if (which === 'start') {
+      const next = handles.snap(clampSec(Math.min(sec, handles.endSec - stepSec)));
+      handles.onChange(Math.min(next, handles.endSec - stepSec / 2), handles.endSec);
+    } else {
+      const next = handles.snap(clampSec(Math.max(sec, handles.startSec + stepSec)));
+      handles.onChange(handles.startSec, Math.max(next, handles.startSec + stepSec / 2));
+    }
   };
   const beginDrag = (which: 'start' | 'end') => (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!handles) return;
@@ -101,15 +115,18 @@ export function WaveBar(props: Props) {
   const moveDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d || !handles || e.pointerId !== d.pointerId) return;
-    const sec = secAt(e.clientX);
-    if (d.which === 'start') {
-      handles.onChange(Math.min(sec, handles.endSec - stepSec), handles.endSec);
-    } else {
-      handles.onChange(handles.startSec, Math.max(sec, handles.startSec + stepSec));
-    }
+    moveHandle(d.which, secAt(e.clientX));
   };
   const endDrag = () => {
     drag.current = null;
+  };
+  /** 矢印キーで 1 コマずつ動かす（キーボードや読み上げの利用者向け） */
+  const keyHandle = (which: 'start' | 'end') => (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!handles) return;
+    const delta = e.key === 'ArrowLeft' ? -stepSec : e.key === 'ArrowRight' ? stepSec : 0;
+    if (delta === 0) return;
+    e.preventDefault();
+    moveHandle(which, (which === 'start' ? handles.startSec : handles.endSec) + delta);
   };
 
   return (
@@ -157,29 +174,39 @@ export function WaveBar(props: Props) {
           value={Math.min(Math.max(valueSec, startSec), endSec)}
           onChange={(e) => onChange(Number(e.target.value))}
         />
-        {handles &&
-          (['start', 'end'] as const).map((which) => (
-            <div
-              key={which}
-              className={`wave-handle ${which}`}
-              role="slider"
-              aria-label={which === 'start' ? ja.clip.handleStart : ja.clip.handleEnd}
-              aria-valuenow={which === 'start' ? handles.startSec : handles.endSec}
-              data-testid={`${props.testId}-handle-${which}`}
-              style={{ left: pct(which === 'start' ? handles.startSec : handles.endSec) }}
-              onPointerDown={beginDrag(which)}
-              onPointerMove={moveDrag}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-            >
-              <span className="small num">
-                {which === 'start'
-                  ? ja.clip.startAt(handles.startSec)
-                  : ja.clip.endAt(handles.endSec)}
-              </span>
-            </div>
-          ))}
       </div>
+      {/* 取っ手はつまみと重ならないよう、バーの下の別の段に置く */}
+      {handles && (
+        <div className="wave-handles">
+          {(['start', 'end'] as const).map((which) => {
+            const sec = which === 'start' ? handles.startSec : handles.endSec;
+            return (
+              <div
+                key={which}
+                className={`wave-handle ${which}`}
+                role="slider"
+                tabIndex={0}
+                aria-label={which === 'start' ? ja.clip.handleStart : ja.clip.handleEnd}
+                aria-valuemin={startSec}
+                aria-valuemax={endSec}
+                aria-valuenow={sec}
+                aria-valuetext={ja.player.secLabel(sec)}
+                data-testid={`${props.testId}-handle-${which}`}
+                style={{ left: pct(sec) }}
+                onPointerDown={beginDrag(which)}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                onKeyDown={keyHandle(which)}
+              >
+                <span className="small num">
+                  {which === 'start' ? ja.clip.startAt(sec) : ja.clip.endAt(sec)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div className="wave-scale muted small num">
         <span>{props.startLabel}</span>
         <span>{props.endLabel}</span>

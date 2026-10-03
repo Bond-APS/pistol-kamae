@@ -32,8 +32,9 @@ export interface Playback {
   pause: () => void;
 }
 
-/** 区間の終わりの手前、この時間（秒）以内なら「終わり」とみなす（終端で止まらずに通り過ぎる対策） */
-const END_EPSILON_SEC = 0.02;
+/** 区間の終わりの手前、少なくともこの時間（秒）以内なら「終わり」とみなす（終端で止まらずに通り過ぎる対策）。実際は 1 コマ分 */
+const END_EPSILON_MIN_SEC = 0.02;
+const endEpsilon = (fps: number): number => Math.max(END_EPSILON_MIN_SEC, 1 / fps);
 
 export function usePlayback(opts: PlaybackOptions): Playback {
   const { videos, rate } = opts;
@@ -46,13 +47,17 @@ export function usePlayback(opts: PlaybackOptions): Playback {
 
   const all = useCallback(() => videos.map((v) => v.get()), [videos]);
 
+  /** 実際に再生していたか（止まっているときに pause() を呼んでも、時点を上書きしないため） */
+  const playingRef = useRef(false);
   const pause = useCallback(() => {
     const elements = all();
     const master = elements[0];
     for (const v of elements) v?.pause();
-    if (master && master.readyState >= 1) {
-      optsRef.current.onTick(master.currentTime - optsRef.current.videos[0]!.anchorSec);
+    if (playingRef.current && master && master.readyState >= 1) {
+      const { startT: s, endT: e, videos: vs, onTick } = optsRef.current;
+      onTick(Math.min(Math.max(master.currentTime - vs[0]!.anchorSec, s), e));
     }
+    playingRef.current = false;
     setPlaying(false);
   }, [all]);
 
@@ -72,14 +77,19 @@ export function usePlayback(opts: PlaybackOptions): Playback {
       const master = elements[0];
       if (!master || elements.some((v) => !v)) return;
       const { startT: s, endT: e, rate: r } = optsRef.current;
+      // 区間が 1 コマに満たなければ再生しない（終端の判定を繰り返すだけになる）
+      if (e - s < 1 / videos[0]!.fps) return;
       let t = fromT ?? master.currentTime - videos[0]!.anchorSec;
       // 区間の外、または終わりにいるときは先頭から
-      if (t < s || t >= e - END_EPSILON_SEC) t = s;
+      if (t < s || t >= e - endEpsilon(videos[0]!.fps)) t = s;
       seekAll(t);
       for (const v of elements) v!.playbackRate = r;
       // 利用者の操作の中で、すべてを同時に再生し始める（iPhone は操作の外からの再生を断る）
       void Promise.all(elements.map((v) => v!.play())).then(
-        () => setPlaying(true),
+        () => {
+          playingRef.current = true;
+          setPlaying(true);
+        },
         () => pause(),
       );
     },
@@ -101,9 +111,9 @@ export function usePlayback(opts: PlaybackOptions): Playback {
       const master = elements[0];
       const { startT: s, endT: e, loop: l, onTick: cb, videos: vs } = optsRef.current;
       if (!master || elements.some((v) => !v || v.paused || v.ended)) {
-        // 画面から外れた・端まで行った・ブラウザが止めた：全部止める
-        if (master && master.ended && l && elements.every((v) => v)) {
-          // 動画の末尾が区間の終わりと同じときは、末尾に達して ended になる。繰り返しなら先頭へ
+        // どれかが動画の末尾に達して ended になった（区間の終わりが動画の末尾と同じとき）。
+        // 繰り返しなら先頭へ戻して続ける。それ以外（画面から外れた・ブラウザが止めた）は全部止める
+        if (l && elements.every((v) => v) && elements.some((v) => v!.ended)) {
           seekAll(s);
           void Promise.all(elements.map((v) => v!.play())).catch(() => pause());
           raf = requestAnimationFrame(tick);
@@ -113,7 +123,7 @@ export function usePlayback(opts: PlaybackOptions): Playback {
         return;
       }
       const t = master.currentTime - vs[0]!.anchorSec;
-      if (!restarting && t >= e - END_EPSILON_SEC) {
+      if (!restarting && t >= e - endEpsilon(vs[0]!.fps)) {
         if (l) {
           restarting = true;
           seekAll(s);
