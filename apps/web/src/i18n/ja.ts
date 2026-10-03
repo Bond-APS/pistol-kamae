@@ -46,6 +46,10 @@ export const ja = {
   handedness: handednessName,
   load: {
     pickVideo: '手順 1：下のボタンを押して動画を選ぶ',
+    pickButton: 'ファイルを選択',
+    notPicked: 'ファイル未選択',
+    picked: '選択済み',
+    repickHint: '動画を選び直すときは「ファイルを選択」を押してください。',
     pleaseWait: 'しばらくお待ちください',
     formatHint:
       '読める形式：MP4（H.264）、MOV（H.264）、WebM。iPhone の HEVC 形式は Windows の Chrome などで再生できないことがあります。',

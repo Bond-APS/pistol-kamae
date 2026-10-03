@@ -58,8 +58,6 @@ export function LoadScreen(props: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
-  /** 確認を済ませた直後のファイル選択では、もう一度確認しない */
-  const confirmedPickRef = useRef(false);
 
   // 画面を閉じるときに動画を解放する
   useEffect(() => {
@@ -123,11 +121,12 @@ export function LoadScreen(props: Props) {
   const confirmPick = () => {
     setConfirmingPick(false);
     // ファイル選択は、利用者の操作（このボタンを押したこと）の中で開く必要がある
-    confirmedPickRef.current = true;
     fileInputRef.current?.click();
   };
 
   const busy = status.kind === 'preparing' || status.kind === 'running';
+  /** 動画を読み込み済みか。読み込んだあとは、選び直しの案内と「選択済み」を出す */
+  const picked = info !== null;
 
   // 動画を選んだ直後（メタ情報とフレームレートの推定）は、「しばらくお待ちください」だけを出す
   // （2026-10-03、開発者の希望。写真アプリから選ぶと、ここで数秒かかる）
@@ -143,28 +142,52 @@ export function LoadScreen(props: Props) {
 
   return (
     <section>
-      <p className="muted small">
-        {ja.load.formatHint} {ja.load.formatHintIphone}
-      </p>
+      {!picked && (
+        <p className="muted small" data-testid="load-format-hint">
+          {ja.load.formatHint} {ja.load.formatHintIphone}
+        </p>
+      )}
 
-      <label className="field">
-        <span>{ja.load.pickVideo}</span>
+      {/* ブラウザ本来のファイル選択欄は「ファイル未選択」の文字を消せないので、画面には出さず、
+          自前のボタンから開く（2026-10-03、開発者の指摘。読み込んだあとも未選択に見えたため） */}
+      <div className="field">
+        <span id="video-pick-label" data-testid="video-pick-label">
+          {picked ? ja.load.repickHint : ja.load.pickVideo}
+        </span>
+        <div className="row nowrap tight">
+          <button
+            data-testid="video-pick"
+            aria-describedby="video-pick-label video-pick-state"
+            disabled={busy}
+            onClick={() => {
+              if (hasUnsaved) setConfirmingPick(true);
+              else fileInputRef.current?.click();
+            }}
+          >
+            {ja.load.pickButton}
+          </button>
+          <span
+            id="video-pick-state"
+            className={picked ? 'small' : 'muted small'}
+            data-testid="video-pick-state"
+          >
+            {picked ? ja.load.picked : ja.load.notPicked}
+          </span>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
           data-testid="video-file"
           accept="video/*"
+          hidden
           disabled={busy}
-          onClick={(e) => {
-            const confirmed = confirmedPickRef.current;
-            confirmedPickRef.current = false;
-            if (!hasUnsaved || confirmed) return;
-            e.preventDefault();
-            setConfirmingPick(true);
+          onChange={(e) => {
+            void onPick(e.target.files?.[0]);
+            // 同じファイルを選び直しても反応するように、選択を消しておく
+            e.target.value = '';
           }}
-          onChange={(e) => void onPick(e.target.files?.[0])}
         />
-      </label>
+      </div>
 
       {status.kind === 'unsupported' && (
         <div className="notice err">

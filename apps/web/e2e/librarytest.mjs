@@ -228,10 +228,11 @@ try {
   await tid('library-empty').waitFor();
   check('0 件になると案内とボタンが出る', (await tid('library-go-load').count()) === 1);
   await tid('library-go-load').click();
-  await tid('video-file').waitFor({ timeout: 5000 });
+  await tid('video-pick').waitFor({ timeout: 5000 });
   check(
     '案内のボタンで「動画の保存」へ移り、新しい動画を受け入れる',
-    await tid('video-file').isVisible(),
+    (await tid('video-pick').isEnabled()) &&
+      (await tid('video-pick-state').textContent()) === 'ファイル未選択',
   );
 
   // ── 段階③で保存した記録（保存形式の版 1）が、消えずに開ける。タイトルは撮影日時、範囲は全体になる

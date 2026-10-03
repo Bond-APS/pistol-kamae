@@ -122,10 +122,61 @@ try {
   await tid('shooter-submit').click();
   await tid('shooter-select').waitFor();
 
+  // 動画を読み込む前：形式の案内と「手順 1」が出て、ボタンの右は「ファイル未選択」
+  check(
+    '読み込む前は形式の案内と「手順 1」が出る',
+    (await tid('load-format-hint').isVisible()) &&
+      (await tid('video-pick-label').textContent()).startsWith('手順 1'),
+    await tid('video-pick-label').textContent(),
+  );
+  check(
+    '読み込む前は「ファイルを選択」の右に「ファイル未選択」と出る',
+    (await tid('video-pick').textContent()) === 'ファイルを選択' &&
+      (await tid('video-pick-state').textContent()) === 'ファイル未選択',
+    await tid('video-pick-state').textContent(),
+  );
+  check(
+    'ブラウザ本来のファイル選択欄は画面に出ない',
+    (await tid('video-file').count()) === 1 && !(await tid('video-file').isVisible()),
+  );
+  await shotPng('open-before');
+  // 自前のボタンからファイルの選択を開き、そこで動画を選ぶ（ボタン → 隠した欄 → 読み込みがつながっている）
+  const chooserPromise = page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null);
+  await tid('video-pick').click();
+  const chooser = await chooserPromise;
+  check('「ファイルを選択」を押すとファイルの選択が開く', chooser !== null);
+
   console.log('  姿勢推定を実行中…');
-  await tid('video-file').setInputFiles(videoPath);
+  if (chooser) await chooser.setFiles(videoPath);
+  else await tid('video-file').setInputFiles(videoPath);
+  // 動画を読み込んだあと：形式の案内と「手順 1」が消え、選び直しの案内と「選択済み」が出る
+  await tid('run-analysis').and(page.locator(':enabled')).waitFor({ timeout: 60_000 });
+  check(
+    '読み込んだあとは形式の案内と「手順 1」が消える',
+    (await tid('load-format-hint').count()) === 0 &&
+      !(await page.locator('body').textContent()).includes('手順 1'),
+  );
+  check(
+    '読み込んだあとは選び直しの案内が出る',
+    (await tid('video-pick-label').textContent()) ===
+      '動画を選び直すときは「ファイルを選択」を押してください。',
+    await tid('video-pick-label').textContent(),
+  );
+  check(
+    '読み込んだあとは「ファイルを選択」の右に「選択済み」と出る',
+    (await tid('video-pick-state').textContent()) === '選択済み' &&
+      !(await page.locator('body').textContent()).includes('ファイル未選択'),
+    await tid('video-pick-state').textContent(),
+  );
+  await shotPng('open-after');
   await tid('run-analysis').click({ timeout: 60_000 });
+  check('推定の実行中は「ファイルを選択」を押せない', await tid('video-pick').isDisabled());
   await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
+  check(
+    '推定が終わると「ファイルを選択」が押せて、「選択済み」のまま',
+    (await tid('video-pick').isEnabled()) &&
+      (await tid('video-pick-state').textContent()) === '選択済み',
+  );
   await tid('go-clip').click();
 
   // ② 切り抜き
