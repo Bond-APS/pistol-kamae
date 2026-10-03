@@ -92,9 +92,8 @@ async function saveVideo(path, title, { clip, shotSec } = {}) {
   await tid('shooter-next').click();
   await tid('video-file').setInputFiles(path);
   await tid('run-analysis').click({ timeout: 60_000 });
-  await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
-  await tid('go-clip').click();
-  await tid('clip-player').waitFor();
+  // 推定が終わると、自動で切り抜きへ進む
+  await tid('clip-player').waitFor({ timeout: 15 * 60_000 });
   await waitSettled('clip-player');
   if (clip) {
     await slideTo('clip-player-bar', clip[0]);
@@ -115,9 +114,9 @@ async function saveVideo(path, title, { clip, shotSec } = {}) {
   }
   const noAudio = (await page.locator('.wave-none').count()) === 1;
   const sec = Number(await tid('shot-player-bar').getAttribute('data-value-sec'));
+  // 「撃発ポイントを確定」を押すと、自動で保存へ進む
   await tid('shot-set').click();
-  await tid('shot-player-bar-marker-shot').waitFor({ timeout: 15_000 });
-  await tid('shot-to-save').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   await tid('form-title').fill(title);
   await tid('form-submit').click();
   await tid('save-done').waitFor({ timeout: 30_000 });
@@ -215,6 +214,10 @@ try {
   );
   check('開いた直後は撃発の瞬間', (await tid('compare-time').textContent()).includes('撃発の瞬間'));
   check('撃発の印が 0 にある', (await tid('compare-bar-marker-shot').count()) === 1);
+  check(
+    '比較のバーは丸いつまみのまま（▲ ではない）',
+    (await page.locator('[data-testid=compare-bar] .wave-arrow').count()) === 0,
+  );
   check(
     '音のグラフは音のある 1 本分',
     (await page.locator('[data-testid=compare-bar-wave] path').count()) === 1,

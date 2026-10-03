@@ -13,13 +13,14 @@ interface Props {
   videoRef: MutableRefObject<HTMLVideoElement | null>;
   /** 前の段階で選んだ射手。まだ誰も登録されていなければ null */
   shooter: ShooterRow | null;
-  /** 射手の選択へ戻る（読み込んだ動画と推定の結果は残す） */
+  /** 射手の選択へ戻る（読み込んだ動画は残す） */
   onBackToShooter: () => void;
   result: AnalysisResult | null;
-  /** file は選んだ動画ファイル（保存のとき、動画本体と撮影日時の初期値に使う） */
+  /**
+   * file は選んだ動画ファイル（保存のとき、動画本体と撮影日時の初期値に使う）。
+   * 推定が終わって結果を渡すと、SaveScreen が自動で切り抜きへ進める
+   */
   onResult: (r: AnalysisResult | null, file: File | null) => void;
-  /** 推定が終わったあと、切り抜きへ進む */
-  onGoClip: () => void;
 }
 
 interface VideoInfo {
@@ -36,7 +37,6 @@ type Status =
   | { kind: 'unsupported' }
   | { kind: 'preparing' }
   | { kind: 'running'; done: number; total: number }
-  | { kind: 'done'; frames: number; sec: number; notes: string[] }
   | { kind: 'cancelled' }
   | { kind: 'error'; message: string };
 
@@ -92,16 +92,17 @@ export function LoadScreen(props: Props) {
         onPreparing: () => setStatus({ kind: 'preparing' }),
         onProgress: (done, total) => setStatus({ kind: 'running', done, total }),
       });
+      // 最後のコマとほぼ同時に「中断」を押した場合は、切り抜きへ進めない
+      if (controller.signal.aborted) {
+        setStatus({ kind: 'cancelled' });
+        return;
+      }
       // 推定に使った video はここで解放する（以後の表示は、ファイルから作り直したプレイヤーが受け持つ）
       releaseVideo(video);
       videoRef.current = null;
+      // 状態は「処理中」のままにして、切り抜きの画面に切り替わるまで進捗を出しておく
+      // （2026-10-04、開発者の指示。完了の表示と「切り抜きへ進む」ボタンはなくした）
       props.onResult(analyzed, fileRef.current);
-      setStatus({
-        kind: 'done',
-        frames: analyzed.frames.length,
-        sec: analyzed.timing.totalMs / 1000,
-        notes: analyzed.notes,
-      });
     } catch (e) {
       if (isAborted(e)) setStatus({ kind: 'cancelled' });
       else setStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -191,9 +192,9 @@ export function LoadScreen(props: Props) {
         <p className="muted small num">{ja.load.videoInfo(info.w, info.h, info.sec, info.fps)}</p>
       )}
 
-      {/* 完了後はやり直しのボタンを出さない。Safari は、一度画面に置いた video を外すと
-          その後のシークが終わらなくなり、同じ動画のやり直しが止まってしまうため。
-          やり直すときは動画を選び直す（新しい video 要素になる） */}
+      {/* 推定が終わって切り抜きへ切り替わるまでの一瞬は、実行と中断のボタンを出さない。
+          Safari は、一度画面に置いた video を外すとその後のシークが終わらなくなり、同じ動画の
+          やり直しが止まってしまうため、やり直すときは動画を選び直す（新しい video 要素になる） */}
       {!result && (
         <div className="row">
           <button
@@ -213,20 +214,6 @@ export function LoadScreen(props: Props) {
         <div>
           <progress value={status.done} max={status.total} className="progress" />
           <p>{ja.load.progress(status.done, status.total)}</p>
-        </div>
-      )}
-      {status.kind === 'done' && (
-        <div className="notice ok">
-          <strong>{ja.load.doneTitle}</strong>
-          <p className="small num" data-testid="analysis-done">
-            {ja.load.done(status.frames, status.sec)}
-            {status.notes.includes('gpuFallback') ? `（${ja.load.gpuFallback}）` : ''}
-          </p>
-          <div className="stack">
-            <button className="primary full" data-testid="go-clip" onClick={props.onGoClip}>
-              {ja.load.goClip}
-            </button>
-          </div>
         </div>
       )}
       {status.kind === 'cancelled' && <p>{ja.load.cancelled}</p>}

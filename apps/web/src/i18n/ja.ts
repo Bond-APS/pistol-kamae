@@ -78,10 +78,6 @@ export const ja = {
     cancelled: '中断しました',
     errorTitle: '！ 姿勢推定でエラーが起きました',
     error: (msg: string) => `エラー：${msg}`,
-    gpuFallback: 'GPU が使えなかったため CPU で実行しました',
-    doneTitle: '✓ 完了',
-    done: (frames: number, sec: number) => `${frames} フレームを ${sec.toFixed(1)} 秒で処理`,
-    goClip: '切り抜きへ進む',
     discardTitle: '保存していない動画があります',
     discardBody: '別の動画を選ぶと、今の切り抜きと撃発ポイントは消えます。',
     discardConfirm: '保存せずに進む',
@@ -99,25 +95,20 @@ export const ja = {
       `切り抜いた長さ：${clipSec.toFixed(1)} 秒（元の動画 ${totalSec.toFixed(1)} 秒）`,
     keepNote:
       '元の動画は丸ごと保存され、範囲はあとから変えられます（端末の保存容量は減りません）。',
-    confirm: '範囲を確定 → 撃発ポイントの指定へ',
+    confirm: '範囲を確定 → 撃発ポイントの特定へ',
     fixTitle: '切り抜き範囲の修正',
     shotOutside: '！ 撃発ポイントが範囲の外になります。撃発ポイントを含む範囲にしてください。',
     invalid: '！ この範囲は使えません（短すぎる、または動画の外に出ています）。',
   },
   shot: {
-    intro:
-      '発射音の瞬間に合わせてあります。1 コマずつ動かして、銃が跳ね上がる直前のコマで押してください。',
+    intro: '撃発の発射音に合わせてあります。修正が必要な場合は指定しなおしてください。',
     introNoAudio:
       'この動画からは音を取り出せないため、音のグラフは出ません。動画を動かして、銃が跳ね上がる直前のコマで押してください。',
-    set: 'ここが撃発ポイント',
-    reset: '撃発ポイントをここに直す',
+    set: '撃発ポイントを確定',
     loudest: '音の最大',
     marker: '撃発',
     setAt: (sec: number, index: number) =>
       `撃発ポイント：${sec.toFixed(2)} 秒（${index + 1} コマ目）`,
-    notSet: 'まだ撃発ポイントを付けていません。',
-    toSave: '保存へ',
-    toSaveDisabled: '保存へ（撃発ポイントを付けると押せます）',
     backToClip: '← 切り抜きに戻る',
     fixTitle: '撃発ポイントの修正',
     capturing: '静止画を作っています…',
@@ -167,7 +158,6 @@ export const ja = {
     angleTitle: 'このコマの角度（止めているとき）',
     anglePlaying: '止めると、そのコマの角度が出ます。',
     noPerson: '人物を検出できませんでした',
-    legend: '緑：見えている点、灰：よく見えない点・画面の外にある点（計測から除外）',
   },
   save: {
     saving: '保存中…',

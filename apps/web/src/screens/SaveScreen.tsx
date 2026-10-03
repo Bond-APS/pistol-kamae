@@ -108,7 +108,7 @@ export function SaveScreen(props: Props) {
     [envelope, clip],
   );
 
-  // 「保存していない動画」として確認を出すのは、切り抜きに進んでから（推定しただけの段階では出さない）
+  // 「保存していない動画」として確認を出すのは、切り抜きに進んでから（推定が終わると自動で進む）
   const unsaved = result !== null && saved === null && step !== 'shooter' && step !== 'video';
   useEffect(() => onUnsavedChange(unsaved), [unsaved, onUnsavedChange]);
   const { onResultChange, newRequest } = props;
@@ -121,6 +121,7 @@ export function SaveScreen(props: Props) {
     setImages(null);
     setSaved(null);
     setClipProblem(null);
+    setCaptureFailed(false);
     setTouched(false);
     setStep(to);
   }, []);
@@ -154,10 +155,13 @@ export function SaveScreen(props: Props) {
     setImages(null);
     setSaved(null);
     setClipProblem(null);
+    setCaptureFailed(false);
     setTouched(false);
     if (r) {
       setClip({ startSec: 0, endSec: r.durationSec });
       setValueSec(0);
+      // 推定が終わったら、自動で切り抜きへ進む（2026-10-04、開発者の指示）
+      setStep('clip');
     }
   }, []);
 
@@ -180,7 +184,7 @@ export function SaveScreen(props: Props) {
             onNext={() => setStep('video')}
           />
         )}
-        {/* 動画の指定は隠すだけにして、射手の選択へ戻っても読み込んだ動画と推定の結果を保つ */}
+        {/* 動画の指定は隠すだけにして、射手の選択へ戻っても読み込んだ動画を保つ */}
         <div hidden={openStep !== 'video'}>
           <LoadScreen
             videoRef={videoRef}
@@ -188,10 +192,6 @@ export function SaveScreen(props: Props) {
             onBackToShooter={() => setStep('shooter')}
             result={result}
             onResult={onResult}
-            onGoClip={() => {
-              setValueSec(clip.startSec);
-              setStep('clip');
-            }}
           />
         </div>
       </section>
@@ -226,13 +226,24 @@ export function SaveScreen(props: Props) {
       return;
     }
     setClipProblem(null);
-    if (!clipContains(clip, durationSec, valueSec)) setValueSec(clip.startSec);
-    setTouched(false);
+    // 確定済みの撃発ポイントがあれば、つまみをそこへ置く（そのまま確定しても撃発ポイントが変わらないように）
+    if (shotSec !== null) {
+      setValueSec(shotSec);
+      setTouched(true);
+    } else {
+      if (!clipContains(clip, durationSec, valueSec)) setValueSec(clip.startSec);
+      setTouched(false);
+    }
     setStep('shot');
   };
   const setShotHere = async () => {
     const video = playerVideoRef.current;
     if (!video || capturing || !shotInClip) return;
+    // 確定済みの撃発ポイントと同じコマなら、撮り直さずに保存へ進む（保存の段階から戻ってきたとき）
+    if (shotSec !== null && images && frameSec === shotSec) {
+      setStep('form');
+      return;
+    }
     setCapturing(true);
     setCaptureFailed(false);
     try {
@@ -241,6 +252,12 @@ export function SaveScreen(props: Props) {
       const captured = await captureShotImages(video, result, sec);
       setShotSec(sec);
       setImages(captured);
+      // つまみも確定したコマに合わせる（音の最大に置かれたまま触らずに確定した場合、
+      // 保存の段階から戻ったときに、つまみが切り抜きのときの位置へ飛ばないように）
+      setValueSec(sec);
+      setTouched(true);
+      // 確定したら、自動で保存の段階へ進む（2026-10-04、開発者の指示）。撮っている間に撃発の段階を離れていたら進めない
+      setStep((s) => (s === 'shot' ? 'form' : s));
     } catch {
       // 撮れなければ撃発ポイントは付けず、もう一度押してもらう（保存の段階ではプレイヤーがなく撮り直せない）
       setCaptureFailed(true);
@@ -302,6 +319,7 @@ export function SaveScreen(props: Props) {
               onChange: setClipSnapped,
               snap,
             }}
+            pointer="arrow"
             timeLabel={timeLabel}
             onVideo={onVideo}
             active={props.active}
@@ -369,33 +387,26 @@ export function SaveScreen(props: Props) {
             testId="shot-player"
           />
           <button
-            className={shotSec === null ? 'primary full' : 'full'}
+            className="primary full"
             data-testid="shot-set"
             disabled={capturing || !shotInClip}
             onClick={() => void setShotHere()}
           >
-            {capturing ? ja.shot.capturing : shotSec === null ? ja.shot.set : ja.shot.reset}
+            {capturing ? ja.shot.capturing : ja.shot.set}
           </button>
           {captureFailed && (
             <p className="danger small" data-testid="shot-capture-failed">
               {ja.shot.captureFailed}
             </p>
           )}
-          <p className="small num" data-testid="shot-status">
-            {shotSec === null
-              ? ja.shot.notSet
-              : ja.shot.setAt(shotSec, Math.max(frameIndexAt(frames, shotSec), 0))}
-          </p>
-          <button
-            className={shotSec === null ? 'full' : 'primary full'}
-            data-testid="shot-to-save"
-            disabled={shotSec === null}
-            onClick={() => setStep('form')}
-          >
-            {shotSec === null ? ja.shot.toSaveDisabled : ja.shot.toSave}
-          </button>
+          {/* 保存の段階から戻ってきたときだけ、前に確定した撃発ポイントを出す */}
+          {shotSec !== null && (
+            <p className="small num" data-testid="shot-status">
+              {ja.shot.setAt(shotSec, Math.max(frameIndexAt(frames, shotSec), 0))}
+            </p>
+          )}
           <div className="row">
-            <button data-testid="shot-back" onClick={() => setStep('clip')}>
+            <button data-testid="shot-back" disabled={capturing} onClick={() => setStep('clip')}>
               {ja.shot.backToClip}
             </button>
           </div>

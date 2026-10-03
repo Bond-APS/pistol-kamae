@@ -91,10 +91,8 @@ try {
   await tid('video-file').setInputFiles(videoPath);
   check('推定の前は未保存の印が出ない', (await tid('unsaved-dot').count()) === 0);
   await tid('run-analysis').click({ timeout: 60_000 });
-  await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
-  check('推定しただけでは未保存の印が出ない', (await tid('unsaved-dot').count()) === 0);
-  await tid('go-clip').click();
-  await tid('clip-player').waitFor();
+  // 推定が終わると、自動で切り抜きへ進む
+  await tid('clip-player').waitFor({ timeout: 15 * 60_000 });
   await tid('unsaved-dot').waitFor();
   check(
     '切り抜きに進むと「動画の保存」タブに未保存の印が出る',
@@ -122,17 +120,15 @@ try {
   check('戻ると未保存の印が消える', (await tid('unsaved-dot').count()) === 0);
   await tid('video-file').setInputFiles(videoPath);
   await tid('run-analysis').click({ timeout: 60_000 });
-  await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
-  await tid('go-clip').click();
-  await tid('clip-player').waitFor();
+  // 推定が終わると、自動で切り抜きへ進む
+  await tid('clip-player').waitFor({ timeout: 15 * 60_000 });
   await waitSettled('clip-player');
   await tid('clip-confirm').click();
   await tid('shot-player').waitFor();
   await waitSettled('shot-player');
   check('音声のない動画は「音声なし」と出る', (await page.locator('.wave-none').count()) === 1);
   await tid('shot-set').click();
-  await tid('shot-player-bar-marker-shot').waitFor({ timeout: 15_000 });
-  await tid('shot-to-save').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   check(
     'タイトルが空だと保存できない',
     await (async () => {
@@ -159,16 +155,14 @@ try {
   await tid('shooter-next').click();
   await tid('video-file').setInputFiles(videoPath);
   await tid('run-analysis').click({ timeout: 60_000 });
-  await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
-  await tid('go-clip').click();
-  await tid('clip-player').waitFor();
+  // 推定が終わると、自動で切り抜きへ進む
+  await tid('clip-player').waitFor({ timeout: 15 * 60_000 });
   await waitSettled('clip-player');
   await tid('clip-confirm').click();
   await tid('shot-player').waitFor();
   await waitSettled('shot-player');
   await tid('shot-set').click();
-  await tid('shot-player-bar-marker-shot').waitFor({ timeout: 15_000 });
-  await tid('shot-to-save').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   await tid('form-title').fill('2 本目');
   await tid('form-submit').click();
   await tid('save-done').waitFor({ timeout: 30_000 });

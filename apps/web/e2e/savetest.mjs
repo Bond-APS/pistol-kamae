@@ -220,31 +220,21 @@ try {
   await tid('run-analysis').click({ timeout: 60_000 });
   check('推定の実行中は射手の選択へ戻れない', await tid('back-to-shooter').isDisabled());
   check('推定の実行中は「ファイルを選択」を押せない', await tid('video-pick').isDisabled());
-  await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
-  check(
-    '推定が終わると「ファイルを選択」が押せて、「選択済み」のまま',
-    (await tid('video-pick').isEnabled()) &&
-      (await tid('video-pick-state').textContent()) === '選択済み',
-  );
-  // 推定が終わったあとに射手の選択へ戻っても、推定の結果は消えない
-  await tid('back-to-shooter').click();
-  check('推定のあとも射手の選択へ戻れる', (await stepOf()) === 'shooter');
-  await tid('shooter-next').click();
-  check(
-    '射手の選択から戻ってきても、推定の結果が残っていて切り抜きへ進める',
-    (await tid('analysis-done').isVisible()) && (await tid('go-clip').isVisible()),
-  );
-  await tid('go-clip').click();
 
-  // ③ 切り抜き
+  // ③ 切り抜き：推定が終わると、ボタンを押さなくても自動で進む
+  await tid('clip-player').waitFor({ timeout: 15 * 60_000 });
   check(
-    '切り抜きの段階へ進む（3 切り抜き）',
+    '推定が終わると自動で切り抜きの段階へ進む（3 切り抜き）',
     (await stepOf()) === 'clip' && (await tid('step-title').textContent()) === '3 切り抜き',
     await tid('step-title').textContent(),
   );
   await tid('clip-player').waitFor();
   await waitSettled('clip-player');
   check('切り抜きの取っ手が 2 つある', (await page.locator('.wave-handle').count()) === 2);
+  check(
+    '切り抜きのつまみが ▲',
+    (await page.locator('[data-testid=clip-player-bar] .wave-arrow').count()) === 1,
+  );
   await tid('clip-player-bar-wave').waitFor({ timeout: 15_000 });
   check('音のグラフが出る', (await tid('clip-player-bar-wave').count()) === 1);
   const total = Number(await tid('clip-player-bar-slider').getAttribute('max'));
@@ -329,29 +319,80 @@ try {
     loudest,
   );
   check('「音の最大」の印が出る', (await tid('shot-player-bar-marker-loudest').count()) === 1);
-  check('撃発ポイントを付けるまで「保存へ」は押せない', await tid('shot-to-save').isDisabled());
-  // 1 コマ戻してから付ける
+  check(
+    '撃発の説明が新しい文言',
+    (await page.locator('[data-testid=save-screen] > p.muted').first().textContent()) ===
+      '撃発の発射音に合わせてあります。修正が必要な場合は指定しなおしてください。',
+  );
+  check(
+    '撃発のつまみが ▲',
+    (await page.locator('[data-testid=shot-player-bar] .wave-arrow').count()) === 1,
+  );
+  check(
+    '骨格の色の説明（緑：見えている点…）は出ない',
+    !(await page.locator('body').textContent()).includes('見えている点'),
+  );
+  check(
+    'ボタンは「撃発ポイントを確定」だけで、「保存へ」は出ない',
+    (await tid('shot-set').textContent()) === '撃発ポイントを確定' &&
+      (await tid('shot-to-save').count()) === 0,
+    await tid('shot-set').textContent(),
+  );
+  // まず、つまみを触らずに確定する（音の最大のコマが撃発ポイントになる）
+  await shotPng('shot');
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
+  const firstSummary = await tid('form-summary').locator('strong').textContent();
+  // 保存から戻ると、つまみは確定した撃発ポイントにいる。動かさずに確定し直しても、撃発ポイントは変わらない
+  await tid('form-back').click();
+  await tid('shot-player').waitFor();
+  await waitSettled('shot-player');
+  const backSec = await valueSecOf('shot-player-bar');
+  check(
+    '触らずに確定して保存から戻ると、つまみが確定した撃発ポイントにいる',
+    near(backSec, loudest, 0.04) && firstSummary.includes(backSec.toFixed(2)),
+    `${backSec} / ${firstSummary}`,
+  );
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
+  check(
+    '動かさずに確定し直しても、撃発ポイントは変わらない',
+    (await tid('form-summary').locator('strong').textContent()) === firstSummary,
+    await tid('form-summary').locator('strong').textContent(),
+  );
+  // 戻って 1 コマ前に直し、確定する
+  await tid('form-back').click();
+  await tid('shot-player').waitFor();
+  await waitSettled('shot-player');
   await tid('shot-player-prev').click();
   await waitSettled('shot-player');
   const shotSec = await valueSecOf('shot-player-bar');
   await tid('shot-set').click();
-  await tid('shot-player-bar-marker-shot').waitFor({ timeout: 15_000 });
-  check('撃発ポイントの印が出る', (await tid('shot-player-bar-marker-shot').count()) === 1);
-  check(
-    '撃発ポイントの時刻が表示される',
-    (await tid('shot-status').textContent()).includes(shotSec.toFixed(2)),
-    await tid('shot-status').textContent(),
-  );
-  check('撃発ポイントを付けると「保存へ」が押せる', await tid('shot-to-save').isEnabled());
-  await shotPng('shot');
-  await tid('shot-to-save').click();
 
-  // ⑤ 保存
+  // ⑤ 保存：「撃発ポイントを確定」を押すと、自動で進む
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   check(
-    '保存の段階へ進む（5 保存）',
+    '「撃発ポイントを確定」で自動で保存の段階へ進む（5 保存）',
     (await stepOf()) === 'form' && (await tid('step-title').textContent()) === '5 保存',
     await tid('step-title').textContent(),
   );
+  check(
+    '保存の段階に、確定した撃発ポイントの時刻が出る',
+    (await tid('form-summary').textContent()).includes(shotSec.toFixed(2)),
+    await tid('form-summary').textContent(),
+  );
+  // 保存の段階から戻ると、確定した撃発ポイントの印が出ていて、もう一度確定すれば保存へ進む
+  await tid('form-back').click();
+  await tid('shot-player').waitFor();
+  await waitSettled('shot-player');
+  check(
+    '保存から戻ると、確定した撃発ポイントの印と時刻が出る',
+    (await tid('shot-player-bar-marker-shot').count()) === 1 &&
+      (await tid('shot-status').textContent()).includes(shotSec.toFixed(2)),
+    await tid('shot-status').textContent(),
+  );
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   const title = await tid('form-title').inputValue();
   check('タイトルの初期値が日付・時刻', /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(title), title);
   await tid('form-title').fill('テスト 1 発目');
@@ -464,6 +505,10 @@ try {
   await waitSettled('player');
   const wholeMax = Number(await tid('player-bar-slider').getAttribute('max'));
   check('範囲の修正では動画の全体を動ける', near(wholeMax, 5, 0.2), wholeMax);
+  check(
+    '範囲の修正のつまみも ▲',
+    (await page.locator('[data-testid=player-bar] .wave-arrow').count()) === 1,
+  );
   await slideTo('player-bar', 2.0);
   await waitSettled('player');
   await tid('clip-set-end').click();
