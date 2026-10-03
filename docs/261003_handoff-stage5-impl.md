@@ -66,7 +66,7 @@
 
 ## 5. 次のセッションで最初にやること（2026-10-03、開発者の指示。未着手）
 
-iPhone で触った開発者からの 2 点。どちらも「動画の保存」の「開く」段階（`apps/web/src/screens/LoadScreen.tsx`）の変更。
+iPhone で触った開発者からの指摘。「動画の保存」の「開く」段階（`apps/web/src/screens/LoadScreen.tsx`）の変更。
 
 ### 5.1 動画を読み込んだあとの「開く」画面を分かりやすくする
 
@@ -85,23 +85,9 @@ iPhone で触った開発者からの 2 点。どちらも「動画の保存」�
   - 自動テストは `tid('video-file').setInputFiles(...)` を使っている。隠した input でも `setInputFiles` は動くので、testid は input に残す
 - 読み込む前（`info === null`）の文言は今のままでよい
 
-### 5.2 射手の選択を、最後の保存のときに行う
+### 5.2 射手の選択は「開く」のまま（変更しない）
 
-現状：「開く」段階に射手の選択（登録・編集も）があり、射手を登録するまで「手順 2：姿勢推定を実行」が押せない。
-
-直し方（開発者の指定）：
-- `LoadScreen` から射手の選択・登録・編集を外す。推定は射手なしで実行できるようにする（姿勢推定と切り抜き・撃発ポイントは利き手を使わない）
-- 射手は保存の段階（`SaveScreen` の `step === 'form'`、`RecordForm`）で選ぶ。`RecordForm` にはすでに射手のチップと「＋ 新しい射手」がある。
-  初期値は前回の射手（`App` の `shooter`）。射手が 1 人もいなければ、チップがなく「＋ 新しい射手」だけになる。
-  その状態では `shooterId` が決まらないので、**射手を登録するまで「保存する」を押せない**ようにする（今は `initial.shooterId` をそのまま使っているので、`shooterId: number | null` にして null なら `canSubmit` を false に）
-- `SaveScreen` の `{shooter && (<RecordForm …/>)}` の条件を外す（射手がいなくてもフォームを出す）
-- 射手の名前・利き手の編集（`ShooterDialog` の edit）の入口がなくなる。ライブラリの詳細の「タイトル・メモなどを編集」の射手の欄か、
-  保存のフォームの射手のチップの横に「編集」を置くかを決める（開発者に確認するか、フォームの中に置く案で提示）
-- `App.tsx` の `shooter`／`handedness` は、ノイズ測定（開発用）とフォームの初期値にだけ使う。`onShooterChange` は保存時に `onSaved` の中で呼ぶ
-  （`RecordFields.shooterId` を `changeShooter` に渡す。段階④までの `MarkScreen` がそうしていた）
-- 自動テスト 3 本（`savetest.mjs`、`librarytest.mjs`、`comparetest.mjs`）は、最初に `shooter-register` → `shooter-name` → `shooter-right` → `shooter-submit` で射手を登録してから推定している。
-  これを「推定 → 切り抜き → 撃発 → 保存のフォームで `form-add-shooter` から登録」に直す。`librarytest.mjs` の「射手を登録するまで姿勢推定を実行できない」「2 人目を登録すると選ばれる」「射手の利き手を直す」の確認は、新しい入口に合わせて書き換える
-- 要件定義 10 章の「開く：… 射手の選択 …」と「保存：タイトル・射手・…」を直す。`CLAUDE.md` の該当箇所も
+一度「保存のときに選ぶ」案が出たが、射手は利き手（角度の符号）に関わるため、**最初に選ぶ今の仕様のままとする**（2026-10-03、開発者の決定）。
 
 ## 6. 未了・次にやること
 
