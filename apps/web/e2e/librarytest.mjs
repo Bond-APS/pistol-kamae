@@ -66,7 +66,8 @@ try {
   await page.goto(base);
 
   // ── 射手
-  check('射手を登録するまで姿勢推定を実行できない', await tid('run-analysis').isDisabled());
+  await tid('shooter-register').waitFor();
+  check('射手を登録するまで「次へ」を押せない', await tid('shooter-next').isDisabled());
   await tid('shooter-register').click();
   check('名前が空のうちは登録できない', await tid('shooter-submit').isDisabled());
   await registerShooter('山田', 'right');
@@ -78,6 +79,12 @@ try {
     (await tid('shooter-select').locator('option:checked').textContent()) === '佐藤（左利き）',
   );
   await tid('shooter-select').selectOption({ label: '山田（右利き）' });
+  await tid('shooter-next').click();
+  check(
+    '動画の指定に、選んだ射手が出る',
+    (await tid('load-shooter').textContent()).includes('山田（右利き）'),
+    await tid('load-shooter').textContent(),
+  );
 
   // ── 保存していない動画の印と、動画の選び直しの確認
   console.log('  姿勢推定を実行中…');
@@ -101,6 +108,24 @@ try {
     '「戻る」の確認でキャンセルすると切り抜きのまま',
     (await tid('save-screen').getAttribute('data-step')) === 'clip',
   );
+  // 「保存せずに進む」は 1 つ前（動画の指定）へ戻る。射手は選んだまま、動画は選び直しになる
+  await tid('save-reset').click();
+  await tid('discard-dialog').locator('[data-testid=confirm-ok]').click();
+  await tid('video-pick').waitFor();
+  check(
+    '「戻る」で保存せずに進むと、動画の指定に戻り、射手はそのままで動画は未選択',
+    (await tid('save-screen').getAttribute('data-step')) === 'video' &&
+      (await tid('load-shooter').textContent()).includes('山田（右利き）') &&
+      (await tid('video-pick-state').textContent()) === 'ファイル未選択',
+    await tid('load-shooter').textContent(),
+  );
+  check('戻ると未保存の印が消える', (await tid('unsaved-dot').count()) === 0);
+  await tid('video-file').setInputFiles(videoPath);
+  await tid('run-analysis').click({ timeout: 60_000 });
+  await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
+  await tid('go-clip').click();
+  await tid('clip-player').waitFor();
+  await waitSettled('clip-player');
   await tid('clip-confirm').click();
   await tid('shot-player').waitFor();
   await waitSettled('shot-player');
@@ -124,12 +149,14 @@ try {
   check('保存すると未保存の印が消える', (await tid('unsaved-dot').count()) === 0);
   await tid('save-next').click();
   check(
-    '「次の動画を保存する」で開く段階に戻る',
-    (await tid('save-screen').getAttribute('data-step')) === 'open',
+    '「次の動画を保存する」で射手の選択に戻り、前回の射手が選ばれている',
+    (await tid('save-screen').getAttribute('data-step')) === 'shooter' &&
+      (await tid('shooter-select').locator('option:checked').textContent()) === '山田（右利き）',
   );
 
   // 2 本目（佐藤・左利き、お気に入りなし）
   await tid('shooter-select').selectOption({ label: '佐藤（左利き）' });
+  await tid('shooter-next').click();
   await tid('video-file').setInputFiles(videoPath);
   await tid('run-analysis').click({ timeout: 60_000 });
   await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
@@ -228,9 +255,11 @@ try {
   await tid('library-empty').waitFor();
   check('0 件になると案内とボタンが出る', (await tid('library-go-load').count()) === 1);
   await tid('library-go-load').click();
+  await tid('shooter-step').waitFor({ timeout: 5000 });
+  await tid('shooter-next').click();
   await tid('video-pick').waitFor({ timeout: 5000 });
   check(
-    '案内のボタンで「動画の保存」へ移り、新しい動画を受け入れる',
+    '案内のボタンで「動画の保存」へ移り、射手の選択から新しい動画を受け入れる',
     (await tid('video-pick').isEnabled()) &&
       (await tid('video-pick-state').textContent()) === 'ファイル未選択',
   );

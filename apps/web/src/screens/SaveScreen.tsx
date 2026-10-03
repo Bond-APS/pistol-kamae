@@ -23,6 +23,7 @@ import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import { captureShotImages } from '../video/capture';
 import { LoadScreen } from './LoadScreen';
+import { ShooterStep } from './ShooterStep';
 
 /**
  * 保存する動画本体の大きさの上限（バイト）。保存と表示のとき、動画全体を一度メモリに載せるので、
@@ -30,14 +31,16 @@ import { LoadScreen } from './LoadScreen';
  */
 const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 
-export type SaveStep = 'open' | 'clip' | 'shot' | 'form' | 'done';
+export type SaveStep = 'shooter' | 'video' | 'clip' | 'shot' | 'form' | 'done';
 
 interface Props {
   /** この画面が表示中か。隠れたら再生を止める */
   active: boolean;
-  /** 推定に使う video 要素の置き場所（開く段階だけ使う） */
+  /** 推定に使う video 要素の置き場所（動画の指定の段階だけ使う） */
   videoRef: RefObject<HTMLVideoElement | null>;
   shooters: ShooterRow[];
+  /** 射手の一覧を読み終えたか */
+  shootersReady: boolean;
   shooter: ShooterRow | null;
   onShooterChange: (shooterId: number) => void;
   onShootersChanged: () => Promise<void>;
@@ -66,12 +69,12 @@ const clipOrNull = (clip: Clip, durationSec: number): Clip | null =>
   clip.startSec <= 0 && clip.endSec >= durationSec ? null : clip;
 
 /**
- * 「動画の保存」：開く → 切り抜く → 撃発ポイント → タイトル・メモ → 保存。
- * 推定が終わるまでは読込画面（LoadScreen）が受け持ち、その後は 1 本のプレイヤーで切り抜きと撃発ポイントを決める。
+ * 「動画の保存」：射手の選択 → 動画の指定 → 切り抜き → 撃発ポイントの特定 → 保存（タイトル・メモ）。
+ * 射手の選択は ShooterStep、動画の指定（推定が終わるまで）は読込画面（LoadScreen）が受け持ち、その後は 1 本のプレイヤーで切り抜きと撃発ポイントを決める。
  */
 export function SaveScreen(props: Props) {
   const { videoRef, shooters, shooter, onUnsavedChange } = props;
-  const [step, setStep] = useState<SaveStep>('open');
+  const [step, setStep] = useState<SaveStep>('shooter');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [file, setFile] = useState<File | null>(null);
   /** プレイヤーに渡す、ファイルの一時的な URL（どのファイルの URL かを一緒に持つ） */
@@ -106,11 +109,12 @@ export function SaveScreen(props: Props) {
   );
 
   // 「保存していない動画」として確認を出すのは、切り抜きに進んでから（推定しただけの段階では出さない）
-  const unsaved = result !== null && saved === null && step !== 'open';
+  const unsaved = result !== null && saved === null && step !== 'shooter' && step !== 'video';
   useEffect(() => onUnsavedChange(unsaved), [unsaved, onUnsavedChange]);
   const { onResultChange, newRequest } = props;
   useEffect(() => onResultChange(result), [result, onResultChange]);
-  const reset = useCallback(() => {
+  // 「次の動画を保存する」は射手の選択から、切り抜きの「戻る」は 1 つ前の動画の指定から、やり直す
+  const reset = useCallback((to: 'shooter' | 'video') => {
     setResult(null);
     setFile(null);
     setShotSec(null);
@@ -118,14 +122,14 @@ export function SaveScreen(props: Props) {
     setSaved(null);
     setClipProblem(null);
     setTouched(false);
-    setStep('open');
+    setStep(to);
   }, []);
   // ライブラリの「動画を読み込む」などで来たとき、保存し終えた状態なら新しい動画の受け入れに戻す
   // （描画の途中で状態を直す、React の「前回の props を覚える」書き方）
   const [seenRequest, setSeenRequest] = useState(newRequest);
   if (newRequest !== seenRequest) {
     setSeenRequest(newRequest);
-    if (step === 'done') reset();
+    if (step === 'done') reset('shooter');
   }
 
   // ファイルの URL は、推定が終わってから作り、動画を替える・保存し終えて次へ進むときに解放する
@@ -161,23 +165,35 @@ export function SaveScreen(props: Props) {
   const shownSec =
     step === 'shot' && !touched && shotSec === null && loudest !== null ? loudest : valueSec;
 
-  if (!result || !playerUrl || step === 'open') {
+  if (!result || !playerUrl || step === 'shooter' || step === 'video') {
+    const openStep = step === 'shooter' ? 'shooter' : 'video';
     return (
-      <section data-testid="save-screen" data-step="open">
-        <StepBar step="open" />
-        <LoadScreen
-          videoRef={videoRef}
-          shooters={shooters}
-          shooter={shooter}
-          onShooterChange={props.onShooterChange}
-          onShootersChanged={props.onShootersChanged}
-          result={result}
-          onResult={onResult}
-          onGoClip={() => {
-            setValueSec(clip.startSec);
-            setStep('clip');
-          }}
-        />
+      <section data-testid="save-screen" data-step={openStep}>
+        <StepBar step={openStep} />
+        {openStep === 'shooter' && (
+          <ShooterStep
+            shooters={shooters}
+            ready={props.shootersReady}
+            shooter={shooter}
+            onShooterChange={props.onShooterChange}
+            onShootersChanged={props.onShootersChanged}
+            onNext={() => setStep('video')}
+          />
+        )}
+        {/* 動画の指定は隠すだけにして、射手の選択へ戻っても読み込んだ動画と推定の結果を保つ */}
+        <div hidden={openStep !== 'video'}>
+          <LoadScreen
+            videoRef={videoRef}
+            shooter={shooter}
+            onBackToShooter={() => setStep('shooter')}
+            result={result}
+            onResult={onResult}
+            onGoClip={() => {
+              setValueSec(clip.startSec);
+              setStep('clip');
+            }}
+          />
+        </div>
       </section>
     );
   }
@@ -429,7 +445,11 @@ export function SaveScreen(props: Props) {
             </p>
           )}
           <div className="stack">
-            <button className="primary full" data-testid="save-next" onClick={reset}>
+            <button
+              className="primary full"
+              data-testid="save-next"
+              onClick={() => reset('shooter')}
+            >
               {ja.save.nextVideo}
             </button>
             <button className="full" data-testid="save-view" onClick={props.onGoLibrary}>
@@ -446,7 +466,7 @@ export function SaveScreen(props: Props) {
           destructive
           onConfirm={() => {
             setConfirmingReset(false);
-            reset();
+            reset('video');
           }}
           onCancel={() => setConfirmingReset(false)}
           testId="discard-dialog"

@@ -89,6 +89,7 @@ const compareIndexes = async () => ({
 /** 動画を 1 本保存する。clip を渡せば切り抜く。撃発は shotSec（省略すれば音の最大、音がなければ 2.0 秒） */
 async function saveVideo(path, title, { clip, shotSec } = {}) {
   await tid('tab-save').click();
+  await tid('shooter-next').click();
   await tid('video-file').setInputFiles(path);
   await tid('run-analysis').click({ timeout: 60_000 });
   await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });

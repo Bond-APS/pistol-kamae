@@ -1,4 +1,4 @@
-// 段階⑤「動画の保存」の流れ（開く → 切り抜く → 撃発ポイント → 保存）と、ライブラリの詳細・動画を再生・
+// 段階⑤「動画の保存」の流れ（射手の選択 → 動画の指定 → 切り抜き → 撃発ポイントの特定 → 保存）と、ライブラリの詳細・動画を再生・
 // 撃発ポイントの修正・切り抜き範囲の修正の自動テスト。実際の画面をブラウザで操作して確かめる。
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/savetest.mjs webkit   … Safari と同じ描画エンジン
@@ -113,20 +113,50 @@ try {
   await page.goto(base);
 
   check('入口は 2 つ（動画の保存・ライブラリ）', (await page.locator('.tab').count()) === 2);
-  check('最初の段階は「開く」', (await tid('save-screen').getAttribute('data-step')) === 'open');
+  const stepOf = () => tid('save-screen').getAttribute('data-step');
+  check(
+    '手順は 5 段階（射手・動画・切り抜き・撃発・保存）',
+    (await tid('steps').locator('li').allTextContents()).join('|') ===
+      '1 射手|2 動画|3 切り抜き|4 撃発|5 保存',
+    (await tid('steps').locator('li').allTextContents()).join('|'),
+  );
+  check(
+    '最初の段階は「1 射手の選択」',
+    (await stepOf()) === 'shooter' && (await tid('step-title').textContent()) === '1 射手の選択',
+    await tid('step-title').textContent(),
+  );
+  check(
+    '射手の選択では、動画を選ぶボタンは出ない',
+    !(await tid('video-pick').isVisible()) && !(await tid('run-analysis').isVisible()),
+  );
 
-  // 射手を登録する
+  // ① 射手を登録して、動画の指定へ進む
+  await tid('shooter-register').waitFor();
+  check('射手を登録するまで「次へ」を押せない', await tid('shooter-next').isDisabled());
   await tid('shooter-register').click();
   await tid('shooter-name').fill('テスト射手');
   await tid('shooter-right').click();
   await tid('shooter-submit').click();
   await tid('shooter-select').waitFor();
-
-  // 動画を読み込む前：形式の案内と「手順 1」が出て、ボタンの右は「ファイル未選択」
+  await shotPng('shooter');
+  await tid('shooter-next').click();
   check(
-    '読み込む前は形式の案内と「手順 1」が出る',
+    '「次へ」で「2 動画の指定」へ進む',
+    (await stepOf()) === 'video' && (await tid('step-title').textContent()) === '2 動画の指定',
+    await tid('step-title').textContent(),
+  );
+  check(
+    '動画の指定には、選んだ射手が出て、射手の選択欄は出ない',
+    (await tid('load-shooter').textContent()).includes('テスト射手（右利き）') &&
+      (await tid('shooter-select').count()) === 0,
+    await tid('load-shooter').textContent(),
+  );
+
+  // ② 動画を読み込む前：形式の案内と「下のボタンを押して動画を選ぶ」が出て、ボタンの右は「ファイル未選択」
+  check(
+    '読み込む前は形式の案内と「下のボタンを押して動画を選ぶ」が出る',
     (await tid('load-format-hint').isVisible()) &&
-      (await tid('video-pick-label').textContent()).startsWith('手順 1'),
+      (await tid('video-pick-label').textContent()) === '下のボタンを押して動画を選ぶ',
     await tid('video-pick-label').textContent(),
   );
   check(
@@ -149,12 +179,12 @@ try {
   console.log('  姿勢推定を実行中…');
   if (chooser) await chooser.setFiles(videoPath);
   else await tid('video-file').setInputFiles(videoPath);
-  // 動画を読み込んだあと：形式の案内と「手順 1」が消え、選び直しの案内と「選択済み」が出る
+  // 動画を読み込んだあと：形式の案内と「下のボタンを押して…」が消え、選び直しの案内と「選択済み」が出る
   await tid('run-analysis').and(page.locator(':enabled')).waitFor({ timeout: 60_000 });
   check(
-    '読み込んだあとは形式の案内と「手順 1」が消える',
+    '読み込んだあとは形式の案内と「下のボタンを押して動画を選ぶ」が消える',
     (await tid('load-format-hint').count()) === 0 &&
-      !(await page.locator('body').textContent()).includes('手順 1'),
+      !(await page.locator('body').textContent()).includes('下のボタンを押して動画を選ぶ'),
   );
   check(
     '読み込んだあとは選び直しの案内が出る',
@@ -169,7 +199,26 @@ try {
     await tid('video-pick-state').textContent(),
   );
   await shotPng('open-after');
+  // 射手の選択へ戻っても、読み込んだ動画は消えない
+  await tid('back-to-shooter').click();
+  check(
+    '「射手を選び直す」で射手の選択へ戻る',
+    (await stepOf()) === 'shooter' && (await tid('shooter-select').isVisible()),
+  );
+  await tid('shooter-next').click();
+  check(
+    '射手の選択から戻ってきても「選択済み」のままで、姿勢推定を実行できる',
+    (await tid('video-pick-state').textContent()) === '選択済み' &&
+      (await tid('run-analysis').isEnabled()),
+  );
+  check(
+    '番号付きの「手順 1：」「手順 2：」は出ない',
+    !(await page.locator('body').textContent()).includes('手順 1') &&
+      (await tid('run-analysis').textContent()) === '姿勢推定を実行',
+    await tid('run-analysis').textContent(),
+  );
   await tid('run-analysis').click({ timeout: 60_000 });
+  check('推定の実行中は射手の選択へ戻れない', await tid('back-to-shooter').isDisabled());
   check('推定の実行中は「ファイルを選択」を押せない', await tid('video-pick').isDisabled());
   await tid('analysis-done').waitFor({ timeout: 15 * 60_000 });
   check(
@@ -177,10 +226,22 @@ try {
     (await tid('video-pick').isEnabled()) &&
       (await tid('video-pick-state').textContent()) === '選択済み',
   );
+  // 推定が終わったあとに射手の選択へ戻っても、推定の結果は消えない
+  await tid('back-to-shooter').click();
+  check('推定のあとも射手の選択へ戻れる', (await stepOf()) === 'shooter');
+  await tid('shooter-next').click();
+  check(
+    '射手の選択から戻ってきても、推定の結果が残っていて切り抜きへ進める',
+    (await tid('analysis-done').isVisible()) && (await tid('go-clip').isVisible()),
+  );
   await tid('go-clip').click();
 
-  // ② 切り抜き
-  check('切り抜きの段階へ進む', (await tid('save-screen').getAttribute('data-step')) === 'clip');
+  // ③ 切り抜き
+  check(
+    '切り抜きの段階へ進む（3 切り抜き）',
+    (await stepOf()) === 'clip' && (await tid('step-title').textContent()) === '3 切り抜き',
+    await tid('step-title').textContent(),
+  );
   await tid('clip-player').waitFor();
   await waitSettled('clip-player');
   check('切り抜きの取っ手が 2 つある', (await page.locator('.wave-handle').count()) === 2);
@@ -244,8 +305,13 @@ try {
   await tid('clip-set-start').click();
   await tid('clip-confirm').click();
 
-  // ③ 撃発ポイント
-  check('撃発の段階へ進む', (await tid('save-screen').getAttribute('data-step')) === 'shot');
+  // ④ 撃発ポイント
+  check(
+    '撃発の段階へ進む（4 撃発ポイントの特定）',
+    (await stepOf()) === 'shot' &&
+      (await tid('step-title').textContent()) === '4 撃発ポイントの特定',
+    await tid('step-title').textContent(),
+  );
   await tid('shot-player').waitFor();
   await waitSettled('shot-player');
   const min = Number(await tid('shot-player-bar-slider').getAttribute('min'));
@@ -280,8 +346,12 @@ try {
   await shotPng('shot');
   await tid('shot-to-save').click();
 
-  // ④ 保存
-  check('保存の段階へ進む', (await tid('save-screen').getAttribute('data-step')) === 'form');
+  // ⑤ 保存
+  check(
+    '保存の段階へ進む（5 保存）',
+    (await stepOf()) === 'form' && (await tid('step-title').textContent()) === '5 保存',
+    await tid('step-title').textContent(),
+  );
   const title = await tid('form-title').inputValue();
   check('タイトルの初期値が日付・時刻', /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(title), title);
   await tid('form-title').fill('テスト 1 発目');

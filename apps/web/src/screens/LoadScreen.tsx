@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
-import { ShooterDialog } from '../components/ShooterDialog';
 import { poseBackendConfig } from '../config/backends';
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
@@ -8,17 +7,14 @@ import { loadVideo, releaseVideo } from '../video/load';
 import { estimateFrameRate } from '../video/seek';
 
 const FALLBACK_FPS = 30;
-/** 射手の選択肢のうち「新しい射手を登録」を表す値 */
-const ADD_SHOOTER = 'add';
 
 interface Props {
-  /** video 要素の置き場所。プレイヤー（App が 1 つだけ置く）と共有する */
+  /** 推定に使う video 要素の置き場所（App が持つ） */
   videoRef: MutableRefObject<HTMLVideoElement | null>;
-  shooters: ShooterRow[];
-  /** 選択中の射手。まだ誰も登録されていなければ null */
+  /** 前の段階で選んだ射手。まだ誰も登録されていなければ null */
   shooter: ShooterRow | null;
-  onShooterChange: (shooterId: number) => void;
-  onShootersChanged: () => Promise<void>;
+  /** 射手の選択へ戻る（読み込んだ動画と推定の結果は残す） */
+  onBackToShooter: () => void;
   result: AnalysisResult | null;
   /** file は選んだ動画ファイル（保存のとき、動画本体と撮影日時の初期値に使う） */
   onResult: (r: AnalysisResult | null, file: File | null) => void;
@@ -46,10 +42,9 @@ type Status =
 
 export function LoadScreen(props: Props) {
   // video 要素は React の管理外（DOM を直接いじる）なので ref で持つ
-  const { videoRef, shooters, shooter, result } = props;
+  const { videoRef, shooter, result } = props;
   const [info, setInfo] = useState<VideoInfo | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
-  const [shooterDialog, setShooterDialog] = useState<'add' | 'edit' | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
@@ -131,6 +126,17 @@ export function LoadScreen(props: Props) {
 
   return (
     <section>
+      {shooter && (
+        <div className="row tight">
+          <span className="grow" data-testid="load-shooter">
+            {ja.load.shooterLine(ja.shooter.option(shooter.name, shooter.handedness))}
+          </span>
+          <button data-testid="back-to-shooter" disabled={busy} onClick={props.onBackToShooter}>
+            {ja.load.backToShooter}
+          </button>
+        </div>
+      )}
+
       {!picked && (
         <p className="muted small" data-testid="load-format-hint">
           {ja.load.formatHint} {ja.load.formatHintIphone}
@@ -185,50 +191,6 @@ export function LoadScreen(props: Props) {
         <p className="muted small num">{ja.load.videoInfo(info.w, info.h, info.sec, info.fps)}</p>
       )}
 
-      <div className="field">
-        <span id="shooter-label">{ja.shooter.label}</span>
-        {shooter ? (
-          <div className="row nowrap tight">
-            <select
-              className="grow"
-              data-testid="shooter-select"
-              aria-labelledby="shooter-label"
-              value={shooter.id}
-              disabled={busy}
-              onChange={(e) => {
-                if (e.target.value === ADD_SHOOTER) setShooterDialog('add');
-                else props.onShooterChange(Number(e.target.value));
-              }}
-            >
-              {shooters.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {ja.shooter.option(s.name, s.handedness)}
-                </option>
-              ))}
-              <option value={ADD_SHOOTER}>{ja.shooter.addOption}</option>
-            </select>
-            <button
-              data-testid="shooter-edit"
-              disabled={busy}
-              onClick={() => setShooterDialog('edit')}
-            >
-              {ja.shooter.edit}
-            </button>
-          </div>
-        ) : (
-          <>
-            <button
-              className="full"
-              data-testid="shooter-register"
-              onClick={() => setShooterDialog('add')}
-            >
-              {ja.shooter.registerFirst}
-            </button>
-            <span>{ja.shooter.requiredHint}</span>
-          </>
-        )}
-      </div>
-
       {/* 完了後はやり直しのボタンを出さない。Safari は、一度画面に置いた video を外すと
           その後のシークが終わらなくなり、同じ動画のやり直しが止まってしまうため。
           やり直すときは動画を選び直す（新しい video 要素になる） */}
@@ -273,20 +235,6 @@ export function LoadScreen(props: Props) {
           <strong>{ja.load.errorTitle}</strong>
           <p className="small">{ja.load.error(status.message)}</p>
         </div>
-      )}
-
-      {shooterDialog && (
-        <ShooterDialog
-          shooters={shooters}
-          {...(shooterDialog === 'edit' && shooter ? { editing: shooter } : {})}
-          onCancel={() => setShooterDialog(null)}
-          onDone={(id) => {
-            void props.onShootersChanged().then(() => {
-              props.onShooterChange(id);
-              setShooterDialog(null);
-            });
-          }}
-        />
       )}
     </section>
   );

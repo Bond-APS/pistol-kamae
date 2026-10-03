@@ -31,6 +31,8 @@ export function App() {
   const [view, setView] = useState<View>('save');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [shooters, setShooters] = useState<ShooterRow[]>([]);
+  /** 起動時の射手の一覧を読み終えたか（読み終える前に「射手を登録」を出さないため） */
+  const [shootersReady, setShootersReady] = useState(false);
   const [shooterId, setShooterId] = useState<number | null>(null);
   const [dbFailed, setDbFailed] = useState(false);
   const [unsaved, setUnsaved] = useState(false);
@@ -64,6 +66,7 @@ export function App() {
       } catch {
         setDbFailed(true);
       }
+      setShootersReady(true);
     })();
   }, []);
 
@@ -164,6 +167,7 @@ export function App() {
             active={view === 'save'}
             videoRef={videoRef}
             shooters={shooters}
+            shootersReady={shootersReady}
             shooter={shooter}
             onShooterChange={changeShooter}
             onShootersChanged={reloadShooters}

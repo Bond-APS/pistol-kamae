@@ -786,7 +786,7 @@ button.lib-open {
 
 /* ===== 段階⑤ ===== */
 
-/* 保存の流れの 4 段階 */
+/* 保存の流れの 5 段階 */
 .steps {
   display: flex;
   gap: var(--space-1);
@@ -810,6 +810,11 @@ button.lib-open {
 }
 .steps li.done {
   border-top-color: var(--color-success);
+}
+/* 今の段階の正式な名前（帯のすぐ下） */
+.step-title {
+  font-size: var(--font-size-base);
+  margin: 0 0 var(--space-2);
 }
 
 /* 時点を選ぶバー（音のグラフ付き） */
