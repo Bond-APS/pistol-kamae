@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>段階⑤ 画面モックアップ</title>
+<style>
+  /* 実際のアプリの styles.css と同じ設定値（色・余白・大きさ）を使って描いている */
+  :root {
+    --bg: #fff; --fg: #1a1a1a; --muted: #6b6b6b; --border: #d9d9d9; --border-strong: #8a8a8a;
+    --accent: #0a66c2; --accent-fg: #fff; --accent-soft: #e6f0fa; --danger: #c62828;
+    --success: #1b7a3d; --success-soft: #e8f5ec; --fav: #b26a00; --warn-soft: #fff1c7;
+    --surface: #f4f4f4; --skel-current: rgb(0, 220, 90); --skel-base: rgb(255, 110, 210);
+  }
+  body { margin: 0; background: #e9e9ec; color: var(--fg); font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; font-size: 16px; line-height: 1.5; }
+  .page { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
+  .page > h1 { font-size: 20px; margin: 0 0 4px; }
+  .page > p.lead { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+  .flow { display: flex; flex-wrap: wrap; gap: 28px 20px; align-items: flex-start; }
+  .shot { width: 375px; }
+  .shot > .cap { font-size: 14px; margin: 0 0 8px; }
+  .shot > .cap b { display: inline-block; background: var(--fg); color: #fff; border-radius: 999px; padding: 0 10px; margin-right: 6px; font-size: 13px; }
+  .shot > .cap span { color: var(--muted); display: block; margin-left: 2px; }
+  .phone { background: var(--bg); border: 1px solid #c9c9cc; border-radius: 24px; padding: 14px 16px 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+  .app-title { font-size: 16px; margin: 0 0 8px; }
+  h2 { font-size: 20px; margin: 16px 0 8px; }
+  h3 { font-size: 16px; margin: 16px 0 4px; }
+  .muted { color: var(--muted); } .small { font-size: 14px; } .num { font-variant-numeric: tabular-nums; }
+  .danger { color: var(--danger); }
+  /* 入口の 2 つ：青は「次に押すボタン」に取ってあるので、入口は灰色の地に黒い下線で表す */
+  .tabs { display: flex; gap: 8px; margin: 0 0 8px; border-bottom: 1px solid var(--border); }
+  .tab { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: var(--fg); font-weight: 700; border-bottom-color: var(--fg); }
+  .btn { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-sizing: border-box; }
+  .btn.primary { min-height: 52px; background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; }
+  .btn.danger { background: var(--bg); color: var(--danger); border-color: var(--danger); }
+  .btn.off { opacity: .5; }
+  .full { width: 100%; } .stack { display: grid; gap: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .row .btn { flex: 1; white-space: nowrap; }
+  .chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 14px; }
+  .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0; }
+  .seg > div { flex: 1; min-height: 40px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .seg > div + div { border-left: 1px solid var(--border); }
+  .seg > div.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  .field { display: block; margin: 10px 0; }
+  .field > span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 2px; }
+  .input { min-height: 44px; display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); box-sizing: border-box; }
+  .input.area { min-height: 72px; align-items: flex-start; padding-top: 8px; }
+  .input .ph { color: var(--muted); }
+  .notice { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; background: var(--surface); }
+  .notice p { margin: 4px 0 0; font-size: 14px; }
+  .notice strong { display: block; }
+  /* 動画の絵 */
+  .video { position: relative; width: 100%; aspect-ratio: 3 / 4; background: #2b2f36; border-radius: 8px; overflow: hidden; }
+  .video svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .video .tag { position: absolute; left: 8px; top: 8px; color: #fff; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 999px; font-size: 13px; }
+  /* 音声のグラフ：バーと同じ横軸。撃発の音が鋭い山になる */
+  .wave { display: block; width: 100%; height: 40px; margin: 8px 0 -4px; }
+  /* バー */
+  .bar { position: relative; height: 52px; margin: 6px 0; }
+  .bar .track { position: absolute; left: 0; right: 0; top: 20px; height: 4px; background: var(--border); border-radius: 2px; }
+  .bar .range { position: absolute; top: 20px; height: 4px; background: var(--accent); }
+  .bar .dim { position: absolute; top: 14px; height: 16px; background: repeating-linear-gradient(45deg, #d9d9d9 0 4px, transparent 4px 8px); }
+  .bar .knob { position: absolute; top: 10px; width: 24px; height: 24px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); transform: translateX(-50%); box-sizing: border-box; }
+  .bar .handle { position: absolute; top: 8px; width: 14px; height: 28px; border-radius: 4px; background: var(--accent); transform: translateX(-50%); }
+  .bar .mark { position: absolute; top: 6px; width: 2px; height: 32px; background: var(--danger); transform: translateX(-50%); }
+  .bar .lab { position: absolute; top: 36px; font-size: 12px; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+  .scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  /* ライブラリ */
+  .lib-month { margin: 12px 0 4px; font-size: 14px; color: var(--muted); }
+  .lib { list-style: none; margin: 0; padding: 0; }
+  .lib li { display: flex; align-items: center; gap: 8px; min-height: 64px; border-top: 1px solid var(--border); padding: 6px 0; }
+  .lib li:last-child { border-bottom: 1px solid var(--border); }
+  .lib .thumb { width: 44px; height: 58px; border-radius: 6px; background: #2b2f36; flex: none; }
+  .lib .main { flex: 1; min-width: 0; }
+  .lib .main .t { font-weight: 600; }
+  .lib .main .s { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lib .pick { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .lib .pick i { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border-strong); display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 15px; font-weight: 700; box-sizing: border-box; }
+  .lib .pick i.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .lib li.sel { background: var(--accent-soft); margin: 0 -8px; padding: 6px 8px; border-radius: 8px; }
+  .fav { color: var(--fav); width: 44px; text-align: center; font-size: 22px; } .fav.off { color: var(--muted); }
+  .sticky { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--border); padding: 10px 0 0; margin-top: 12px; }
+  .pair { display: flex; align-items: center; gap: 6px; font-size: 14px; margin-bottom: 8px; }
+  .pair .k { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 14px; margin: 8px 0; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .steps { display: flex; gap: 4px; font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .steps div { flex: 1; text-align: center; border-top: 3px solid var(--border); padding-top: 2px; }
+  .steps div.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .steps div.done { border-color: var(--success); }
+  table.angles { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+  table.angles td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  table.angles td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .note { margin-top: 32px; background: var(--bg); border-radius: 12px; padding: 16px 20px; font-size: 14px; }
+  .note h2 { font-size: 16px; margin: 0 0 8px; }
+  .note ul { margin: 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>段階⑤ 画面モックアップ（2026-10-03、改訂 2）</h1>
+  <p class="lead">入口は「動画の保存」と「ライブラリ」の 2 つ。幅は iPhone と同じ 375px。青いボタンは「次に押すもの」。灰色の斜線は切り抜きで外した範囲、赤い縦線は撃発ポイント。バーの上の灰色の山は音の大きさ。</p>
+
+  <div class="flow">
+
+    <!-- 保存②：切り抜き -->
+    <div class="shot">
+      <p class="cap"><b>保存 ②</b>切り抜き<span>骨格の推定が終わったあと。前後の余計な部分を外す。音のグラフで撃発の位置が分かる</span></p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="tabs"><div class="tab active">動画の保存</div><div class="tab">ライブラリ</div></div>
+        <div class="steps"><div class="done">1 開く</div><div class="on">2 切り抜く</div><div>3 撃発</div><div>4 保存</div></div>
+        <div class="video">
+          <svg viewBox="0 0 300 400"><g stroke="rgb(0,220,90)" stroke-width="4" fill="none" stroke-linecap="round">
+            <circle cx="150" cy="80" r="14"/><line x1="120" y1="120" x2="180" y2="120"/><line x1="120" y1="120" x2="110" y2="230"/><line x1="180" y1="120" x2="110" y2="230"/>
+            <line x1="180" y1="120" x2="270" y2="118"/><line x1="120" y1="120" x2="100" y2="190"/><line x1="110" y1="230" x2="190" y2="230"/>
+            <line x1="110" y1="230" x2="105" y2="370"/><line x1="190" y1="230" x2="195" y2="370"/></g></svg>
+          <span class="tag num">0:03.20　96 / 420 コマ</span>
+        </div>
+        <svg class="wave" viewBox="0 0 343 40" preserveAspectRatio="none">
+          <path fill="#b8b8bc" d="M0 40 L0 36 L20 35 L40 37 L60 34 L80 36 L100 35 L120 37 L140 34 L160 36 L170 35 L176 30 L180 6 L184 2 L188 14 L194 28 L200 34 L220 36 L240 35 L260 37 L280 35 L300 36 L320 37 L343 36 L343 40 Z"/>
+        </svg>
+        <div class="bar">
+          <div class="track"></div>
+          <div class="dim" style="left:0;width:18%"></div>
+          <div class="dim" style="left:70%;right:0"></div>
+          <div class="range" style="left:18%;width:52%"></div>
+          <div class="handle" style="left:18%"></div><div class="lab" style="left:18%">開始 1.8 s</div>
+          <div class="handle" style="left:70%"></div><div class="lab" style="left:70%">終了 7.0 s</div>
+          <div class="knob" style="left:32%"></div>
+        </div>
+        <div class="scale"><span>0:00</span><span>0:14.0</span></div>
+        <div class="row"><div class="btn">◀ 1 コマ</div><div class="btn">▶ 再生</div><div class="btn">1 コマ ▶</div></div>
+        <div class="row"><div class="btn">ここを開始に</div><div class="btn">ここを終了に</div></div>
+        <p class="muted small num">切り抜いた長さ：5.2 秒（元の動画 14.0 秒）。元の動画は丸ごと保存され、範囲はあとから変えられます。</p>
+        <div class="btn primary full">範囲を確定 → 撃発ポイントの指定へ</div>
+      </div>
+    </div>
+
+    <!-- 保存③：撃発ポイント -->
+    <div class="shot">
+      <p class="cap"><b>保存 ③</b>撃発ポイント（必須）<span>切り抜いた範囲だけを送る。音の最も大きい瞬間に自動で合わせてあるので、絵を見て確かめて押す。付けるまで「保存へ」は押せない</span></p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="tabs"><div class="tab active">動画の保存</div><div class="tab">ライブラリ</div></div>
+        <div class="steps"><div class="done">1 開く</div><div class="done">2 切り抜く</div><div class="on">3 撃発</div><div>4 保存</div></div>
+        <div class="video">
+          <svg viewBox="0 0 300 400"><g stroke="rgb(0,220,90)" stroke-width="4" fill="none" stroke-linecap="round">
+            <circle cx="150" cy="80" r="14"/><line x1="120" y1="120" x2="180" y2="120"/><line x1="120" y1="120" x2="110" y2="230"/><line x1="180" y1="120" x2="110" y2="230"/>
+            <line x1="180" y1="120" x2="275" y2="100"/><line x1="120" y1="120" x2="100" y2="190"/><line x1="110" y1="230" x2="190" y2="230"/>
+            <line x1="110" y1="230" x2="105" y2="370"/><line x1="190" y1="230" x2="195" y2="370"/></g></svg>
+          <span class="tag num">3.40 s　102 / 156 コマ</span>
+        </div>
+        <svg class="wave" viewBox="0 0 343 40" preserveAspectRatio="none">
+          <path fill="#b8b8bc" d="M0 40 L0 36 L40 35 L80 37 L120 34 L160 36 L200 35 L212 30 L218 6 L223 2 L228 14 L236 28 L244 34 L280 36 L320 35 L343 36 L343 40 Z"/>
+        </svg>
+        <div class="bar">
+          <div class="track"></div>
+          <div class="range" style="left:0;width:100%"></div>
+          <div class="knob" style="left:65%"></div><div class="lab" style="left:65%">音の最大</div>
+        </div>
+        <div class="scale"><span>0.0 s</span><span>5.2 s</span></div>
+        <div class="row"><div class="btn">◀ 1 コマ</div><div class="btn">▶ 再生</div><div class="btn">1 コマ ▶</div></div>
+        <div class="btn primary full">ここが撃発ポイント</div>
+        <p class="muted small">発射音の瞬間に合わせてあります。1 コマずつ動かして、銃が跳ね上がる直前のコマで押してください。</p>
+        <div class="btn full off">保存へ（撃発ポイントを付けると押せます）</div>
+        <div class="row"><div class="btn">← 切り抜きに戻る</div></div>
+      </div>
+    </div>
+
+    <!-- 保存④：タイトル・メモ -->
+    <div class="shot">
+      <p class="cap"><b>保存 ④</b>タイトル・メモ</p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="tabs"><div class="tab active">動画の保存</div><div class="tab">ライブラリ</div></div>
+        <div class="steps"><div class="done">1 開く</div><div class="done">2 切り抜く</div><div class="done">3 撃発</div><div class="on">4 保存</div></div>
+        <div class="notice"><strong>撃発ポイント：3.40 秒（102 コマ目）</strong><p>切り抜き 1.8〜7.0 秒（5.2 秒）</p></div>
+        <label class="field"><span>タイトル</span><div class="input num">2026-10-03 14:25</div></label>
+        <label class="field"><span>射手</span><div class="input">つよし（右利き）　▾</div></label>
+        <label class="field"><span>撮影日時</span><div class="input num">2026/10/03 14:25</div></label>
+        <label class="field"><span>メモ（100 字まで）</span><div class="input area"><span class="ph">例：据銃が安定していた。肩が上がり気味</span></div></label>
+        <div class="chips"><span class="chip">☆ お気に入り</span></div>
+        <div class="btn primary full">保存する</div>
+        <div class="row"><div class="btn">← 撃発ポイントに戻る</div></div>
+      </div>
+    </div>
+
+    <!-- ライブラリ -->
+    <div class="shot">
+      <p class="cap"><b>ライブラリ</b>一覧と 2 件の選択<span>最初に右の◯を押した動画が基準。次に◯を押した動画が基準動画と比較する動画。タイトルを押すと動画の詳細が確認できます。</span></p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="tabs"><div class="tab">動画の保存</div><div class="tab active">ライブラリ</div></div>
+        <div class="input">すべての射手（12 件）　▾</div>
+        <div class="row"><span class="chip">☆ お気に入りだけ</span><span class="muted small">12 件中 12 件</span></div>
+        <p class="lib-month">2026 年 10 月（3 件）</p>
+        <ul class="lib">
+          <li class="sel"><div class="thumb"></div><div class="main"><div class="t">2026-10-03 14:25</div><div class="s">つよし ・ 5.2 秒 ・ 肩が上がり気味</div></div><div class="fav off">☆</div><div class="pick"><i class="on">2</i></div></li>
+          <li><div class="thumb"></div><div class="main"><div class="t">2026-10-03 14:21</div><div class="s">つよし ・ 4.8 秒</div></div><div class="fav off">☆</div><div class="pick"><i></i></div></li>
+          <li><div class="thumb"></div><div class="main"><div class="t">10/1 の良かった 1 発</div><div class="s">つよし ・ 6.0 秒 ・ 据銃が安定、これを基準に</div></div><div class="fav">★</div><div class="pick"><i></i></div></li>
+        </ul>
+        <p class="lib-month">2026 年 9 月（9 件）</p>
+        <ul class="lib">
+          <li class="sel"><div class="thumb"></div><div class="main"><div class="t">9/28 基準</div><div class="s">つよし ・ 5.5 秒</div></div><div class="fav">★</div><div class="pick"><i class="on">1</i></div></li>
+          <li><div class="thumb"></div><div class="main"><div class="t">2026-09-28 10:02</div><div class="s">つよし ・ 5.1 秒</div></div><div class="fav off">☆</div><div class="pick"><i></i></div></li>
+        </ul>
+        <div class="sticky">
+          <div class="pair">①基準：9/28 基準　②比較：2026-10-03 14:25　<span class="muted">⇄</span></div>
+          <div class="btn primary full">この 2 件を比較する</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 記録の詳細 -->
+    <div class="shot">
+      <p class="cap"><b>ライブラリ</b>動画の詳細<span>タイトルを押すと開く。編集、撃発ポイントと切り抜き範囲の修正、再生、削除</span></p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="row"><div class="btn" style="flex:none">← 一覧へ</div></div>
+        <div class="video">
+          <svg viewBox="0 0 300 400"><g stroke="rgb(0,220,90)" stroke-width="4" fill="none" stroke-linecap="round">
+            <circle cx="150" cy="80" r="14"/><line x1="120" y1="120" x2="180" y2="120"/><line x1="120" y1="120" x2="110" y2="230"/><line x1="180" y1="120" x2="110" y2="230"/>
+            <line x1="180" y1="120" x2="275" y2="100"/><line x1="120" y1="120" x2="100" y2="190"/><line x1="110" y1="230" x2="190" y2="230"/>
+            <line x1="110" y1="230" x2="105" y2="370"/><line x1="190" y1="230" x2="195" y2="370"/></g></svg>
+          <span class="tag">撃発の瞬間</span>
+        </div>
+        <h2 style="margin-top:12px">2026-10-03 14:25 <span class="fav off" style="font-size:20px">☆</span></h2>
+        <div class="kv"><span>射手</span><span>つよし（右利き）</span><span>撮影日時</span><span class="num">2026/10/03 14:25</span><span>長さ</span><span class="num">5.2 秒（元 14.0 秒、1.8〜7.0 秒）</span><span>撃発</span><span class="num">3.40 秒</span><span>メモ</span><span>肩が上がり気味</span></div>
+        <div class="stack">
+          <div class="btn full">動画を再生（角度などの情報を表示）</div>
+          <div class="btn full">タイトル・メモなどを編集</div>
+          <div class="btn full">撃発ポイントの修正</div>
+          <div class="btn full">切り抜き範囲の修正</div>
+        </div>
+        <p class="muted small" style="margin-top:12px">動画本体：38 MB（保存済み）</p>
+        <div style="height:24px"></div>
+        <div class="btn danger full">この動画を削除</div>
+      </div>
+    </div>
+
+    <!-- 動画の再生 -->
+    <div class="shot">
+      <p class="cap"><b>ライブラリ</b>動画を再生<span>1 本だけの再生。止めると、そのコマの角度などの情報が出る。「撃発ポイントの修正」「切り抜き範囲の修正」も同じ見た目で、下のボタンが「ここが撃発ポイント」「ここを開始に／終了に」に変わる</span></p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="row"><div class="btn" style="flex:none">← 詳細へ</div><span class="small">2026-10-03 14:25</span></div>
+        <div class="video">
+          <svg viewBox="0 0 300 400"><g stroke="rgb(0,220,90)" stroke-width="4" fill="none" stroke-linecap="round">
+            <circle cx="150" cy="80" r="14"/><line x1="120" y1="120" x2="180" y2="120"/><line x1="120" y1="120" x2="110" y2="230"/><line x1="180" y1="120" x2="110" y2="230"/>
+            <line x1="180" y1="120" x2="275" y2="100"/><line x1="120" y1="120" x2="100" y2="190"/><line x1="110" y1="230" x2="190" y2="230"/>
+            <line x1="110" y1="230" x2="105" y2="370"/><line x1="190" y1="230" x2="195" y2="370"/></g></svg>
+          <span class="tag num">撃発の 0.20 秒前　96 / 156 コマ</span>
+        </div>
+        <svg class="wave" viewBox="0 0 343 40" preserveAspectRatio="none">
+          <path fill="#b8b8bc" d="M0 40 L0 36 L40 35 L80 37 L120 34 L160 36 L200 35 L212 30 L218 6 L223 2 L228 14 L236 28 L244 34 L280 36 L320 35 L343 36 L343 40 Z"/>
+        </svg>
+        <div class="bar">
+          <div class="track"></div>
+          <div class="range" style="left:0;width:100%"></div>
+          <div class="mark" style="left:65%"></div><div class="lab" style="left:65%">撃発</div>
+          <div class="knob" style="left:61%"></div>
+        </div>
+        <div class="scale"><span>0.0 s</span><span>5.2 s</span></div>
+        <div class="row"><div class="btn" style="flex:none;padding:0 12px">◀ 1 コマ</div><div class="btn primary">▶ 再生</div><div class="btn" style="flex:none;padding:0 12px">1 コマ ▶</div></div>
+        <div class="row"><div class="seg" style="flex:2;margin:0"><div class="on">1 倍</div><div>1/2</div><div>1/4</div></div><span class="chip">↻ 繰り返し</span></div>
+        <h3>このコマの角度（止めているとき）</h3>
+        <table class="angles">
+          <tr><td>肩線の傾き（水平基準）</td><td>+1.3°</td></tr>
+          <tr><td>腰線の傾き（水平基準）</td><td>−0.4°</td></tr>
+          <tr><td>体幹の傾き（鉛直基準）</td><td>+2.1°</td></tr>
+          <tr><td>銃腕の上がり（水平基準）</td><td>+0.8°</td></tr>
+          <tr><td>…</td><td></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- 比較 -->
+    <div class="shot">
+      <p class="cap"><b>比較</b>2 本を重ねる<span>1 本のバー（0 ＝ 撃発）。範囲は、撃発の前も後も 2 本の短い方に合わせた共通の区間。音のグラフは 2 本分（ピンク＝基準、緑＝比較）。山が重なっていれば撃発ポイントが合っている</span></p>
+      <div class="phone">
+        <p class="app-title">Pistol Kamae</p>
+        <div class="row"><div class="btn" style="flex:none">← ライブラリへ</div><span class="small"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(255,110,210)"></span> ①9/28 基準 ／ <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(0,220,90)"></span> ②10/3 14:25</span></div>
+        <div class="video">
+          <svg viewBox="0 0 300 400">
+            <g stroke="rgb(255,110,210)" stroke-width="4" fill="none" stroke-linecap="round" opacity=".6">
+              <circle cx="146" cy="84" r="14"/><line x1="118" y1="124" x2="178" y2="122"/><line x1="118" y1="124" x2="110" y2="232"/><line x1="178" y1="122" x2="110" y2="232"/>
+              <line x1="178" y1="122" x2="272" y2="112"/><line x1="118" y1="124" x2="98" y2="192"/><line x1="110" y1="232" x2="190" y2="232"/>
+              <line x1="110" y1="232" x2="106" y2="372"/><line x1="190" y1="232" x2="196" y2="372"/></g>
+            <g stroke="rgb(0,220,90)" stroke-width="4" fill="none" stroke-linecap="round">
+              <circle cx="150" cy="80" r="14"/><line x1="120" y1="120" x2="180" y2="120"/><line x1="120" y1="120" x2="110" y2="230"/><line x1="180" y1="120" x2="110" y2="230"/>
+              <line x1="180" y1="120" x2="275" y2="100"/><line x1="120" y1="120" x2="100" y2="190"/><line x1="110" y1="230" x2="190" y2="230"/>
+              <line x1="110" y1="230" x2="105" y2="370"/><line x1="190" y1="230" x2="195" y2="370"/></g>
+          </svg>
+          <span class="tag">押している間は基準だけ</span>
+        </div>
+        <div class="row" style="margin:6px 0"><span class="small">基準の濃さ</span><div class="bar" style="flex:1;height:28px;margin:0"><div class="track" style="top:12px"></div><div class="range" style="top:12px;left:0;width:50%"></div><div class="knob" style="top:2px;left:50%"></div></div></div>
+        <div class="chips"><span class="chip on">骨格を表示</span><span class="chip">横に並べる</span></div>
+        <svg class="wave" viewBox="0 0 343 40" preserveAspectRatio="none">
+          <path fill="rgba(255,110,210,.55)" d="M0 40 L0 36 L40 35 L80 37 L120 34 L160 36 L172 30 L178 8 L183 3 L188 15 L196 29 L204 34 L240 36 L280 35 L320 36 L343 36 L343 40 Z"/>
+          <path fill="rgba(0,220,90,.55)" d="M0 40 L0 37 L40 36 L80 36 L120 35 L160 37 L174 31 L179 6 L184 2 L189 14 L197 28 L205 35 L240 35 L280 36 L320 35 L343 37 L343 40 Z"/>
+        </svg>
+        <div class="bar">
+          <div class="track"></div>
+          <div class="range" style="left:0;width:100%"></div>
+          <div class="mark" style="left:53%"></div><div class="lab" style="left:53%">撃発</div>
+          <div class="knob" style="left:53%"></div>
+        </div>
+        <div class="scale num"><span>−2.8 s</span><span>+2.4 s</span></div>
+        <div class="row"><div class="btn" style="flex:none;padding:0 12px">◀ 1 コマ</div><div class="btn primary">▶ 再生</div><div class="btn" style="flex:none;padding:0 12px">1 コマ ▶</div></div>
+        <div class="row"><div class="seg" style="flex:2;margin:0"><div class="on">1 倍</div><div>1/2</div><div>1/4</div></div><span class="chip">↻ 繰り返し</span></div>
+        <div class="seg"><div class="on">位置と大きさを揃える</div><div>撮ったまま</div></div>
+        <div class="stack">
+          <div class="btn full">撃発ポイントの修正</div>
+          <div class="btn full">切り抜き範囲の修正</div>
+          <div class="btn full">角度情報の表示</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <h2>モックアップで表していないこと</h2>
+    <ul>
+      <li>「保存 ①（開く）」は今の読込画面と同じ（射手の選択、動画を選ぶ、推定の進捗と中断）。</li>
+      <li>「撃発ポイントの修正」「切り抜き範囲の修正」は、「動画を再生」と同じ画面で、下のボタンが「ここが撃発ポイント」「ここを開始に／終了に」＋「決定」に変わる。比較画面から開くときは、先に基準か比較かを選ぶ。</li>
+      <li>比較画面の「横に並べる」、重ねられないときの案内、動画のあと付けは今のまま。</li>
+      <li>音声のない動画では、音のグラフの代わりに「音声なし」と出し、撃発ポイントの自動の当たりは付けない。</li>
+      <li>ノイズ測定は入口から外し、URL に <code>?noise=1</code> を付けたときだけ出す（開発用）。</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
