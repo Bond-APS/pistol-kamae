@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
-import { ConfirmDialog } from '../components/Dialog';
 import { ShooterDialog } from '../components/ShooterDialog';
 import { poseBackendConfig } from '../config/backends';
 import type { ShooterRow } from '../db/schema';
@@ -23,8 +22,6 @@ interface Props {
   result: AnalysisResult | null;
   /** file は選んだ動画ファイル（保存のとき、動画本体と撮影日時の初期値に使う） */
   onResult: (r: AnalysisResult | null, file: File | null) => void;
-  /** 保存していない動画があるか。あれば、動画を選び直す前に確認する */
-  hasUnsaved: boolean;
   /** 推定が終わったあと、切り抜きへ進む */
   onGoClip: () => void;
 }
@@ -49,12 +46,10 @@ type Status =
 
 export function LoadScreen(props: Props) {
   // video 要素は React の管理外（DOM を直接いじる）なので ref で持つ
-  const { videoRef, shooters, shooter, result, hasUnsaved } = props;
+  const { videoRef, shooters, shooter, result } = props;
   const [info, setInfo] = useState<VideoInfo | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [shooterDialog, setShooterDialog] = useState<'add' | 'edit' | null>(null);
-  /** 保存していないマークを捨てて動画を選び直してよいか、確認中か */
-  const [confirmingPick, setConfirmingPick] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
@@ -118,12 +113,6 @@ export function LoadScreen(props: Props) {
     }
   };
 
-  const confirmPick = () => {
-    setConfirmingPick(false);
-    // ファイル選択は、利用者の操作（このボタンを押したこと）の中で開く必要がある
-    fileInputRef.current?.click();
-  };
-
   const busy = status.kind === 'preparing' || status.kind === 'running';
   /** 動画を読み込み済みか。読み込んだあとは、選び直しの案内と「選択済み」を出す */
   const picked = info !== null;
@@ -159,10 +148,7 @@ export function LoadScreen(props: Props) {
             data-testid="video-pick"
             aria-describedby="video-pick-label video-pick-state"
             disabled={busy}
-            onClick={() => {
-              if (hasUnsaved) setConfirmingPick(true);
-              else fileInputRef.current?.click();
-            }}
+            onClick={() => fileInputRef.current?.click()}
           >
             {ja.load.pickButton}
           </button>
@@ -301,19 +287,6 @@ export function LoadScreen(props: Props) {
             });
           }}
         />
-      )}
-
-      {confirmingPick && (
-        <ConfirmDialog
-          title={ja.load.discardTitle}
-          confirmLabel={ja.load.discardConfirm}
-          destructive
-          onConfirm={confirmPick}
-          onCancel={() => setConfirmingPick(false)}
-          testId="discard-dialog"
-        >
-          <p className="small">{ja.load.discardBody}</p>
-        </ConfirmDialog>
       )}
     </section>
   );

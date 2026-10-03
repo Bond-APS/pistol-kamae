@@ -173,7 +173,6 @@ export function SaveScreen(props: Props) {
           onShootersChanged={props.onShootersChanged}
           result={result}
           onResult={onResult}
-          hasUnsaved={unsaved}
           onGoClip={() => {
             setValueSec(clip.startSec);
             setStep('clip');
