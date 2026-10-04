@@ -3,7 +3,7 @@
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/comparetest.mjs webkit
 //   node apps/web/e2e/comparetest.mjs chromium
-// 動画は shot.mp4（発射音入り、5 秒。作り方は savetest.mjs）と motion.mp4（音声なし、4 秒。作り方は marktest.mjs）。
+// 動画は shot.mp4（発射音入り、5 秒。作り方は savetest.mjs）と motion.mp4（音声なし、4 秒。作り方は librarytest.mjs）。
 // 結果は apps/web/e2e/results/compare-<ブラウザ名>.json に保存する（git 管理外）。
 
 import { mkdirSync, writeFileSync } from 'node:fs';

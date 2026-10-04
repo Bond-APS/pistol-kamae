@@ -3,7 +3,9 @@
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/librarytest.mjs webkit
 //   node apps/web/e2e/librarytest.mjs chromium
-// 動画は motion.mp4（作り方は marktest.mjs のコメント）。
+// 動画は motion.mp4（音声なし、4 秒。腕を上げる動きのある切り出し）。
+//   作り方：ffmpeg -ss 1.0 -to 5.0 -i sample.mov -vf "setpts=PTS-STARTPTS,fps=30" \
+//           -c:v libx264 -bf 0 -crf 18 -pix_fmt yuv420p -an motion.mp4
 // 結果は apps/web/e2e/results/library-<ブラウザ名>.json に保存する（git 管理外）。
 
 import { mkdirSync, writeFileSync } from 'node:fs';
