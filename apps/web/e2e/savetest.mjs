@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
+import { hidePersonInScreenshots } from './hidePerson.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [browserName = 'webkit'] = process.argv.slice(2);
@@ -33,6 +34,7 @@ const check = (name, ok, detail = '') => {
 
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 const page = await browser.newPage({ viewport: { width: 430, height: 900 } });
+hidePersonInScreenshots(page);
 const logs = [];
 page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);

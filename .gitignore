@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 # 動作確認用の一時ファイル
 apps/web/e2e/videos/
 apps/web/e2e/results/
+
+# 他の AI にレビューを頼むための資料（作り直せるので git では管理しない）
+review-kit/

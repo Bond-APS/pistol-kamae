@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
+import { hidePersonInScreenshots } from './hidePerson.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [browserName = 'webkit'] = process.argv.slice(2);
@@ -30,6 +31,7 @@ const check = (name, ok, detail = '') => {
 
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 const page = await browser.newPage({ viewport: { width: 430, height: 900 } });
+hidePersonInScreenshots(page);
 // 角度の数値は既定では隠れている。このテストは差分表を読むので、最初から「表示」にしておく
 await page.addInitScript(() => window.localStorage.setItem('kamae.showNumbers', '1'));
 const logs = [];
