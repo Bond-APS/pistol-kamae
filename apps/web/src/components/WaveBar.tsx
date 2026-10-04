@@ -43,7 +43,7 @@ interface Props {
   markers?: BarMarker[];
   handles?: ClipHandles;
   /**
-   * つまみの形。arrow：先の尖った ▲ と縦線（切り抜きや撃発ポイントのように瞬間を指すとき。音の山に目で合わせられる）。
+   * つまみの形。arrow：先の尖った ▲ と縦線（撃発ポイントのように瞬間を指すとき。音の山に目で合わせられる）。
    * 省略すれば通常の丸いつまみ
    */
   pointer?: 'arrow';

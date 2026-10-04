@@ -27,7 +27,7 @@ interface Props {
   noAudio?: boolean;
   markers?: BarMarker[];
   handles?: ClipHandles;
-  /** つまみの形（切り抜きと撃発ポイントの画面では ▲） */
+  /** つまみの形（撃発ポイントを指すときは ▲） */
   pointer?: 'arrow';
   /** 速さと繰り返し。渡さなければ ◀1 コマ／▶ 再生／1 コマ▶ だけ */
   transport?: Transport;

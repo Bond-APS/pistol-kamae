@@ -232,8 +232,8 @@ try {
   await waitSettled('clip-player');
   check('切り抜きの取っ手が 2 つある', (await page.locator('.wave-handle').count()) === 2);
   check(
-    '切り抜きのつまみが ▲',
-    (await page.locator('[data-testid=clip-player-bar] .wave-arrow').count()) === 1,
+    '切り抜きのつまみは丸いまま（▲ ではない）',
+    (await page.locator('[data-testid=clip-player-bar] .wave-arrow').count()) === 0,
   );
   await tid('clip-player-bar-wave').waitFor({ timeout: 15_000 });
   check('音のグラフが出る', (await tid('clip-player-bar-wave').count()) === 1);
@@ -506,8 +506,8 @@ try {
   const wholeMax = Number(await tid('player-bar-slider').getAttribute('max'));
   check('範囲の修正では動画の全体を動ける', near(wholeMax, 5, 0.2), wholeMax);
   check(
-    '範囲の修正のつまみも ▲',
-    (await page.locator('[data-testid=player-bar] .wave-arrow').count()) === 1,
+    '範囲の修正のつまみも丸いまま（▲ ではない）',
+    (await page.locator('[data-testid=player-bar] .wave-arrow').count()) === 0,
   );
   await slideTo('player-bar', 2.0);
   await waitSettled('player');

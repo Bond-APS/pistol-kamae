@@ -319,7 +319,6 @@ export function SaveScreen(props: Props) {
               onChange: setClipSnapped,
               snap,
             }}
-            pointer="arrow"
             timeLabel={timeLabel}
             onVideo={onVideo}
             active={props.active}
