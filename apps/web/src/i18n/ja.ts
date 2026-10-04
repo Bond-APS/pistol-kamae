@@ -306,7 +306,6 @@ export const ja = {
     base: '基準',
     current: '比較',
     backToLibrary: '← ライブラリへ',
-    backToCompare: '← 比較へ',
     pairLine: (base: string, current: string) => `①${base} ／ ②${current}`,
     notChosen:
       '比較する 2 件を選んでいません。ライブラリで、2 件の◯を押して「この 2 件を比較する」を押してください。',
@@ -352,8 +351,20 @@ export const ja = {
       '撃発を 0 とした開始と終了を決めます。取っ手を引くか、バーを動かして「ここを開始に」「ここを終了に」。決定すると、①②の両方の動画がこの範囲に切り抜かれます。',
     clipEditRange: (startT: number, endT: number) =>
       `範囲：撃発の ${Math.abs(startT).toFixed(1)} 秒${startT < 0 ? '前' : '後'}〜${Math.abs(endT).toFixed(1)} 秒${endT < 0 ? '前' : '後'}（${(endT - startT).toFixed(1)} 秒）`,
-    fixWhich: 'どちらの動画を直しますか',
-    fixRole: (n: 1 | 2, role: string, title: string) => `${n === 1 ? '①' : '②'}${role}：${title}`,
+    shotEditTitle: '撃発ポイントの修正（重ねたまま）',
+    shotEditBody:
+      '動かす動画を選び、2 本の音の山や絵が重なるように撃発ポイントをずらします。バーは撃発の前後 1 秒に拡大しています。',
+    shotEditRole: (n: 1 | 2, role: string) => `${n === 1 ? '①' : '②'}${role}を動かす`,
+    shotEarlier: '◀ 1 コマ早く',
+    shotLater: '1 コマ遅く ▶',
+    shotToPeak: '音の山に合わせる',
+    shotToPeakNoAudio: 'この動画からは音を取り出せないため、音の山には合わせられません。',
+    shotEditNeedsSide: 'この 2 件は重ねられないので、「横に並べる」を入れると決定できます。',
+    shotEditLine: (n: 1 | 2, role: string, fromSec: number, toSec: number, frames: number) =>
+      `${n === 1 ? '①' : '②'}${role}の撃発ポイント：${fromSec.toFixed(2)} 秒` +
+      (frames === 0
+        ? '（変更なし）'
+        : ` → ${toSec.toFixed(2)} 秒（${Math.abs(frames)} コマ${frames > 0 ? '遅く' : '早く'}）`),
     handednessTitle: '利き手が違う 2 人です',
     handednessBody: (name: string, handedness: 'right' | 'left') =>
       `「位置と大きさを揃える」では、基準（${name}・${handednessName[handedness]}）の骨格を左右反転して重ねます。角度は、どちらも銃側を＋として比べています。`,

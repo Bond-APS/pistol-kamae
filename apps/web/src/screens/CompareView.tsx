@@ -6,6 +6,7 @@ import {
   compareMetrics,
   frameIndexAt,
   metricsAtFrame,
+  setShotMark,
   shotMarkOf,
   shotWindow,
   tiltDegOfRecord,
@@ -32,20 +33,19 @@ import { SkeletonLayer } from '../components/SkeletonLayer';
 import { TransportControls } from '../components/TransportControls';
 import { useRecordVideoUrl } from '../components/useRecordVideoUrl';
 import { WaveBar, type WaveSeries } from '../components/WaveBar';
-import { updateRecordClip, type OpenedRecord } from '../db/library';
+import { SHOT_EDIT_SPAN_SEC, peakShot, shiftShot, shotFrameDelta } from '../compare/shotEdit';
+import { overwriteRecordMarksAll, updateRecordClip, type OpenedRecord } from '../db/library';
 import { ja } from '../i18n/ja';
+import { captureShotImages } from '../video/capture';
 import { usePlayback, type PlaybackVideo } from '../video/usePlayback';
-import type { PlayerMode } from './RecordPlayer';
 
 interface Props {
   base: OpenedRecord;
   current: OpenedRecord;
-  /** 「撃発ポイントの修正」で、どちらかの動画を直す画面を開く */
-  onFix: (role: Role, mode: PlayerMode) => void;
   /** 動画を付け直したとき */
   onVideoAttached: (role: Role) => void;
-  /** 切り抜きの範囲を書き換えたとき（読み直してもらう） */
-  onClipsChanged: () => void;
+  /** 撃発ポイントや切り抜きの範囲を書き換えたとき（読み直してもらう） */
+  onRecordsChanged: (recordIds: number[]) => void;
 }
 
 export type Role = 'base' | 'current';
@@ -95,7 +95,7 @@ function sideOf(opened: OpenedRecord) {
  * 比較画面の本体（①基準と②比較が決まっているとき）。
  * 2 本の動画を重ね（または横に並べ）、撃発を 0 とした 1 本のバーで 2 本を一緒に動かし、再生・速さ・繰り返しを持つ。
  */
-export function CompareView({ base, current, onFix, onVideoAttached, onClipsChanged }: Props) {
+export function CompareView({ base, current, onVideoAttached, onRecordsChanged }: Props) {
   const b = useMemo(() => sideOf(base), [base]);
   const c = useMemo(() => sideOf(current), [current]);
   // 2 本に共通する区間（撃発の前後それぞれ短い方）
@@ -119,17 +119,42 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
   const [loop, setLoop] = useState(false);
   /** バーの時刻（秒）。0 ＝ 撃発。開いた直後は 0 */
   const [t, setT] = useState(0);
-  const [fixing, setFixing] = useState<PlayerMode | null>(null);
   /**
    * 切り抜き範囲の修正（重ねたまま）。撃発を 0 とした開始・終了を 1 組決め、①②の両方に当てはめる
    * （2026-10-03、開発者の希望。片方ずつ別の画面で直すのではなく、重ねた絵を見ながら双方を切る）
    */
   const [clipEdit, setClipEdit] = useState<{ startT: number; endT: number } | null>(null);
   const [clipStatus, setClipStatus] = useState<'none' | 'saving' | 'failed' | 'invalid'>('none');
-  // バーの範囲：ふだんは共通の区間、切り抜きを直している間は動画そのものの共通する区間
-  const bar = clipEdit
-    ? { start: -extent.beforeSec, end: extent.afterSec }
-    : { start: -win.beforeSec, end: win.afterSec };
+  /**
+   * 撃発ポイントの修正（重ねたまま）。①②それぞれの、試しに動かした撃発ポイント（動画の時刻）を持ち、
+   * 「決定」で保存する（2026-10-04、開発者の希望。2 本の撃発ポイントがずれているとき、相手を見ながら揃える）
+   */
+  const [shotEdit, setShotEdit] = useState<{ role: Role; base: number; current: number } | null>(
+    null,
+  );
+  const [shotStatus, setShotStatus] = useState<'none' | 'saving' | 'failed'>('none');
+  // 0 とする撃発ポイント。修正中は、試しに動かした位置
+  const bShot = shotEdit?.base ?? b.shotSec;
+  const cShot = shotEdit?.current ?? c.shotSec;
+  // 撃発ポイントを直している間に動ける範囲：試しに動かした撃発を 0 とした、切り抜きの共通する区間
+  const shotEditWin = useMemo(
+    () =>
+      commonWindow(
+        shotWindow(b.opened.record.clip, b.durationSec, bShot),
+        shotWindow(c.opened.record.clip, c.durationSec, cShot),
+      ),
+    [b, c, bShot, cShot],
+  );
+  // バーの範囲：ふだんは共通の区間、切り抜きを直している間は動画そのものの共通する区間、
+  // 撃発ポイントを直している間は撃発の前後 1 秒（音の山のずれを大きく見せる）
+  const bar = shotEdit
+    ? {
+        start: -Math.min(shotEditWin.beforeSec, SHOT_EDIT_SPAN_SEC),
+        end: Math.min(shotEditWin.afterSec, SHOT_EDIT_SPAN_SEC),
+      }
+    : clipEdit
+      ? { start: -extent.beforeSec, end: extent.afterSec }
+      : { start: -win.beforeSec, end: win.afterSec };
 
   const baseVideo = useRecordVideoUrl(base.row.id, 0);
   const currentVideo = useRecordVideoUrl(current.row.id, 0);
@@ -144,22 +169,21 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
     currentVideoRef.current = el;
   }, []);
 
-  const baseIndex = nearestFrameIndex(b.frames, b.shotSec + t);
-  const currentIndex = nearestFrameIndex(c.frames, c.shotSec + t);
+  const baseIndex = nearestFrameIndex(b.frames, bShot + t);
+  const currentIndex = nearestFrameIndex(c.frames, cShot + t);
 
   // 再生は②比較を主にし、①基準を合わせる
   const videos = useMemo<PlaybackVideo[]>(
     () => [
-      { get: () => currentVideoRef.current, anchorSec: c.shotSec, fps: c.fps },
-      { get: () => baseVideoRef.current, anchorSec: b.shotSec, fps: b.fps },
+      { get: () => currentVideoRef.current, anchorSec: cShot, fps: c.fps },
+      { get: () => baseVideoRef.current, anchorSec: bShot, fps: b.fps },
     ],
-    [b, c],
+    [b, c, bShot, cShot],
   );
   // 再生中の時点はコマの時刻に丸めて持つ（毎フレーム違う値で画面全体を描き直さないため）
   const onTick = useCallback(
-    (next: number) =>
-      setT(c.frames[nearestFrameIndex(c.frames, c.shotSec + next)]!.timeSec - c.shotSec),
-    [c],
+    (next: number) => setT(c.frames[nearestFrameIndex(c.frames, cShot + next)]!.timeSec - cShot),
+    [c, cShot],
   );
   const playback = usePlayback({
     videos,
@@ -170,11 +194,13 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
     onTick,
   });
   const select = (next: number) => {
+    // 撃発ポイントの保存中は、静止画を作るために動画を撃発の瞬間に止めているので、時点を動かさない
+    if (shotStatus === 'saving') return;
     if (playback.playing) playback.pause();
     setT(Math.min(Math.max(next, bar.start), bar.end));
   };
   /** 撃発を 0 とした時刻を、②比較のコマの時刻に吸着させる */
-  const snapT = (next: number) => snapToFrame(c.frames, c.shotSec + next) - c.shotSec;
+  const snapT = (next: number) => snapToFrame(c.frames, cShot + next) - cShot;
   const setClipEditSnapped = (startT: number, endT: number) => {
     const s0 = Math.max(snapT(startT), -extent.beforeSec);
     const e0 = Math.min(snapT(endT), extent.afterSec);
@@ -182,7 +208,6 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
   };
   const beginClipEdit = () => {
     playback.pause();
-    setFixing(null);
     setClipStatus('none');
     setClipEdit({ startT: -win.beforeSec, endT: win.afterSec });
   };
@@ -209,14 +234,71 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
       for (const { side, clip } of clips) await updateRecordClip(side.recordId, clip);
       setClipEdit(null);
       setClipStatus('none');
-      onClipsChanged();
+      onRecordsChanged(sides.map((side) => side.recordId));
     } catch {
       setClipStatus('failed');
     }
   };
+  const beginShotEdit = () => {
+    playback.pause();
+    setShotStatus('none');
+    setShotEdit({ role: 'current', base: b.shotSec, current: c.shotSec });
+    // 撃発の瞬間どうしを見比べるところから始める
+    setT(0);
+  };
+  const endShotEdit = () => {
+    if (playback.playing) playback.pause();
+    setShotEdit(null);
+    setShotStatus('none');
+    setT(0);
+  };
+  /** 選んでいる側の撃発ポイントを動かす。動かしたあとは、撃発の瞬間どうしを表示する */
+  const moveShot = (next: number | null) => {
+    if (!shotEdit || next === null || shotStatus === 'saving') return;
+    if (playback.playing) playback.pause();
+    setShotEdit({ ...shotEdit, [shotEdit.role]: next });
+    setShotStatus('none');
+    setT(0);
+  };
+  /** 動かした側の撃発ポイントを保存する。撃発の瞬間の静止画（詳細と一覧の写真）も作り直す */
+  const saveShots = async () => {
+    if (!shotEdit || shotStatus === 'saving') return;
+    const changed = ROLES.filter((role) =>
+      role === 'base' ? shotEdit.base !== b.shotSec : shotEdit.current !== c.shotSec,
+    );
+    if (changed.length === 0) {
+      endShotEdit();
+      return;
+    }
+    playback.pause();
+    // 画面の時点も撃発の瞬間に戻す。静止画を作るためのシークと、画面側のシーク（CompareStage は
+    // シークが終わるたびに画面の時点へ合わせ直す）の行き先を同じにして、別のコマが撮られないようにする
+    setT(0);
+    setShotStatus('saving');
+    try {
+      // 静止画を作ってから、動かした分をまとめて書き込む（片方だけ書き換わった状態を残さない）
+      const items = [];
+      for (const role of changed) {
+        const side = role === 'base' ? b : c;
+        const sec = role === 'base' ? shotEdit.base : shotEdit.current;
+        const video = (role === 'base' ? baseVideoRef : currentVideoRef).current;
+        if (!video || video.readyState < 2) throw new Error('video not ready');
+        const images = await captureShotImages(video, side.opened.record.analysis, sec);
+        items.push({
+          id: side.recordId,
+          marks: setShotMark(side.opened.record.marks, sec),
+          images,
+        });
+      }
+      await overwriteRecordMarksAll(items);
+      onRecordsChanged(items.map((item) => item.id));
+    } catch {
+      setShotStatus('failed');
+    }
+  };
   const step = (delta: number) => {
     const frame = c.frames[Math.min(Math.max(currentIndex + delta, 0), c.frames.length - 1)];
-    if (frame) select(frame.timeSec - c.shotSec);
+    if (frame) select(frame.timeSec - cShot);
   };
 
   const normalizable = canNormalize(b.pose, c.pose);
@@ -305,13 +387,28 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
       ? ja.compare.beforeShot(-t)
       : ja.compare.afterShot(t);
 
+  // 撃発ポイントの修正は、2 本の動画が画面に出ているときだけ（静止画を作り直すのに、その動画を使う）
+  const canFixShot = bothVideos && !(layout === 'overlay' && cannotOverlay);
+  // 撃発ポイントの修正で、いま動かす側
+  const editSide = shotEdit?.role === 'base' ? b : c;
+  const editShot = shotEdit?.role === 'base' ? bShot : cShot;
+  const editEnvelope = shotEdit?.role === 'base' ? baseEnvelope : currentEnvelope;
+  // 「音の山に合わせる」の行き先（その動画の撃発の前後 1 秒で、音が最大の時点に近いコマ）
+  const editPeak =
+    shotEdit && editEnvelope.state === 'ready'
+      ? peakShot(editEnvelope.envelope, editSide.frames, editShot, editSide.clip)
+      : null;
+  const editEarlier = shiftShot(editSide.frames, editShot, -1, editSide.clip);
+  const editLater = shiftShot(editSide.frames, editShot, 1, editSide.clip);
+  const savingShot = shotStatus === 'saving';
+
   // 音のグラフ：2 本分を、撃発が 0 になるようずらして重ねる
   const waves: WaveSeries[] = [];
   if (baseEnvelope.state === 'ready') {
     waves.push({
       key: 'base',
       envelope: baseEnvelope.envelope,
-      shiftSec: -b.shotSec,
+      shiftSec: -bShot,
       className: 'wave-base',
     });
   }
@@ -319,7 +416,7 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
     waves.push({
       key: 'current',
       envelope: currentEnvelope.envelope,
-      shiftSec: -c.shotSec,
+      shiftSec: -cShot,
       className: 'wave-current',
     });
   }
@@ -392,6 +489,7 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
           className="chip"
           data-testid="toggle-side"
           aria-pressed={layout === 'side'}
+          disabled={savingShot}
           onClick={() => {
             // 切り替えると動画の部品が作り直されるので、先に止めて、いまの時点を保つ
             playback.pause();
@@ -509,6 +607,96 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
           </div>
         </div>
       )}
+      {shotEdit && (
+        <div
+          className="notice"
+          data-testid="compare-shot-edit"
+          data-role={shotEdit.role}
+          data-base-shot={shotEdit.base.toFixed(3)}
+          data-current-shot={shotEdit.current.toFixed(3)}
+        >
+          <strong>{ja.compare.shotEditTitle}</strong>
+          <p className="small">{ja.compare.shotEditBody}</p>
+          <div className="seg">
+            {ROLES.map((role, i) => (
+              <button
+                key={role}
+                data-testid={`shot-edit-role-${role}`}
+                aria-pressed={shotEdit.role === role}
+                disabled={savingShot}
+                onClick={() => setShotEdit({ ...shotEdit, role })}
+              >
+                {ja.compare.shotEditRole((i + 1) as 1 | 2, roleName(role))}
+              </button>
+            ))}
+          </div>
+          <div className="row nowrap">
+            <button
+              className="grow"
+              data-testid="shot-edit-earlier"
+              disabled={savingShot || editEarlier === editShot}
+              onClick={() => moveShot(editEarlier)}
+            >
+              {ja.compare.shotEarlier}
+            </button>
+            <button
+              className="grow"
+              data-testid="shot-edit-later"
+              disabled={savingShot || editLater === editShot}
+              onClick={() => moveShot(editLater)}
+            >
+              {ja.compare.shotLater}
+            </button>
+          </div>
+          <button
+            className="full"
+            data-testid="shot-edit-peak"
+            disabled={savingShot || editPeak === null || editPeak === editShot}
+            onClick={() => moveShot(editPeak)}
+          >
+            {ja.compare.shotToPeak}
+          </button>
+          {editEnvelope.state === 'none' && (
+            <p className="muted small" data-testid="shot-edit-no-audio">
+              {ja.compare.shotToPeakNoAudio}
+            </p>
+          )}
+          {ROLES.map((role, i) => {
+            const s = role === 'base' ? b : c;
+            const to = role === 'base' ? shotEdit.base : shotEdit.current;
+            return (
+              <p key={role} className="small num" data-testid={`shot-edit-line-${role}`}>
+                {ja.compare.shotEditLine(
+                  (i + 1) as 1 | 2,
+                  roleName(role),
+                  s.shotSec,
+                  to,
+                  shotFrameDelta(s.frames, s.shotSec, to),
+                )}
+              </p>
+            );
+          })}
+          {shotStatus === 'failed' && <p className="danger small">{ja.library.fixFailed}</p>}
+          {!canFixShot && (
+            <p className="muted small" data-testid="shot-edit-needs-side">
+              {ja.compare.shotEditNeedsSide}
+            </p>
+          )}
+          <div className="row nowrap">
+            <button data-testid="shot-edit-cancel" disabled={savingShot} onClick={endShotEdit}>
+              {ja.common.cancel}
+            </button>
+            <button
+              className="primary grow"
+              data-testid="shot-edit-confirm"
+              disabled={savingShot || !canFixShot}
+              onClick={() => void saveShots()}
+            >
+              {savingShot ? ja.save.saving : ja.common.decide}
+            </button>
+          </div>
+        </div>
+      )}
       <TransportControls
         playing={playback.playing}
         onPlay={() => playback.play()}
@@ -517,7 +705,7 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
         onNext={() => step(1)}
         canPrev={t > bar.start + 1e-6}
         canNext={t < bar.end - 1e-6}
-        canPlay={canPlay}
+        canPlay={canPlay && !savingShot}
         transport={{ rate, loop, onRate: setRate, onLoop: setLoop }}
         testId="compare"
       />
@@ -583,12 +771,9 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
         <button
           className="full"
           data-testid="compare-fix-shot"
-          aria-expanded={fixing === 'shot'}
-          disabled={!bothVideos}
-          onClick={() => {
-            playback.pause();
-            setFixing(fixing === 'shot' ? null : 'shot');
-          }}
+          aria-pressed={shotEdit !== null}
+          disabled={!canFixShot || shotEdit !== null || clipEdit !== null}
+          onClick={beginShotEdit}
         >
           {ja.compare.fixShot}
         </button>
@@ -596,33 +781,12 @@ export function CompareView({ base, current, onFix, onVideoAttached, onClipsChan
           className="full"
           data-testid="compare-fix-clip"
           aria-pressed={clipEdit !== null}
-          disabled={!bothVideos || clipEdit !== null}
+          disabled={!bothVideos || clipEdit !== null || shotEdit !== null}
           onClick={beginClipEdit}
         >
           {ja.compare.fixClip}
         </button>
       </div>
-      {fixing && (
-        <div className="notice" data-testid="compare-fix-which">
-          <strong>{ja.compare.fixWhich}</strong>
-          <div className="stack">
-            {ROLES.map((role, i) => (
-              <button
-                key={role}
-                className="full"
-                data-testid={`compare-fix-${role}`}
-                onClick={() => onFix(role, fixing)}
-              >
-                {ja.compare.fixRole(
-                  (i + 1) as 1 | 2,
-                  roleName(role),
-                  (role === 'base' ? base : current).row.title,
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <NumbersFold title={ja.compare.numbersTitle} testId="diff-numbers">
         <p className="muted small num" data-testid="diff-times">

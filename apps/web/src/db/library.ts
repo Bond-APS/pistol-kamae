@@ -177,6 +177,15 @@ export async function overwriteRecordMarks(
   });
 }
 
+/** 複数の記録のマークと静止画を、まとめて差し替える（全部成功するか、どれも書き換わらないか） */
+export async function overwriteRecordMarksAll(
+  items: ReadonlyArray<{ id: number; marks: Mark[]; images: RecordImages }>,
+): Promise<void> {
+  await db.transaction('rw', db.records, db.recordData, async () => {
+    for (const item of items) await overwriteRecordMarks(item.id, item.marks, item.images);
+  });
+}
+
 /** 保存済みの記録の切り抜きの範囲を差し替える（撃発ポイントが範囲に入っていることは呼ぶ側が確かめる） */
 export async function updateRecordClip(id: number, clip: Clip | null): Promise<void> {
   await db.transaction('rw', db.records, db.recordData, async () => {

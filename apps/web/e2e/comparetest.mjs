@@ -1,5 +1,5 @@
 // 段階⑤の比較画面の自動テスト。ライブラリで 2 件を選んで比較に入り、1 本のバー（0 ＝ 撃発）、
-// 再生・速さ・繰り返し、音のグラフ、撃発ポイント・切り抜き範囲の修正の入口を確かめる。
+// 再生・速さ・繰り返し、音のグラフ、重ねたままの撃発ポイント・切り抜き範囲の修正を確かめる。
 // 開発サーバ（npm run dev）を起動した状態で使う。
 //   node apps/web/e2e/comparetest.mjs webkit
 //   node apps/web/e2e/comparetest.mjs chromium
@@ -285,29 +285,118 @@ try {
     fullPage: true,
   });
 
-  // 撃発ポイントの修正：どちらを直すか選び、プレイヤーが開く
+  // 撃発ポイントの修正：重ねたまま、片方だけを 1 コマずつ動かすか、音の山に合わせる
+  const shotEditAttr = async (name) => Number(await tid('compare-shot-edit').getAttribute(name));
+  const minBefore = Number(await tid('compare-bar-slider').getAttribute('min'));
   await tid('compare-fix-shot').click();
-  await tid('compare-fix-which').waitFor();
-  await tid('compare-fix-base').click();
-  await tid('record-player').waitFor();
+  await tid('compare-shot-edit').waitFor();
+  await waitBothReady();
+  const zoomMin = Number(await tid('compare-bar-slider').getAttribute('min'));
+  const zoomMax = Number(await tid('compare-bar-slider').getAttribute('max'));
   check(
-    '基準の撃発ポイントの修正が開く',
-    (await tid('record-player').getAttribute('data-mode')) === 'shot' &&
-      (await tid('player-title').textContent()) === '発射音あり',
+    '撃発ポイントの修正は重ねたまま開き、バーが撃発の前後 1 秒になる',
+    (await tid('compare-overlay').count()) === 1 &&
+      near(zoomMin, -1, 0.02) &&
+      near(zoomMax, 1, 0.02),
+    `${zoomMin}〜${zoomMax}`,
   );
-  await waitSettled('player');
-  await tid('player-next').click();
-  await waitSettled('player');
-  const fixedShot = Number(await tid('player-bar').getAttribute('data-value-sec'));
-  await tid('shot-set').click();
-  await tid('player-saved').waitFor({ timeout: 15_000 });
-  await tid('player-back').click();
-  await tid('compare-bar').waitFor();
+  check(
+    '最初は②比較を動かす側。音のない動画では「音の山に合わせる」を押せず、理由が出る',
+    (await tid('compare-shot-edit').getAttribute('data-role')) === 'current' &&
+      (await tid('shot-edit-peak').isDisabled()) &&
+      (await tid('shot-edit-no-audio').count()) === 1,
+  );
+  // ①基準（発射音あり）を 3 コマ早くする。保存した撃発ポイントは、発射音の山にいちばん近いコマ
+  await tid('shot-edit-role-base').click();
+  const savedShot = await shotEditAttr('data-base-shot');
+  check(
+    'すでに音の山にいるときは「音の山に合わせる」を押せない',
+    await tid('shot-edit-peak').isDisabled(),
+  );
+  const index0 = await compareIndexes();
+  for (let i = 0; i < 3; i++) await tid('shot-edit-earlier').click();
+  await waitBothReady();
+  const index1 = await compareIndexes();
+  check(
+    '「1 コマ早く」で、選んだ側（①基準）の絵だけが 1 コマずつ動く',
+    index1.base === index0.base - 3 && index1.current === index0.current,
+    `${JSON.stringify(index0)} → ${JSON.stringify(index1)}`,
+  );
+  check(
+    '動かした量が数字で出る（3 コマ早く）。動かしていない側は「変更なし」',
+    (await tid('shot-edit-line-base').textContent()).includes('3 コマ早く') &&
+      (await tid('shot-edit-line-current').textContent()).includes('変更なし'),
+    await tid('shot-edit-line-base').textContent(),
+  );
+  await page.screenshot({
+    path: join(here, 'results', `compare-${browserName}-shotedit.png`),
+    fullPage: true,
+  });
+  // 「音の山に合わせる」で、発射音の山（保存のときに置かれた位置）へ戻る
+  await tid('shot-edit-peak').click();
+  await waitBothReady();
+  check(
+    '「音の山に合わせる」で、撃発ポイントが発射音の山へ移る',
+    near(await shotEditAttr('data-base-shot'), savedShot, 0.001) &&
+      near(savedShot, a.shotSec, 0.02) &&
+      (await tid('shot-edit-line-base').textContent()).includes('変更なし'),
+    `${await shotEditAttr('data-base-shot')} (expected ${savedShot}、音の最大 ${a.shotSec})`,
+  );
+  // キャンセルでは何も変わらない
+  await tid('shot-edit-earlier').click();
+  await tid('shot-edit-cancel').click();
+  await tid('compare-shot-edit').waitFor({ state: 'detached' });
+  check(
+    'キャンセルすると撃発ポイントは変わらず、バーが元の区間に戻る',
+    near(Number(await tid('compare-bar-slider').getAttribute('min')), minBefore, 0.02),
+    await tid('compare-bar-slider').getAttribute('min'),
+  );
+  // ①基準を 1 コマ遅くして決定する
+  await tid('compare-fix-shot').click();
+  await tid('compare-shot-edit').waitFor();
+  await tid('shot-edit-role-base').click();
+  await tid('shot-edit-later').click();
+  const fixedShot = await shotEditAttr('data-base-shot');
+  check(
+    '「1 コマ遅く」で 1 コマ分だけ遅くなる',
+    near(fixedShot, savedShot + 1 / 30, 0.002),
+    fixedShot,
+  );
+  // バーを撃発の瞬間から動かしたまま決定しても、撃発の写真（詳細と一覧の静止画）は撃発のコマから作られる。
+  // 写真を作るときに動画がどの時刻にいたかを、描画の入口で記録して確かめる
+  await slideTo('compare-bar', 0.5);
+  await waitBothReady();
+  await page.evaluate(() => {
+    window.__videoDraws = [];
+    const original = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (source, ...rest) {
+      if (source instanceof HTMLVideoElement) window.__videoDraws.push(source.currentTime);
+      return original.call(this, source, ...rest);
+    };
+  });
+  await tid('shot-edit-confirm').click();
+  await tid('compare-shot-edit').waitFor({ state: 'detached', timeout: 15_000 });
+  const draws = await page.evaluate(() => window.__videoDraws);
+  check(
+    'バーを動かしたまま決定しても、撃発の写真は撃発のコマから作られる',
+    draws.length === 2 &&
+      draws.every((sec) => sec >= fixedShot - 0.001 && sec < fixedShot + 1 / 30),
+    `${JSON.stringify(draws)} (撃発 ${fixedShot})`,
+  );
+  // 読み直しが終わって、バーの範囲が新しい撃発ポイントのものになるのを待つ
+  await page.waitForFunction(
+    (expected) => {
+      const slider = document.querySelector('[data-testid=compare-bar-slider]');
+      return slider && Math.abs(Number(slider.min) - expected) < 0.02;
+    },
+    -(fixedShot - 1.0),
+    { timeout: 15_000 },
+  );
   await waitBothReady();
   const min2 = Number(await tid('compare-bar-slider').getAttribute('min'));
   check(
-    '直した撃発ポイントで共通の区間が計算し直される',
-    near(-min2, fixedShot - 1.0, 0.1),
+    '決定すると撃発ポイントが保存され、共通の区間が計算し直される',
+    near(-min2, fixedShot - 1.0, 0.02),
     `${min2} (expected -${(fixedShot - 1.0).toFixed(2)})`,
   );
   // 切り抜き範囲の修正：重ねたまま、撃発を 0 とした開始・終了を決め、①②の両方に当てはめる
@@ -351,6 +440,15 @@ try {
   await tid('record-detail').waitFor();
   const lengthB = await tid('detail-length').textContent();
   check('②の詳細の範囲が更新される', /〜3\.0 秒/.test(lengthB), lengthB);
+  await tid('detail-back').click();
+  // ①の詳細には、比較画面で直した撃発ポイントが出る
+  await item(a.id).locator('[data-testid=lib-open]').click();
+  await tid('record-detail').waitFor();
+  check(
+    '①の詳細の撃発ポイントが、比較画面で直した値になる',
+    (await tid('detail-shot').textContent()).includes(fixedShot.toFixed(2)),
+    `${await tid('detail-shot').textContent()} (expected ${fixedShot.toFixed(2)})`,
+  );
   await tid('detail-back').click();
   await tid('pick-compare').click();
   await tid('compare-bar').waitFor();

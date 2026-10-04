@@ -26,7 +26,7 @@ export type PlayerMode = 'play' | 'shot' | 'clip';
 interface Props {
   opened: OpenedRecord;
   mode: PlayerMode;
-  /** 閉じる（詳細や比較画面へ戻る） */
+  /** 閉じる（詳細へ戻る） */
   onClose: () => void;
   /** 撃発ポイントや範囲を書き換えたとき */
   onChanged: (id: number) => void;
@@ -40,7 +40,7 @@ const titleOf = (mode: PlayerMode): string =>
 
 /**
  * ライブラリの 1 本の動画のプレイヤー。再生（角度の表示）、撃発ポイントの修正、切り抜き範囲の修正を 1 つの画面で受け持つ。
- * 比較画面の「撃発ポイントの修正」「切り抜き範囲の修正」からも開く。
+ * 比較画面の修正は、重ねたまま CompareView の中で行う（この画面は使わない）。
  */
 export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, active }: Props) {
   const { row, record } = opened;

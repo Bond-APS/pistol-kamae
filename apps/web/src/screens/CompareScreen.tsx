@@ -3,8 +3,7 @@ import { forgetEnvelope } from '../audio/useAudioEnvelope';
 import { openRecord, type ComparePair, type OpenedRecord } from '../db/library';
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
-import { CompareView, type Role } from './CompareView';
-import { RecordPlayer, type PlayerMode } from './RecordPlayer';
+import { CompareView } from './CompareView';
 
 interface Props {
   shooters: ShooterRow[];
@@ -26,7 +25,7 @@ interface Loaded {
 /**
  * 比較画面：ライブラリで選んだ①基準と②比較を読み込み、動画を重ねる。
  * ここでは読み込みと案内を受け持ち、図とバーは CompareView が受け持つ。
- * 「撃発ポイントの修正」「切り抜き範囲の修正」は、どちらかの動画のプレイヤー（RecordPlayer）を開く。
+ * 「撃発ポイントの修正」「切り抜き範囲の修正」も、重ねたまま CompareView の中で行う。
  */
 export function CompareScreen(props: Props) {
   const { shooters, pair, onPairChange, onGoLibrary, onRecordChanged } = props;
@@ -34,7 +33,6 @@ export function CompareScreen(props: Props) {
   const [missing, setMissing] = useState(false);
   /** 直したあとに読み直すための番号 */
   const [version, setVersion] = useState(0);
-  const [fixing, setFixing] = useState<{ role: Role; mode: PlayerMode } | null>(null);
   /** どの 2 件を読んだか。直したあとの読み直し（version）では、読み終わるまで前の内容を出し続ける */
   const pairKey = `${pair.baseId}:${pair.currentId}`;
 
@@ -84,23 +82,6 @@ export function CompareScreen(props: Props) {
     </div>
   );
 
-  if (fixing && base && current) {
-    const opened = fixing.role === 'base' ? base : current;
-    return (
-      <RecordPlayer
-        key={`${opened.row.id}:${fixing.mode}`}
-        opened={opened}
-        mode={fixing.mode}
-        backLabel={ja.compare.backToCompare}
-        onClose={() => setFixing(null)}
-        onChanged={(id) => {
-          setVersion((v) => v + 1);
-          onRecordChanged(id);
-        }}
-      />
-    );
-  }
-
   if (!ready) {
     return (
       <section data-testid="compare">
@@ -148,10 +129,9 @@ export function CompareScreen(props: Props) {
         key={`${pairKey}:${version}`}
         base={base}
         current={current}
-        onFix={(role, mode) => setFixing({ role, mode })}
-        onClipsChanged={() => {
+        onRecordsChanged={(ids) => {
           setVersion((v) => v + 1);
-          onRecordChanged(pair.baseId ?? 0);
+          ids.forEach(onRecordChanged);
         }}
         onVideoAttached={(role) => {
           forgetEnvelope((role === 'base' ? base : current).row.id);
