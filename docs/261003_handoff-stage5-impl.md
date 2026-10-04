@@ -165,6 +165,18 @@ iPhone で「比較の再生中に角度の数値が走り、動きが重い」�
 再生中の同期合わせのシーク（`usePlayback`、①基準が 1 コマ以上ずれると `currentTime` を書き換える）の回数を数える →
 `CompareView` の動かない部分（ボタン類）を別の部品に分けて描き直しを減らす
 
+### 5.7 試用のための公開（2026-10-05、開発者の指示）
+
+アプリ開発の依頼者（遠方）に触ってもらうため、GitHub Pages で公開する。
+
+- `.github/workflows/deploy.yml`：`main` への push で、単体テスト → ビルド → 公開。公開先は https://bond-aps.github.io/pistol-kamae/
+- リポジトリの Settings → Pages → Source を「GitHub Actions」にする操作は、開発者が行う（1 回だけ）
+- `npm run preview` がビルド結果を読めず画面が出なかったのを直した（`vite.config.ts`。確認用サーバも公開先と同じ `/pistol-kamae/` で配る）
+- 公開用のビルドに対して自動テストを回して確かめた（`BASE_URL=http://localhost:4173/pistol-kamae/`。末尾の `/` が要る）
+- 画面上部の「開発中の検証用画面…」は開発サーバでだけ出る（公開用のビルドには出ない）。「試用版」などの表示は付けない（開発者の決定）
+- 依頼者への案内文：`docs/261005_tester-guide.md`（端末は iPhone か Android か不明なので、両方を想定）
+- 書き出し（段階⑥）と PWA（段階⑦）はまだなので、試用する人の保存データは消えることがある（案内文に明記）
+
 ## 6. 未了・次にやること
 
 1. **開発者の iPhone 確認**（手順は別途渡す）

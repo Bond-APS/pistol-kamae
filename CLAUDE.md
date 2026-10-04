@@ -126,6 +126,7 @@ pistol-kamae/
 - 開始時：`git status` と直近のコミットを確認し、前回の続きを把握してから計画を出す。
 - コミット：小さく、日本語のメッセージ。形式は `段階①: 動画読込画面の骨組み` のように段階番号を先頭に付ける。コミット前に `npm run lint` と `npm test` を通す。
 - ブランチ：`main` に直接コミットしてよい（個人開発）。`push` は開発者の指示があったときのみ。
+- 公開：`main` に push すると、GitHub Actions（`.github/workflows/deploy.yml`）が単体テストとビルドを行い、GitHub Pages（https://bond-aps.github.io/pistol-kamae/）を更新する（2026-10-05 から）。push ＝ 公開先の更新なので、試用している人に見せたくない作りかけは push しない。公開の前に、公開用のビルドで自動テストを回す（`npm run build` → `npm run preview` → `BASE_URL=http://localhost:4173/pistol-kamae/ HEADLESS=1 node apps/web/e2e/savetest.mjs webkit` など）。試用する人への案内文は `docs/261005_tester-guide.md`。
 - テスト：`packages/engine` の角度計算・正規化・反転は必ず単体テストを書く（既知の座標を入れて期待する角度が出るか）。UI は手動確認を基本とする。
 - 確認：Claude が自動テストで行う。開発者には、実機を触るなど Claude にできないことだけを頼む。頼むときは確認手順（どの画面で何を操作し、何が見えれば合格か）を箇条書きで渡す。
 - 動画表示に手を入れたら、動きのある動画で絵が変わることを自動テストで確かめる（フレーム番号だけでなく、画面に出ている絵を見る）。
@@ -139,7 +140,7 @@ pistol-kamae/
 npm install          依存ライブラリの導入
 npm run dev          開発サーバ起動（http://localhost:5173）
 npm run build        公開用ビルド
-npm run preview      ビルド結果の確認
+npm run preview      ビルド結果の確認（http://localhost:4173/pistol-kamae/）
 npm test             単体テスト
 npm run lint         静的検査
 ```

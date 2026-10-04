@@ -4,8 +4,9 @@ import { devReportPlugin } from './e2e/devReportPlugin';
 
 // GitHub Pages では https://<ユーザー名>.github.io/pistol-kamae/ に置かれるため、
 // 公開ビルドのときだけパスの先頭を /pistol-kamae/ にする。
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/pistol-kamae/' : '/',
+// ビルド結果の確認（npm run preview）も同じ先頭にする（そうしないと、ビルドしたファイルを読めず画面が出ない）。
+export default defineConfig(({ command, isPreview }) => ({
+  base: command === 'build' || isPreview ? '/pistol-kamae/' : '/',
   // devReportPlugin は開発サーバでのみ働く（実機の自動テスト結果をこの Mac に保存する）
   plugins: [react(), devReportPlugin()],
   server: {

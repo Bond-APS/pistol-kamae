@@ -1,0 +1,46 @@
+# main に push するたびに、公開用にビルドして GitHub Pages（https://bond-aps.github.io/pistol-kamae/）を更新する。
+# リポジトリの Settings → Pages → Source を「GitHub Actions」にしておくこと（1 回だけ）。
+# 単体テストかビルドが失敗したら公開しない（公開先は前のまま残る）。
+name: GitHub Pages へ公開
+
+on:
+  push:
+    branches: [main]
+  # GitHub の画面（Actions タブ）から手で動かすこともできる
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 続けて push したときは、古いほうの公開を待たずに新しいほうを公開する
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
