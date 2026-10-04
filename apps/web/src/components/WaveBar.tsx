@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { binTimeSec, type AudioEnvelope } from '../audio/envelope';
 import { ja } from '../i18n/ja';
 
@@ -82,6 +82,25 @@ function wavePath(series: WaveSeries, startSec: number, endSec: number): string 
 }
 
 /**
+ * 音のグラフの線 1 本。線の形は包絡線とバーの範囲だけで決まるので、つまみが動くたび（再生中は毎コマ）に
+ * 作り直さないよう覚えておく（包絡線の全区切りを回して数 KB の文字列を組み立てる処理のため）
+ */
+const WaveLine = memo(function WaveLine(props: {
+  envelope: AudioEnvelope;
+  shiftSec: number;
+  className: string;
+  startSec: number;
+  endSec: number;
+}) {
+  const { envelope, shiftSec, className, startSec, endSec } = props;
+  const d = useMemo(
+    () => wavePath({ key: '', envelope, shiftSec, className }, startSec, endSec),
+    [envelope, shiftSec, className, startSec, endSec],
+  );
+  return <path className={className} d={d} />;
+});
+
+/**
  * 時点を選ぶバー。上に音のグラフ、下につまみ。撃発などの印と、切り抜きの取っ手を重ねられる。
  * 保存の流れ（切り抜き・撃発ポイント）、動画を再生、比較の 3 か所で使う。
  */
@@ -149,7 +168,14 @@ export function WaveBar(props: Props) {
           data-testid={`${props.testId}-wave`}
         >
           {waves.map((w) => (
-            <path key={w.key} className={w.className} d={wavePath(w, startSec, endSec)} />
+            <WaveLine
+              key={w.key}
+              envelope={w.envelope}
+              shiftSec={w.shiftSec ?? 0}
+              className={w.className}
+              startSec={startSec}
+              endSec={endSec}
+            />
           ))}
         </svg>
       ) : (

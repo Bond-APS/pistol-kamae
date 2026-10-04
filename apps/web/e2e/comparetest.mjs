@@ -251,8 +251,22 @@ try {
       Object.values(playing).every((v) => !v.paused && v.rate === 0.25),
     JSON.stringify(playing),
   );
+  // 角度の差は、止めているときだけ出す（再生中に毎コマ計算すると重くなるため）
+  await tid('diff-playing').waitFor({ timeout: 5000 });
+  check(
+    '再生中は差分表が消え、「止めると出ます」の案内になる',
+    (await tid('diff-table').count()) === 0 &&
+      (await tid('diff-times').count()) === 0 &&
+      (await tid('diff-playing').count()) === 1,
+  );
   await tid('compare-play').click();
   await page.waitForTimeout(500);
+  check(
+    '止めると差分表が戻る',
+    (await tid('diff-table').count()) === 1 &&
+      (await tid('diff-times').count()) === 1 &&
+      (await tid('diff-playing').count()) === 0,
+  );
   const paused = await stageVideos();
   const atPause = await compareIndexes();
   check(
@@ -278,7 +292,22 @@ try {
   await tid('compare-play').click();
   await tid('compare-loop').click();
 
+  // 繰り返しなしで区間の終わりまで再生すると、自動で止まり、差分表が戻る
+  await tid('diff-times').waitFor({ timeout: 5000 });
+  await slideTo('compare-bar', max - 0.3);
+  await waitBothReady();
+  await tid('compare-play').click();
+  await tid('diff-playing').waitFor({ timeout: 5000 });
+  await tid('diff-times').waitFor({ timeout: 10_000 });
+  const ended = await stageVideos();
+  check(
+    '区間の終わりで自動で止まると、差分表が戻る',
+    Object.values(ended).every((v) => v.paused) && (await tid('diff-playing').count()) === 0,
+    JSON.stringify(ended),
+  );
+
   // 差分表（数値は表示にしてある）
+  await tid('diff-table').waitFor({ timeout: 5000 });
   check('差分表が出る', (await tid('diff-table').count()) === 1);
   await page.screenshot({
     path: join(here, 'results', `compare-${browserName}.png`),
@@ -357,10 +386,13 @@ try {
   await tid('shot-edit-role-base').click();
   await tid('shot-edit-later').click();
   const fixedShot = await shotEditAttr('data-base-shot');
+  // コマの時刻はブラウザが推定のときに返した値で、間隔がぴったり 1/30 秒とは限らない（Chrome では 0.036 秒のことがある）。
+  // そのため、時刻の差の幅ではなく「動かした量が 1 コマ」と出ていることで確かめる
+  const laterLine = await tid('shot-edit-line-base').textContent();
   check(
     '「1 コマ遅く」で 1 コマ分だけ遅くなる',
-    near(fixedShot, savedShot + 1 / 30, 0.002),
-    fixedShot,
+    laterLine.includes('（1 コマ遅く）') && fixedShot > savedShot && fixedShot - savedShot < 0.05,
+    `${savedShot} → ${fixedShot}：${laterLine}`,
   );
   // バーを撃発の瞬間から動かしたまま決定しても、撃発の写真（詳細と一覧の静止画）は撃発のコマから作られる。
   // 写真を作るときに動画がどの時刻にいたかを、描画の入口で記録して確かめる

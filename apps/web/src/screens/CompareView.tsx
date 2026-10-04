@@ -309,7 +309,11 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
   const overlay = useMemo(() => overlayLayout(b.pose, c.pose, mode), [b, c, mode]);
   const side = useMemo(() => sideBySideViews(b.pose, c.pose), [b, c]);
 
+  // 角度の差は、止めているときだけ計算して出す（「動画を再生」と同じ）。再生中に毎コマ計算して表を
+  // 描き直すと動きが重くなるため（2026-10-04、開発者の指摘）
+  const playing = playback.playing;
   const diffs = useMemo(() => {
+    if (playing) return null;
     const at = (s: typeof b, index: number) =>
       metricsAtFrame(
         {
@@ -324,7 +328,7 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     const baseValues = at(b, baseIndex);
     const currentValues = at(c, currentIndex);
     return baseValues && currentValues ? compareMetrics(baseValues, currentValues) : null;
-  }, [b, c, baseIndex, currentIndex]);
+  }, [b, c, baseIndex, currentIndex, playing]);
 
   const bothVideos = baseVideo.state === 'ready' && currentVideo.state === 'ready';
   // 重ねられない 2 件は、重ねる表示では基準の動画を置かないので、横に並べたときだけ再生できる
@@ -398,8 +402,9 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     shotEdit && editEnvelope.state === 'ready'
       ? peakShot(editEnvelope.envelope, editSide.frames, editShot, editSide.clip)
       : null;
-  const editEarlier = shiftShot(editSide.frames, editShot, -1, editSide.clip);
-  const editLater = shiftShot(editSide.frames, editShot, 1, editSide.clip);
+  // 修正中でなければ計算しない（再生中は毎コマここを通るため）
+  const editEarlier = shotEdit ? shiftShot(editSide.frames, editShot, -1, editSide.clip) : editShot;
+  const editLater = shotEdit ? shiftShot(editSide.frames, editShot, 1, editSide.clip) : editShot;
   const savingShot = shotStatus === 'saving';
 
   // 音のグラフ：2 本分を、撃発が 0 になるようずらして重ねる
@@ -789,15 +794,23 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
       </div>
 
       <NumbersFold title={ja.compare.numbersTitle} testId="diff-numbers">
-        <p className="muted small num" data-testid="diff-times">
-          {ja.compare.tableTimes(timeLabel)}
-        </p>
-        {diffs ? (
-          <DiffTable diffs={diffs} testId="diff-table" />
-        ) : (
-          <p className="danger small" data-testid="diff-none">
-            {ja.metricTable.noPerson}
+        {playing ? (
+          <p className="muted small" data-testid="diff-playing">
+            {ja.compare.diffPlaying}
           </p>
+        ) : (
+          <>
+            <p className="muted small num" data-testid="diff-times">
+              {ja.compare.tableTimes(timeLabel)}
+            </p>
+            {diffs ? (
+              <DiffTable diffs={diffs} testId="diff-table" />
+            ) : (
+              <p className="danger small" data-testid="diff-none">
+                {ja.metricTable.noPerson}
+              </p>
+            )}
+          </>
         )}
       </NumbersFold>
     </>

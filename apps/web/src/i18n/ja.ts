@@ -372,6 +372,7 @@ export const ja = {
     backendBody: 'モデルが違うと角度が系統的にずれるため、差は参考になりません。',
     numbersTitle: '角度情報の表示',
     tableTimes: (sec: string) => `時点：${sec}`,
+    diffPlaying: '止めると、その時点の角度の差が出ます。',
     signNote:
       '差＝比較 − 基準。角度の＋は比較のほうが銃側へ傾く・上がる向き、比の＋は比較のほうが大きい',
     colBase: '基準',
