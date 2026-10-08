@@ -14,6 +14,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 import { hidePersonInScreenshots } from './hidePerson.mjs';
+import { pictureTools } from './picture.mjs';
+import { presentedTools } from './presented.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [browserName = 'webkit'] = process.argv.slice(2);
@@ -68,45 +70,22 @@ const videoState = (playerId) =>
     .locator(`[data-testid=${playerId}-stage] video`)
     .evaluate((v) => ({ t: v.currentTime, paused: v.paused, rate: v.playbackRate }));
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
+/** プレイヤーが表示中のコマ（番号と、そのコマの始まりの時刻） */
+const frameOf = async (playerId) => ({
+  index: Number(await tid(playerId).getAttribute('data-frame-index')),
+  sec: Number(await tid(playerId).getAttribute('data-frame-sec')),
+});
+/** 動画の時刻 t が、時刻 frameSec から始まるコマ（30 fps）の中にあるか（境目の誤差は少し許す） */
+const inFrame = (t, frameSec) => t >= frameSec - 0.002 && t < frameSec + 1 / 30 + 0.004;
 const shotPng = (name) =>
   page.screenshot({
     path: join(here, 'results', `save-${browserName}-${name}.png`),
     fullPage: true,
   });
-/** 骨格の線を隠して、動画の絵だけを撮る（画面に実際に出ている絵を確かめるため） */
-const pictureOf = async (playerId) => {
-  await page.addStyleTag({ content: '.stage-svg { visibility: hidden !important; }' });
-  const png = await page.locator(`[data-testid=${playerId}-stage]`).screenshot();
-  await page.evaluate(() => document.head.lastElementChild?.remove());
-  return png;
-};
-/** 撮った絵（PNG）を 64×64 に縮めた画素の並び。ブラウザの canvas で読む（Node に画像の部品を足さないため） */
-const pixelsOf = (png) =>
-  page.evaluate(async (b64) => {
-    const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
-    await img.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, 64, 64);
-    return Array.from(ctx.getImageData(0, 0, 64, 64).data);
-  }, png.toString('base64'));
-/** 絵の明るさの平均（0〜255） */
-const brightness = (px) => {
-  let sum = 0;
-  for (let i = 0; i < px.length; i += 4) sum += (px[i] + px[i + 1] + px[i + 2]) / 3;
-  return sum / (px.length / 4);
-};
-/** 2 枚の違い（画素の差の平均、0〜255） */
-const difference = (a, b) => {
-  let sum = 0;
-  for (let i = 0; i < a.length; i += 4)
-    sum +=
-      (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3;
-  return sum / (a.length / 4);
-};
+/** 画面に実際に出ている動画の絵を撮って比べる（picture.mjs） */
+const { pictureOf, pixelsOf, brightness, difference } = pictureTools(page);
+/** 再生中に実際に表示されたコマの時刻の記録（presented.mjs） */
+const presented = presentedTools(page);
 
 let fatal = null;
 const summary = {};
@@ -247,12 +226,12 @@ try {
   await slideTo('clip-player-bar', 0.5);
   await waitSettled('clip-player');
   await page.waitForTimeout(400);
-  const pic1 = await pixelsOf(await pictureOf('clip-player'));
+  const pic1 = await pixelsOf(await pictureOf('clip-player-stage'));
   // 4.9 秒では銃を下ろし始めているので、据銃中（0.5 秒）と絵が違う
   await slideTo('clip-player-bar', 4.9);
   await waitSettled('clip-player');
   await page.waitForTimeout(400);
-  const pic2 = await pixelsOf(await pictureOf('clip-player'));
+  const pic2 = await pixelsOf(await pictureOf('clip-player-stage'));
   check(
     '動画の絵が出ている（黒くない）',
     brightness(pic1) > 20 && brightness(pic2) > 20,
@@ -362,6 +341,50 @@ try {
     (await tid('form-summary').locator('strong').textContent()) === firstSummary,
     await tid('form-summary').locator('strong').textContent(),
   );
+  // 「再生 → 止める → 撃発ポイントを確定」とすると、止めたときに見えていたコマが撃発ポイントになる（最終-1）。
+  // 止めた直後の動画の時刻が、骨格・コマ番号のコマの中にあることと、確定した撃発ポイントがそのコマであることを確かめる
+  await tid('form-back').click();
+  await tid('shot-player').waitFor();
+  await waitSettled('shot-player');
+  const shotVideo = '[data-testid=shot-player-stage] video';
+  const recording = await presented.record(shotVideo);
+  await tid('shot-player-play').click();
+  await presented.waitPlaying(shotVideo);
+  await page.waitForTimeout(650);
+  await tid('shot-player-play').click();
+  await waitSettled('shot-player');
+  await page.waitForTimeout(300);
+  const pausedShot = await videoState('shot-player');
+  const pausedFrame = await frameOf('shot-player');
+  const seenSec = await presented.whilePlaying();
+  check(
+    '撃発の段階で止めると、止めた瞬間に見えていたコマ（止める直前に表示されたコマ）がそのまま選ばれる',
+    // コマの時刻は解析のときに同じ通知から記録したものだが、Chrome では 1 ミリ秒ほど違うことがあるので半コマまで許す
+    recording && seenSec !== null && near(seenSec, pausedFrame.sec, 1 / 60),
+    `見えていた ${seenSec} / 選ばれた コマ ${pausedFrame.index}（${pausedFrame.sec.toFixed(4)} 秒）`,
+  );
+  check(
+    '撃発の段階で止めると、動画の時刻が表示中のコマの中にある',
+    inFrame(pausedShot.t, pausedFrame.sec),
+    `t=${pausedShot.t.toFixed(4)} コマ ${pausedFrame.index}（${pausedFrame.sec.toFixed(4)} 秒〜）`,
+  );
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
+  const pausedSummary = await tid('form-summary').locator('strong').textContent();
+  check(
+    '止めたあとに確定すると、見えていたコマが撃発ポイントになる',
+    // 30 fps では小数 2 桁で隣のコマと区別できる（コマ番号の数え方は最終-25 で変わるので見ない）
+    pausedSummary.includes(`${pausedFrame.sec.toFixed(2)} 秒`),
+    `${pausedSummary}（コマ ${pausedFrame.index}、${pausedFrame.sec.toFixed(2)} 秒）`,
+  );
+  await tid('form-back').click();
+  await tid('shot-player').waitFor();
+  await waitSettled('shot-player');
+  await slideTo('shot-player-bar', loudest);
+  await waitSettled('shot-player');
+  // 音の最大のコマで確定し直し、保存の段階に戻しておく（この先の流れは保存の段階から始まる）
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   // 戻って 1 コマ前に直し、確定する
   await tid('form-back').click();
   await tid('shot-player').waitFor();
@@ -455,6 +478,28 @@ try {
   await tid('player-play').click();
   await page.waitForTimeout(500);
   check('止めると角度表が戻る', (await tid('player-table').count()) === 1);
+  // 再生中の画面の更新は、コマが変わるときだけ（最終-14）。1 倍で 1 秒間に、つまみの時刻が変わる回数を数える
+  await tid('player-rate-100').click();
+  await slideTo('player-bar', 1.5);
+  await waitSettled('player');
+  await tid('player-play').click();
+  await page.waitForTimeout(200);
+  const updates = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const el = document.querySelector('[data-testid=player-bar]');
+        let n = 0;
+        const observer = new MutationObserver((list) => (n += list.length));
+        observer.observe(el, { attributes: true, attributeFilter: ['data-value-sec'] });
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(n);
+        }, 1000);
+      }),
+  );
+  await tid('player-play').click();
+  await page.waitForTimeout(300);
+  check('再生中の時刻の更新は 1 秒にコマ数（30）以下', updates <= 33, `${updates} 回/秒`);
   // 繰り返し：範囲の終わり（4.0 秒）で先頭（1.0 秒）に戻って続く
   await tid('player-rate-100').click();
   await tid('player-loop').click();

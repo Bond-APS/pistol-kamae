@@ -101,6 +101,15 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
       onLoadedData={seekToTarget}
       onCanPlay={seekToTarget}
       onSeeked={seekToTarget}
+      // 止まったら必ず表示したい時刻へ移す。再生中は動画の進みに任せているので、止めた瞬間の絵と
+      // 骨格のコマは同じでも、再生位置はそのコマの中のどこかにある。表示したい時刻が止める前と
+      // 同じなら上の effect は動かないため、止まったこと自体に反応して、そのコマを確実に出す時刻へ
+      // 移す（最初の絵を出す「保険」で一瞬再生して止めたあとも、これで表示したい時刻へ移る）。
+      // 動画の末尾に達して止まった（ended）ときは動かさない。usePlayback が「末尾に達した」ことを
+      // 見て繰り返しの先頭へ戻すので、ここで動かすとその判定が消える
+      onPause={(e) => {
+        if (!e.currentTarget.ended) seekToTarget();
+      }}
       // 省データの設定などで、再生するまで最初のフレームを読まない端末への保険：
       // しばらく待っても読めなければ、一瞬だけ再生して読ませる（音は消してある）
       onLoadedMetadata={(e) => {

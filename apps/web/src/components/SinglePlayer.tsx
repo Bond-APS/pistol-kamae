@@ -76,7 +76,10 @@ export function SinglePlayer(props: Props) {
     endT: endSec,
     rate: transport?.rate ?? 1,
     loop: transport?.loop ?? false,
-    onTick: onChange,
+    // 再生中の時刻は、範囲の中のいちばん近いコマの時刻に丸めてから親へ渡す（表示されたコマの時刻が
+    // 取れないブラウザで、画面の更新のたびに親ごと描き直さないため。取れるときは既にコマの時刻）
+    onTick: (sec) =>
+      onChange(frames[nearestFrameInRange(frames, sec, startSec, endSec)]?.timeSec ?? sec),
   });
   useEffect(() => {
     onPlayingChange?.(playback.playing);
@@ -112,7 +115,12 @@ export function SinglePlayer(props: Props) {
   };
 
   return (
-    <div className="single-player" data-testid={props.testId} data-frame-index={index}>
+    <div
+      className="single-player"
+      data-testid={props.testId}
+      data-frame-index={index}
+      data-frame-sec={frames[index]?.timeSec}
+    >
       <CompareStage
         view={view}
         layers={[layer]}

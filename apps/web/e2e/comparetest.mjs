@@ -11,6 +11,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 import { hidePersonInScreenshots } from './hidePerson.mjs';
+import { pictureTools } from './picture.mjs';
+import { presentedTools } from './presented.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [browserName = 'webkit'] = process.argv.slice(2);
@@ -87,6 +89,23 @@ const compareIndexes = async () => ({
   base: Number(await tid('compare-time').getAttribute('data-base-index')),
   current: Number(await tid('compare-time').getAttribute('data-current-index')),
 });
+/** 2 本それぞれの表示中のコマ（番号と、そのコマの始まりの時刻） */
+const compareFrames = async () => {
+  const el = tid('compare-time');
+  const read = async (role) => ({
+    index: Number(await el.getAttribute(`data-${role}-index`)),
+    sec: Number(await el.getAttribute(`data-${role}-sec`)),
+  });
+  return { base: await read('base'), current: await read('current') };
+};
+/** 動画の時刻 t が、時刻 frameSec から始まるコマ（30 fps）の中にあるか（境目の誤差は少し許す） */
+const inFrame = (t, frameSec) => t >= frameSec - 0.002 && t < frameSec + 1 / 30 + 0.004;
+const { pictureOf, pixelsOf, difference } = pictureTools(page);
+const presented = presentedTools(page);
+const CURRENT_VIDEO = '[data-testid=stage-video-current]';
+/** 重ねた枠から、②比較の動画の絵だけを撮る（①基準の層と骨格を隠す） */
+const currentPicture = async () =>
+  pixelsOf(await pictureOf('still', ['[data-testid=stage-layer-base]']));
 
 /** 動画を 1 本保存する。clip を渡せば切り抜く。撃発は shotSec（省略すれば音の最大、音がなければ 2.0 秒） */
 async function saveVideo(path, title, { clip, shotSec } = {}) {
@@ -277,6 +296,124 @@ try {
       near(paused.base.t - a.shotSec - (paused.current.t - 2.0), 0, 0.08),
     `${JSON.stringify(paused)} idx=${JSON.stringify(atPause)}`,
   );
+  // 止めたとき、絵と骨格・コマ番号が同じコマになる（最終-1）。速さと止める時点を変えて何度か止め、そのたびに確かめる：
+  // ・2 本とも、動画の時刻が表示中のコマ（骨格のコマ）の中にある
+  // ・②比較（motion.mp4、動きあり）の止めた直後の絵が、同じコマへ明示的に動かし直した絵と一致し、前後のコマの絵よりそれに近い
+  // startT は再生を始める時点（撃発を 0 とした秒）。止める所が、②比較（motion.mp4）の 0.85〜1.05 秒
+  // （腕が大きく動いていて、隣り合うコマの絵の違いがはっきりしている区間）に当たるように選ぶ
+  const pauseTrials = [
+    { rate: 25, startT: -1.2, waitMs: 700 },
+    { rate: 25, startT: -1.2, waitMs: 530 },
+    { rate: 25, startT: -1.2, waitMs: 860 },
+    { rate: 100, startT: -1.45, waitMs: 450 },
+    { rate: 100, startT: -1.45, waitMs: 300 },
+    { rate: 100, startT: -1.45, waitMs: 380 },
+  ];
+  // ②比較の動画について、再生中に実際に表示されたコマの時刻を記録しておく
+  const recording = await presented.record(CURRENT_VIDEO);
+  const pauseResults = [];
+  for (const trial of pauseTrials) {
+    await tid(`compare-rate-${trial.rate}`).click();
+    await slideTo('compare-bar', trial.startT);
+    await waitBothReady();
+    await tid('compare-play').click();
+    await presented.waitPlaying(CURRENT_VIDEO);
+    await page.waitForTimeout(trial.waitMs);
+    await tid('compare-play').click();
+    await waitBothReady();
+    await page.waitForTimeout(250);
+    const videosAtPause = await stageVideos();
+    const framesAtPause = await compareFrames();
+    const seenSec = await presented.whilePlaying();
+    const atPausePic = await currentPicture();
+    await tid('compare-next').click();
+    await waitBothReady();
+    const nextPic = await currentPicture();
+    await tid('compare-prev').click();
+    await waitBothReady();
+    const samePic = await currentPicture();
+    await tid('compare-prev').click();
+    await waitBothReady();
+    const prevPic = await currentPicture();
+    pauseResults.push({
+      ...trial,
+      t: { base: videosAtPause.base.t, current: videosAtPause.current.t },
+      frames: framesAtPause,
+      seenSec,
+      // 止める直前に表示されていたコマが、そのまま選ばれている。コマの時刻は解析のときに同じ通知から記録した
+      // ものだが、Chrome では 1 ミリ秒ほど違うことがあるので、半コマ（1 コマずれの半分）まで許す
+      kept: seenSec !== null && Math.abs(seenSec - framesAtPause.current.sec) < 1 / 60,
+      inFrame: {
+        base: inFrame(videosAtPause.base.t, framesAtPause.base.sec),
+        current: inFrame(videosAtPause.current.t, framesAtPause.current.sec),
+      },
+      diff: {
+        same: difference(atPausePic, samePic),
+        next: difference(atPausePic, nextPic),
+        prev: difference(atPausePic, prevPic),
+        neighbors: difference(samePic, nextPic),
+      },
+    });
+  }
+  summary.pauseResults = pauseResults;
+  const pauseLine = (r) =>
+    `${r.rate}%:${r.waitMs}ms t②=${r.t.current.toFixed(3)}/コマ${r.frames.current.index}(${r.frames.current.sec.toFixed(3)}) ` +
+    `t①=${r.t.base.toFixed(3)}/コマ${r.frames.base.index}(${r.frames.base.sec.toFixed(3)}) ` +
+    `見えていた②=${r.seenSec === null ? 'なし' : r.seenSec.toFixed(3)} ` +
+    `絵: 同${r.diff.same.toFixed(2)} 次${r.diff.next.toFixed(2)} 前${r.diff.prev.toFixed(2)} 隣${r.diff.neighbors.toFixed(2)}`;
+  check(
+    '止めた瞬間に見えていたコマ（止める直前に表示された②のコマ）が、そのまま選ばれる',
+    recording && pauseResults.every((r) => r.kept),
+    recording ? pauseResults.map(pauseLine).join(' | ') : '表示されたコマの通知が使えない',
+  );
+  check(
+    '止めるたびに、2 本とも動画の時刻が表示中のコマの中にある',
+    pauseResults.every((r) => r.inFrame.base && r.inFrame.current),
+    pauseResults
+      .filter((r) => !(r.inFrame.base && r.inFrame.current))
+      .map(pauseLine)
+      .join(' | '),
+  );
+  check(
+    '止めた直後の②の絵が、同じコマへ動かし直した絵と一致し、前後のコマの絵より近い',
+    pauseResults.every(
+      (r) => r.diff.same <= 1.0 && r.diff.same < r.diff.next && r.diff.same < r.diff.prev,
+    ),
+    pauseResults.map(pauseLine).join(' | '),
+  );
+  check(
+    '（検査の前提）止めた所で、隣り合うコマの絵が見分けられる',
+    pauseResults.every((r) => r.diff.neighbors > 0.5),
+    pauseResults.map((r) => r.diff.neighbors.toFixed(2)).join(', '),
+  );
+  // 再生中に「押している間は基準だけ」にして②を透明にしても、②の表示コマの時刻は進み続ける
+  // （透明にした動画からも表示の通知が来ることの確認。来なければ①の骨格が止まってしまう）
+  await tid('compare-rate-100').click();
+  await slideTo('compare-bar', -1.2);
+  await waitBothReady();
+  await tid('compare-play').click();
+  await presented.waitPlaying(CURRENT_VIDEO);
+  const stageBox = await tid('still').boundingBox();
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  const holdSec1 = Number(await tid('compare-time').getAttribute('data-current-sec'));
+  const holdState = {
+    holding: await tid('compare-overlay').getAttribute('data-holding'),
+    opacity: await tid('stage-layer-current').evaluate((el) => getComputedStyle(el).opacity),
+  };
+  await page.waitForTimeout(400);
+  const holdSec2 = Number(await tid('compare-time').getAttribute('data-current-sec'));
+  await page.mouse.up();
+  await tid('compare-play').click();
+  await waitBothReady();
+  check(
+    '押している間（②が透明）も、再生中の②の表示コマは進む',
+    holdState.holding === 'true' && holdState.opacity === '0' && holdSec2 > holdSec1 + 0.2,
+    `${JSON.stringify(holdState)} ${holdSec1.toFixed(3)} → ${holdSec2.toFixed(3)}`,
+  );
+  await tid('compare-rate-25').click();
+
   // 繰り返し：区間の終わりで先頭に戻る
   await tid('compare-rate-100').click();
   await tid('compare-loop').click();

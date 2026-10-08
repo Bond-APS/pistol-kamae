@@ -5,7 +5,7 @@
 //  2. 使えない・呼ばれない場合（未対応ブラウザ、ページが非表示のとき）は、フレームを
 //     小さな画像に縮めて前のフレームと見比べ、「絵が変わったか」で新しいフレームと判定する。
 
-type VideoWithFrameCallback = HTMLVideoElement & {
+export type VideoWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback?: (
     callback: (now: number, metadata: { mediaTime: number }) => void,
   ) => number;

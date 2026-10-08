@@ -537,6 +537,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
         data-testid="compare-time"
         data-base-index={baseIndex}
         data-current-index={currentIndex}
+        data-base-sec={b.frames[baseIndex]?.timeSec}
+        data-current-sec={c.frames[currentIndex]?.timeSec}
       >
         {timeLabel}
       </p>
