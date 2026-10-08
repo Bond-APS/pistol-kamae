@@ -95,6 +95,58 @@ try {
 
   check('入口は 2 つ（動画の保存・ライブラリ）', (await page.locator('.tab').count()) === 2);
   const stepOf = () => tid('save-screen').getAttribute('data-step');
+  /**
+   * 静止画の撮影（最終-3）を確かめるための細工：ページ側で video の currentTime の書き込み（シーク）を、
+   * 指定した回数だけ順に横取りする。drop＝書き込まない（完了の通知が来ない）、delay＝1.2 秒遅らせる、
+   * shift＝1 コマ後へ着ける。指定を使い切ると元に戻る
+   */
+  const patchSeek = (modes) =>
+    page.evaluate((queue) => {
+      const proto = HTMLMediaElement.prototype;
+      const original = Object.getOwnPropertyDescriptor(proto, 'currentTime');
+      const restore = () => Object.defineProperty(proto, 'currentTime', original);
+      window.__seekPatch = { queue: [...queue], restore };
+      Object.defineProperty(proto, 'currentTime', {
+        configurable: true,
+        get: original.get,
+        set(value) {
+          const m = window.__seekPatch.queue.shift();
+          if (window.__seekPatch.queue.length === 0) restore();
+          if (m === 'drop') return;
+          if (m === 'delay') {
+            setTimeout(() => original.set.call(this, value), 1200);
+            return;
+          }
+          original.set.call(this, value + 1 / 30);
+        },
+      });
+    }, modes);
+  /** 細工が使われずに残っていたら元に戻す */
+  const unpatchSeek = () =>
+    page.evaluate(() => {
+      const patch = window.__seekPatch;
+      if (patch && patch.queue.length > 0) patch.restore();
+      window.__seekPatch = undefined;
+    });
+  /** 「撃発ポイントを確定」のあと、失敗の案内が出る（failed）か、保存の段階へ進む（form）かを待つ */
+  const captureOutcome = async () => {
+    const handle = await page.waitForFunction(
+      () => {
+        if (document.querySelector('[data-testid=shot-capture-failed]')) return 'failed';
+        if (document.querySelector('[data-testid=form-summary]')) return 'form';
+        return false;
+      },
+      null,
+      { timeout: 10_000 },
+    );
+    return handle.jsonValue();
+  };
+  /** 保存の段階から撃発の段階へ戻り、落ち着くのを待つ */
+  const backToShot = async () => {
+    await tid('form-back').click();
+    await tid('shot-player').waitFor();
+    await waitSettled('shot-player');
+  };
   check(
     '手順は 5 段階（射手・動画・切り抜き・撃発・保存）',
     (await tid('steps').locator('li').allTextContents()).join('|') ===
@@ -385,6 +437,108 @@ try {
   // 音の最大のコマで確定し直し、保存の段階に戻しておく（この先の流れは保存の段階から始まる）
   await tid('shot-set').click();
   await tid('form-summary').waitFor({ timeout: 15_000 });
+
+  // 静止画は必ず撃発のコマから作られる（最終-3）。シークに細工をして確かめる
+  // 確定済みの撃発ポイントと同じコマで押すと撮影を省略して進むので、細工の前に 1 コマ動かして必ず撮影させる
+  const moveOneFrame = async () => {
+    await tid('shot-player-prev').click();
+    await waitSettled('shot-player');
+  };
+  // (a) シークの完了の通知が来ない → 時間切れ（3 秒）は失敗として案内し、保存の段階へ進まない
+  await backToShot();
+  await moveOneFrame();
+  await patchSeek(['drop']);
+  await tid('shot-set').click();
+  const dropOutcome = await captureOutcome();
+  await unpatchSeek();
+  check(
+    'シークが終わらないときは「静止画を作れませんでした」と出て、保存の段階へ進まない',
+    dropOutcome === 'failed' && (await stepOf()) === 'shot',
+    dropOutcome,
+  );
+  if ((await stepOf()) === 'shot') {
+    // もう一度押すと撮れる
+    await tid('shot-set').click();
+    await tid('form-summary').waitFor({ timeout: 15_000 });
+    check('失敗のあと、もう一度押すと撮れて保存の段階へ進む', true);
+  }
+  // (b) シークを 1.2 秒遅らせる → 撮っている間は、バー・◀ ▶・再生が押せず、ボタンの表示が変わる
+  await backToShot();
+  await moveOneFrame();
+  await patchSeek(['delay']);
+  await tid('shot-set').click();
+  await page.waitForTimeout(400);
+  const duringCapture = {
+    button: await tid('shot-set').textContent(),
+    bar: await tid('shot-player-bar-slider').isDisabled(),
+    prev: await tid('shot-player-prev').isDisabled(),
+    next: await tid('shot-player-next').isDisabled(),
+    play: await tid('shot-player-play').isDisabled(),
+  };
+  const delayOutcome = await captureOutcome();
+  await unpatchSeek();
+  check(
+    '静止画を作っている間は、バー・◀ ▶・再生が押せず、ボタンが「静止画を作っています…」',
+    duringCapture.button === '静止画を作っています…' &&
+      duringCapture.bar &&
+      duringCapture.prev &&
+      duringCapture.next &&
+      duringCapture.play &&
+      delayOutcome === 'form',
+    `${JSON.stringify(duringCapture)} → ${delayOutcome}`,
+  );
+  if ((await stepOf()) === 'shot') {
+    await tid('shot-set').click();
+    await tid('form-summary').waitFor({ timeout: 15_000 });
+  }
+  // (c) シークが狙いと別のコマ（1 コマ後）に着く → 失敗にする（写真だけ別のコマの記録を作らない）。
+  // 画面側は着いたコマがずれていると直しのシークをするので、それも 1 回だけ無効にして、別のコマが出たままにする
+  await backToShot();
+  await moveOneFrame();
+  await patchSeek(['shift', 'drop']);
+  await tid('shot-set').click();
+  const shiftOutcome = await captureOutcome();
+  await unpatchSeek();
+  check(
+    'シークが別のコマに着いたときは失敗として案内する（写真だけ別のコマにならない）',
+    shiftOutcome === 'failed' && (await stepOf()) === 'shot',
+    shiftOutcome,
+  );
+  if ((await stepOf()) === 'shot') {
+    await tid('shot-set').click();
+    await tid('form-summary').waitFor({ timeout: 15_000 });
+  }
+  // (d) 再生中は「撃発ポイントを確定」が押せず、案内が出る。止めると押せる
+  await backToShot();
+  await tid('shot-player-play').click();
+  await presented.waitPlaying(shotVideo);
+  // 画面の「再生中」の状態は、再生の開始から少し遅れて反映されるので、案内が出るのを待ってから読む
+  await tid('shot-stop-note')
+    .waitFor({ timeout: 3000 })
+    .catch(() => {});
+  const whilePlaying = {
+    setDisabled: await tid('shot-set').isDisabled(),
+    note: (await tid('shot-stop-note').count()) === 1,
+  };
+  await tid('shot-player-play').click();
+  await waitSettled('shot-player');
+  await tid('shot-stop-note')
+    .waitFor({ state: 'detached', timeout: 3000 })
+    .catch(() => {});
+  const afterPause = {
+    setDisabled: await tid('shot-set').isDisabled(),
+    note: (await tid('shot-stop-note').count()) === 1,
+  };
+  check(
+    '再生中は「撃発ポイントを確定」が押せず「止めると確定できます」の案内。止めると押せる',
+    whilePlaying.setDisabled && whilePlaying.note && !afterPause.setDisabled && !afterPause.note,
+    `再生中 ${JSON.stringify(whilePlaying)} 停止後 ${JSON.stringify(afterPause)}`,
+  );
+  // 音の最大のコマで確定し直し、保存の段階へ
+  await slideTo('shot-player-bar', loudest);
+  await waitSettled('shot-player');
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
   // 戻って 1 コマ前に直し、確定する
   await tid('form-back').click();
   await tid('shot-player').waitFor();
@@ -532,6 +686,29 @@ try {
   await tid('detail-fix-shot').click();
   await tid('record-player').waitFor();
   await waitSettled('player');
+  // 再生中は「撃発ポイントを確定」が押せず、止めると押せる（保存の流れと同じ）
+  await tid('player-play').click();
+  await presented.waitPlaying('[data-testid=player-stage] video');
+  await tid('shot-stop-note')
+    .waitFor({ timeout: 3000 })
+    .catch(() => {});
+  const fixWhilePlaying = {
+    setDisabled: await tid('shot-set').isDisabled(),
+    note: (await tid('shot-stop-note').count()) === 1,
+  };
+  await tid('player-play').click();
+  await waitSettled('player');
+  await tid('shot-stop-note')
+    .waitFor({ state: 'detached', timeout: 3000 })
+    .catch(() => {});
+  check(
+    '撃発ポイントの修正でも、再生中は確定が押せず案内が出る。止めると押せる',
+    fixWhilePlaying.setDisabled &&
+      fixWhilePlaying.note &&
+      !(await tid('shot-set').isDisabled()) &&
+      (await tid('shot-stop-note').count()) === 0,
+    JSON.stringify(fixWhilePlaying),
+  );
   await tid('player-next').click();
   await tid('player-next').click();
   await waitSettled('player');

@@ -85,6 +85,8 @@ export function SaveScreen(props: Props) {
   const [images, setImages] = useState<RecordImages | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [captureFailed, setCaptureFailed] = useState(false);
+  /** 撃発の段階のプレイヤーが再生中か。再生中は撃発ポイントを確定できない（コマが動いている間に撮らない） */
+  const [playing, setPlaying] = useState(false);
   const [clipProblem, setClipProblem] = useState<'shotOutsideClip' | 'invalidClip' | null>(null);
   const [saved, setSaved] = useState<{
     recordId: number;
@@ -238,12 +240,18 @@ export function SaveScreen(props: Props) {
   };
   const setShotHere = async () => {
     const video = playerVideoRef.current;
-    if (!video || capturing || !shotInClip) return;
+    // 再生中は撮らない。playing（画面の状態）は再生の開始から少し遅れて立つので、video 自体も見る
+    if (!video || capturing || playing || !video.paused || !shotInClip) return;
     // 確定済みの撃発ポイントと同じコマなら、撮り直さずに保存へ進む（保存の段階から戻ってきたとき）
     if (shotSec !== null && images && frameSec === shotSec) {
       setStep('form');
       return;
     }
+    // つまみをこのコマに固定してから撮る。音の最大に置かれたまま触らずに確定した場合に、撮っている間に
+    // 音のグラフの計算が終わってつまみが音の最大へ移ったり、保存の段階から戻ったときに切り抜きのときの
+    // 位置へ飛んだりしないように
+    setValueSec(frameSec);
+    setTouched(true);
     setCapturing(true);
     setCaptureFailed(false);
     try {
@@ -252,10 +260,6 @@ export function SaveScreen(props: Props) {
       const captured = await captureShotImages(video, result, sec);
       setShotSec(sec);
       setImages(captured);
-      // つまみも確定したコマに合わせる（音の最大に置かれたまま触らずに確定した場合、
-      // 保存の段階から戻ったときに、つまみが切り抜きのときの位置へ飛ばないように）
-      setValueSec(sec);
-      setTouched(true);
       // 確定したら、自動で保存の段階へ進む（2026-10-04、開発者の指示）。撮っている間に撃発の段階を離れていたら進めない
       setStep((s) => (s === 'shot' ? 'form' : s));
     } catch {
@@ -382,17 +386,25 @@ export function SaveScreen(props: Props) {
             pointer="arrow"
             timeLabel={timeLabel}
             onVideo={onVideo}
+            onPlayingChange={setPlaying}
             active={props.active}
+            // 撮っている間は動画を動かされたくないので、バーと ◀ ▶・再生を止める
+            disabled={capturing}
             testId="shot-player"
           />
           <button
             className="primary full"
             data-testid="shot-set"
-            disabled={capturing || !shotInClip}
+            disabled={capturing || playing || !shotInClip}
             onClick={() => void setShotHere()}
           >
             {capturing ? ja.shot.capturing : ja.shot.set}
           </button>
+          {playing && (
+            <p className="muted small" data-testid="shot-stop-note">
+              {ja.shot.stopToSet}
+            </p>
+          )}
           {captureFailed && (
             <p className="danger small" data-testid="shot-capture-failed">
               {ja.shot.captureFailed}

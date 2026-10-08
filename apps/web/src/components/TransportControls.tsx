@@ -20,18 +20,21 @@ interface Props {
   canNext: boolean;
   canPlay?: boolean;
   transport?: Transport;
+  /** すべての操作を止める（静止画を作っている間など） */
+  disabled?: boolean;
   testId: string;
 }
 
 /** ◀1 コマ／▶ 再生／1 コマ▶ と、速さ・繰り返し（渡されたとき） */
 export function TransportControls(props: Props) {
   const { playing, transport } = props;
+  const disabled = props.disabled === true;
   return (
     <>
       <div className="row nowrap transport">
         <button
           data-testid={`${props.testId}-prev`}
-          disabled={!props.canPrev}
+          disabled={disabled || !props.canPrev}
           onClick={props.onPrev}
         >
           {ja.player.prevFrame}
@@ -39,14 +42,14 @@ export function TransportControls(props: Props) {
         <button
           className="primary grow"
           data-testid={`${props.testId}-play`}
-          disabled={props.canPlay === false}
+          disabled={disabled || props.canPlay === false}
           onClick={playing ? props.onPause : props.onPlay}
         >
           {playing ? ja.player.pause : ja.player.play}
         </button>
         <button
           data-testid={`${props.testId}-next`}
-          disabled={!props.canNext}
+          disabled={disabled || !props.canNext}
           onClick={props.onNext}
         >
           {ja.player.nextFrame}
@@ -60,6 +63,7 @@ export function TransportControls(props: Props) {
                 key={r}
                 data-testid={`${props.testId}-rate-${r * 100}`}
                 aria-pressed={transport.rate === r}
+                disabled={disabled}
                 onClick={() => transport.onRate(r)}
               >
                 {ja.player.rate(r)}
@@ -70,6 +74,7 @@ export function TransportControls(props: Props) {
             className="chip"
             data-testid={`${props.testId}-loop`}
             aria-pressed={transport.loop}
+            disabled={disabled}
             onClick={() => transport.onLoop(!transport.loop)}
           >
             {ja.player.loop}

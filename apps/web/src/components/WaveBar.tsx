@@ -51,6 +51,8 @@ interface Props {
   startLabel: string;
   endLabel: string;
   ariaLabel: string;
+  /** つまみ・取っ手の操作を止める（静止画を作っている間など） */
+  disabled?: boolean;
   testId: string;
 }
 
@@ -106,6 +108,7 @@ const WaveLine = memo(function WaveLine(props: {
  */
 export function WaveBar(props: Props) {
   const { startSec, endSec, valueSec, stepSec, onChange, waves, markers, handles } = props;
+  const disabled = props.disabled === true;
   const span = Math.max(endSec - startSec, stepSec);
   const pct = (sec: number) => `${(((sec - startSec) / span) * 100).toFixed(3)}%`;
   const trackRef = useRef<HTMLDivElement>(null);
@@ -131,7 +134,7 @@ export function WaveBar(props: Props) {
     }
   };
   const beginDrag = (which: 'start' | 'end') => (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!handles) return;
+    if (!handles || disabled) return;
     drag.current = { which, pointerId: e.pointerId };
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -146,7 +149,7 @@ export function WaveBar(props: Props) {
   };
   /** 矢印キーで 1 コマずつ動かす（キーボードや読み上げの利用者向け） */
   const keyHandle = (which: 'start' | 'end') => (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!handles) return;
+    if (!handles || disabled) return;
     const delta = e.key === 'ArrowLeft' ? -stepSec : e.key === 'ArrowRight' ? stepSec : 0;
     if (delta === 0) return;
     e.preventDefault();
@@ -210,7 +213,10 @@ export function WaveBar(props: Props) {
           max={endSec}
           step={stepSec}
           value={Math.min(Math.max(valueSec, startSec), endSec)}
-          onChange={(e) => onChange(Number(e.target.value))}
+          disabled={disabled}
+          onChange={(e) => {
+            if (!disabled) onChange(Number(e.target.value));
+          }}
         />
       </div>
       {/* 取っ手はつまみと重ならないよう、バーの下の別の段に置く */}
@@ -229,6 +235,7 @@ export function WaveBar(props: Props) {
                 aria-valuemax={endSec}
                 aria-valuenow={sec}
                 aria-valuetext={ja.player.secLabel(sec)}
+                aria-disabled={disabled}
                 data-testid={`${props.testId}-handle-${which}`}
                 style={{ left: pct(sec) }}
                 onPointerDown={beginDrag(which)}

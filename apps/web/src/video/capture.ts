@@ -12,8 +12,10 @@ const STILL_MAX_SIDE = 1280;
 /** 一覧用の小さい静止画の幅（画素）。表示は 60px 幅なので、高精細な画面でも足りる大きさ */
 const THUMB_WIDTH = 180;
 const JPEG_QUALITY = 0.85;
-/** シークの完了を待つ上限。隠れたタブなどで完了の通知が来ないときに、待ち続けないため */
+/** シークの完了を待つ上限。隠れたタブなどで完了の通知が来ないときに、待ち続けないため。過ぎたら失敗にする */
 const SEEK_TIMEOUT_MS = 3000;
+/** 表示されたコマの時刻と、記録したコマの時刻のずれの許容（秒）。Chrome では通知の時刻が記録と 1 ミリ秒ほど違うことがある */
+const FRAME_TIME_TOLERANCE_SEC = 0.004;
 
 function toJpeg(canvas: HTMLCanvasElement): Promise<StoredImage> {
   return new Promise((resolve, reject) => {
@@ -59,6 +61,9 @@ function drawToJpeg(
 /**
  * 動画を撃発フレームへ移動し、その絵から静止画（全体）と一覧用の小さい静止画（人物を切り抜き）を作る。
  * 動画は撃発フレームを表示したままになる。
+ * 撃発フレームの絵が出ていると確かめられないとき（シークの時間切れ、絵が読めていない、別のコマが出ている）は
+ * 失敗にする。そのとき出ている絵を撮ると、撃発ポイントと骨格は正しいのに写真だけ別のコマ、という記録を
+ * 黙って作ってしまうため。呼び出し側は失敗を案内し、もう一度押してもらう
  */
 export async function captureShotImages(
   video: HTMLVideoElement,
@@ -70,10 +75,21 @@ export async function captureShotImages(
   if (!frame) throw new Error('shot frame not found');
 
   video.pause();
-  await Promise.race([
-    seekTo(video, seekTimeForFrame(result.frames, index, result.fps)),
-    new Promise((resolve) => setTimeout(resolve, SEEK_TIMEOUT_MS)),
-  ]);
+  const seek = await seekTo(video, seekTimeForFrame(result.frames, index, result.fps), {
+    timeoutMs: SEEK_TIMEOUT_MS,
+  });
+  if (video.readyState < 2) throw new Error('video frame not available');
+  // 表示されたコマの時刻が取れたとき（実際にシークが起きて新しいコマが出たとき）は、狙ったコマが出ている
+  // ことを確かめ、画面側のシークなどで別のコマが出ていたら失敗にする。すでにそのコマが出ていてシークが
+  // 省略されたときは通知が来ないので、確かめずに撮る（出ているのはそのコマ）。
+  // 照合は「記録したコマの区間 [このコマの時刻, 次のコマの時刻) に入っているか」。記録にない実コマが間に
+  // ある動画（コマの間隔が一定でないなど）でも、同じ区間なら同じ絵とみなす
+  const next = result.frames[index + 1];
+  const shownSec = seek.timeSec;
+  const inFrame =
+    shownSec >= frame.timeSec - FRAME_TIME_TOLERANCE_SEC &&
+    (!next || shownSec < next.timeSec - FRAME_TIME_TOLERANCE_SEC);
+  if (seek.exact && !inFrame) throw new Error('a different frame is displayed');
 
   const size = { width: result.width, height: result.height };
   const whole: Rect = { x: 0, y: 0, ...size };

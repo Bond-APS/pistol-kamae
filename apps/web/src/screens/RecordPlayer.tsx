@@ -111,7 +111,8 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
 
   const fixShot = async () => {
     const v = playerVideoRef.current;
-    if (!v || busy) return;
+    // 再生中は撮らない。playing（画面の状態）は再生の開始から少し遅れて立つので、video 自体も見る
+    if (!v || busy || playing || !v.paused) return;
     setBusy(true);
     setStatus('none');
     try {
@@ -205,6 +206,8 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
           onVideo={onVideo}
           onPlayingChange={setPlaying}
           active={active ?? true}
+          // 撃発の静止画を撮っている間は動画を動かされたくないので、操作を止める（範囲の保存中は止めない）
+          disabled={busy && mode === 'shot'}
           testId="player"
         >
           {mode === 'clip' && (
@@ -242,14 +245,21 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
       )}
 
       {mode === 'shot' && video.state === 'ready' && (
-        <button
-          className="primary full"
-          data-testid="shot-set"
-          disabled={busy || !clipContains(record.clip, durationSec, frameSec)}
-          onClick={() => void fixShot()}
-        >
-          {busy ? ja.shot.capturing : ja.shot.set}
-        </button>
+        <>
+          <button
+            className="primary full"
+            data-testid="shot-set"
+            disabled={busy || playing || !clipContains(record.clip, durationSec, frameSec)}
+            onClick={() => void fixShot()}
+          >
+            {busy ? ja.shot.capturing : ja.shot.set}
+          </button>
+          {playing && (
+            <p className="muted small" data-testid="shot-stop-note">
+              {ja.shot.stopToSet}
+            </p>
+          )}
+        </>
       )}
       {mode === 'clip' && video.state === 'ready' && (
         <>

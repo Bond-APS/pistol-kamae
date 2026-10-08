@@ -113,6 +113,7 @@ export const ja = {
     fixTitle: '撃発ポイントの修正',
     capturing: '静止画を作っています…',
     captureFailed: '！ 静止画を作れませんでした。もう一度押してください。',
+    stopToSet: '再生を止めると、撃発ポイントを確定できます。',
   },
   shooter: {
     label: '射手',

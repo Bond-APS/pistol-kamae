@@ -40,6 +40,8 @@ interface Props {
   onPlayingChange?: (playing: boolean) => void;
   /** 画面に出ているか。別のタブへ移って隠れたら再生を止める */
   active?: boolean;
+  /** バー・取っ手・◀ ▶・再生のすべてを止める（静止画を作っている間など、動画を動かされたくないとき） */
+  disabled?: boolean;
   testId: string;
   /** バーと操作の間に出すもの */
   children?: ReactNode;
@@ -90,8 +92,10 @@ export function SinglePlayer(props: Props) {
     if (!active) pausePlayback();
   }, [active, pausePlayback]);
 
+  const disabled = props.disabled === true;
   const clamp = (sec: number) => Math.min(Math.max(sec, startSec), endSec);
   const select = (sec: number) => {
+    if (disabled) return;
     if (playback.playing) playback.pause();
     onChange(clamp(sec));
   };
@@ -154,17 +158,21 @@ export function SinglePlayer(props: Props) {
         startLabel={ja.player.secLabel(startSec)}
         endLabel={ja.player.secLabel(endSec)}
         ariaLabel={ja.player.slider}
+        disabled={disabled}
         testId={`${props.testId}-bar`}
       />
       <TransportControls
         playing={playback.playing}
-        onPlay={() => playback.play()}
+        onPlay={() => {
+          if (!disabled) playback.play();
+        }}
         onPause={playback.pause}
         onPrev={() => step(-1)}
         onNext={() => step(1)}
         canPrev={index > range.first}
         canNext={index < range.last}
         canPlay={endSec - startSec >= stepSec}
+        disabled={disabled}
         {...(transport ? { transport } : {})}
         testId={props.testId}
       />
