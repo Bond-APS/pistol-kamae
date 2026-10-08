@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { FrameSignature, frameRateFromChangeTimes, snapFrameRate } from './seek';
+import {
+  FrameSignature,
+  frameRateFromChangeTimes,
+  seekTo,
+  SeekTimeoutError,
+  snapFrameRate,
+} from './seek';
 
 describe('snapFrameRate', () => {
   it('よくある fps に近ければ丸める', () => {
@@ -43,5 +49,64 @@ describe('FrameSignature.same', () => {
     expect(FrameSignature.same(a, new Uint8ClampedArray([1, 2, 3]))).toBe(true);
     expect(FrameSignature.same(a, new Uint8ClampedArray([1, 2, 4]))).toBe(false);
     expect(FrameSignature.same(null, a)).toBe(false);
+  });
+});
+
+describe('seekTo', () => {
+  /** seeked を自分では起こさない模擬の video。登録された待ち（イベントの購読）の種類を数える */
+  class FakeVideo extends EventTarget {
+    currentTime = 0;
+    readonly listening = new Set<string>();
+    override addEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: AddEventListenerOptions | boolean,
+    ): void {
+      this.listening.add(type);
+      super.addEventListener(type, listener, options);
+    }
+    override removeEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: EventListenerOptions | boolean,
+    ): void {
+      this.listening.delete(type);
+      super.removeEventListener(type, listener, options);
+    }
+  }
+  const asVideo = (v: FakeVideo) => v as unknown as HTMLVideoElement;
+
+  it('時間内に seeked が来れば、そのときの時刻を返し、待ちを解除する', async () => {
+    const video = new FakeVideo();
+    const promise = seekTo(asVideo(video), 1.5, { settleMs: 5, timeoutMs: 1000 });
+    expect(video.currentTime).toBe(1.5);
+    video.dispatchEvent(new Event('seeked'));
+    await expect(promise).resolves.toEqual({ timeSec: 1.5, exact: false });
+    expect(video.listening.size).toBe(0);
+  });
+  it('seeked が来たあとは、猶予の間に上限が来ても時間切れにしない', async () => {
+    const video = new FakeVideo();
+    const promise = seekTo(asVideo(video), 1.5, { settleMs: 40, timeoutMs: 20 });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    video.dispatchEvent(new Event('seeked'));
+    await expect(promise).resolves.toEqual({ timeSec: 1.5, exact: false });
+    expect(video.listening.size).toBe(0);
+  });
+  it('時間切れは SeekTimeoutError で失敗にし、待ちを解除する', async () => {
+    const video = new FakeVideo();
+    const promise = seekTo(asVideo(video), 1.5, { timeoutMs: 20 });
+    await expect(promise).rejects.toBeInstanceOf(SeekTimeoutError);
+    expect(video.listening.size).toBe(0);
+  });
+  it('上限を指定しなければ待ち続ける（これまでどおり）', async () => {
+    const video = new FakeVideo();
+    let settled = false;
+    const mark = () => {
+      settled = true;
+    };
+    void seekTo(asVideo(video), 1.5, { settleMs: 5 }).then(mark, mark);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(settled).toBe(false);
+    expect(video.listening.size).toBe(2);
   });
 });

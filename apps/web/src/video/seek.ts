@@ -23,42 +23,64 @@ export interface SeekResult {
   exact: boolean;
 }
 
-/**
- * 指定時刻へシークし、表示されたフレームの時刻を返す。
- * @param settleMs seeked の後、フレーム時刻の通知を待つ上限（ミリ秒）
- */
+/** シークが時間内に終わらなかったときの失敗。呼び出し側で、ほかの失敗と見分けるために使う */
+export class SeekTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`seek did not finish within ${timeoutMs} ms`);
+    this.name = 'SeekTimeoutError';
+  }
+}
+
+export interface SeekOptions {
+  /** seeked の後、フレーム時刻の通知を待つ上限（ミリ秒）。既定 60 */
+  settleMs?: number;
+  /**
+   * シークの完了を待つ上限（ミリ秒）。過ぎたら SeekTimeoutError で失敗にし、待ちを解除する。
+   * 省略すると待ち続ける（隠れたタブなどでは完了の通知が来ないことがある）
+   */
+  timeoutMs?: number;
+}
+
+/** 指定時刻へシークし、表示されたフレームの時刻を返す */
 export function seekTo(
   video: HTMLVideoElement,
   timeSec: number,
-  settleMs = 60,
+  options: SeekOptions = {},
 ): Promise<SeekResult> {
+  const { settleMs = 60, timeoutMs } = options;
   const v = video as VideoWithFrameCallback;
   return new Promise((resolve, reject) => {
     let seeked = false;
     let done = false;
     let handle: number | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let limit: ReturnType<typeof setTimeout> | undefined;
 
-    const finish = (result: SeekResult) => {
-      if (done) return;
+    /** 待ちをすべて解除する。結果を返す前に 1 回だけ通る（2 回目以降は false） */
+    const settle = (): boolean => {
+      if (done) return false;
       done = true;
       if (timer !== undefined) clearTimeout(timer);
+      if (limit !== undefined) clearTimeout(limit);
       if (handle !== undefined) v.cancelVideoFrameCallback?.(handle);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
-      resolve(result);
+      return true;
+    };
+    const finish = (result: SeekResult) => {
+      if (settle()) resolve(result);
+    };
+    const fail = (error: Error) => {
+      if (settle()) reject(error);
     };
     const onSeeked = () => {
       seeked = true;
+      // シーク自体は終わったので、時間切れの対象から外す（猶予の間に時間切れにならないように）
+      if (limit !== undefined) clearTimeout(limit);
       // フレーム時刻の通知が少し遅れて来ることがあるので、短い猶予を置く
       timer = setTimeout(() => finish({ timeSec: video.currentTime, exact: false }), settleMs);
     };
-    const onError = () => {
-      if (done) return;
-      done = true;
-      video.removeEventListener('seeked', onSeeked);
-      reject(new Error('video error during seek'));
-    };
+    const onError = () => fail(new Error('video error during seek'));
 
     if (v.requestVideoFrameCallback) {
       const onFrame = (_: number, meta: { mediaTime: number }) => {
@@ -73,7 +95,14 @@ export function seekTo(
     }
     video.addEventListener('seeked', onSeeked, { once: true });
     video.addEventListener('error', onError, { once: true });
-    video.currentTime = timeSec;
+    if (timeoutMs !== undefined) {
+      limit = setTimeout(() => fail(new SeekTimeoutError(timeoutMs)), timeoutMs);
+    }
+    try {
+      video.currentTime = timeSec;
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }
 
@@ -90,7 +119,7 @@ export class SeekSession {
   seek(video: HTMLVideoElement, timeSec: number): Promise<SeekResult> {
     const settle = this.exactSeen || this.attempts < this.probeCount ? this.settleMs : 0;
     this.attempts++;
-    return seekTo(video, timeSec, settle).then((r) => {
+    return seekTo(video, timeSec, { settleMs: settle }).then((r) => {
       if (r.exact) this.exactSeen = true;
       return r;
     });
