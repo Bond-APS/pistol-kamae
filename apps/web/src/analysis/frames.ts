@@ -33,7 +33,30 @@ export function snapToFrame(frames: ReadonlyArray<LandmarkFrame>, timeSec: numbe
   return frames[nearestFrameIndex(frames, timeSec)]?.timeSec ?? timeSec;
 }
 
-/** 範囲 [startSec, endSec] に入るコマの番号の最初と最後。範囲にコマがなければ、いちばん近い 1 コマ */
+/**
+ * timeSec 以上（orAfter なら timeSec より後）の時刻を持つ最初のコマの番号（なければ frames.length）。
+ * 二分探索（並んだデータを半分ずつ絞って探す）
+ */
+function firstFrameFrom(
+  frames: ReadonlyArray<LandmarkFrame>,
+  timeSec: number,
+  orAfter = false,
+): number {
+  let lo = 0;
+  let hi = frames.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const t = frames[mid]!.timeSec;
+    if (orAfter ? t <= timeSec : t < timeSec) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * 範囲 [startSec, endSec] に入るコマの番号の最初と最後。範囲にコマがなければ、いちばん近い 1 コマ。
+ * 再生中にコマごとに呼ばれるので、先頭から順に数えずに二分探索で求める（コマ数が増えても速さが変わらない）
+ */
 export function frameRange(
   frames: ReadonlyArray<LandmarkFrame>,
   startSec: number,
@@ -41,10 +64,10 @@ export function frameRange(
 ): { first: number; last: number } {
   // 境目の丸めで外れないよう、ごくわずかの余裕を持たせる
   const eps = 1e-6;
-  let first = frames.findIndex((f) => f.timeSec >= startSec - eps);
-  if (first < 0) first = frames.length - 1;
-  let last = first;
-  while (last + 1 < frames.length && frames[last + 1]!.timeSec <= endSec + eps) last++;
+  let first = firstFrameFrom(frames, startSec - eps);
+  if (first >= frames.length) first = frames.length - 1;
+  // endSec + eps 以下の最後のコマ。first より手前にはしない（範囲にコマがないとき）
+  const last = Math.max(firstFrameFrom(frames, endSec + eps, true) - 1, first);
   return { first, last };
 }
 
