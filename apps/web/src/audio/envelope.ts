@@ -63,12 +63,12 @@ function decode(ctx: DecodeContext, bytes: ArrayBuffer): Promise<AudioBuffer> {
 }
 
 /**
- * 動画ファイルのバイト列から包絡線を作る。音声がない・読めないときは null（例外は投げない）。
- * 30 秒の動画で 1 秒かからない。
+ * 動画ファイル（File・Blob）またはそのバイト列から包絡線を作る。音声がない・読めないときは null（例外は投げない）。
+ * ファイルを渡すと、必要な部分（箱の表と音声の実体）だけを読み、動画全体はメモリに載せない。30 秒の動画で 1 秒かからない。
  */
-export async function computeEnvelope(file: ArrayBuffer): Promise<AudioEnvelope | null> {
+export async function computeEnvelope(file: ArrayBuffer | Blob): Promise<AudioEnvelope | null> {
   try {
-    const audio = extractAacAudio(file);
+    const audio = await extractAacAudio(file);
     if (!audio) return null;
     const ctx = decodeContext(audio.sampleRate);
     // decodeAudioData は渡したバッファを取り込んで使えなくすることがあるので、複製を渡す

@@ -3,7 +3,8 @@
 // Safari の音声取り出し（decodeAudioData）は QuickTime 形式（MOV）の入れ物を読めないが、
 // 取り出した AAC（ADTS）なら読める（2026-10-03、本物の Safari で確認）。Chrome も同じ道で読む。
 // 動画の入れ物（ISO BMFF）は「箱」の入れ子で、音声の位置は moov → trak → mdia → minf → stbl の表にある。
-// すべて端末の中で済み、ネットワークには出さない。
+// 動画ファイルを丸ごとメモリに載せず、箱の表（moov）と音声の実体（かたまりごと）だけを部分的に読む
+// （200 MB の動画でも、読むのは表が数 MB と音声が数 MB）。すべて端末の中で済み、ネットワークには出さない。
 
 const SAMPLE_RATES = [
   96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
@@ -16,6 +17,25 @@ interface Box {
   /** 箱の中身（ヘッダを除く）の始まりと終わり（ファイル先頭からのバイト位置） */
   start: number;
   end: number;
+}
+
+/**
+ * 読む相手。動画ファイル（File・Blob）なら slice で必要な範囲だけ読み、バイト列なら切り出す。
+ * read は [start, end) のバイト列を返す
+ */
+export interface ByteSource {
+  size: number;
+  read(start: number, end: number): Promise<ArrayBuffer>;
+}
+
+export function byteSource(input: ArrayBuffer | Blob): ByteSource {
+  if (input instanceof ArrayBuffer) {
+    return {
+      size: input.byteLength,
+      read: (start, end) => Promise.resolve(input.slice(start, end)),
+    };
+  }
+  return { size: input.size, read: (start, end) => input.slice(start, end).arrayBuffer() };
 }
 
 /** 取り出した音声 */
@@ -80,6 +100,18 @@ const fullBody = (box: Box): number => box.start + 4;
  * ページごと落ちる（例外にならないので try/catch では防げない）
  */
 const MAX_TABLE_ENTRIES = 1_000_000;
+/** 箱の表（moov）の大きさの上限。これより大きい表は壊れているとみなす（10 分の動画でも数 MB） */
+const MOOV_MAX_BYTES = 64 * 1024 * 1024;
+/** 取り出す音声の合計の上限（256 kbps の AAC で約 35 分）。これを超える音声はグラフにしない */
+const MAX_AUDIO_BYTES = 64 * 1024 * 1024;
+/** ファイルの先頭から順に見る箱の数の上限（ftyp・free・mdat・moov など、通常は数個） */
+const MAX_TOP_BOXES = 64;
+/**
+ * 音声の実体を読むときの、1 回で読む範囲の上限。音声のかたまりは動画のかたまりと交互に並ぶので、
+ * 近いかたまり（間の動画が小さいとき）はまとめて 1 回で読む。iPhone の動画は 0.5 秒ごとに 1 かたまりで
+ * 間が大きいため、ほぼかたまりごとに読む（30 秒で 50〜70 回、合計 1 MB 未満。2026-10-10 に実測）
+ */
+const READ_SPAN_MAX = 256 * 1024;
 
 /**
  * 箱の中の表の個数を読む。箱に入りきらない個数（壊れたファイル）や上限超えは null
@@ -258,15 +290,46 @@ function editOffsetSec(
   return offset;
 }
 
+/** 箱の表（moov）から読み取った、音声の取り出しの手順。実体はまだ読んでいない */
+interface AudioPlan {
+  cfg: AacConfig;
+  offsetSec: number;
+  sampleRate: number;
+  channels: number;
+  /** かたまりごとの、ファイル先頭からの位置と、その中のサンプルの大きさ（連続して並ぶ） */
+  chunks: { at: number; sizes: number[] }[];
+  /** サンプルの数 */
+  sampleCount: number;
+}
+
+/** ファイルの先頭から箱を順に見て、moov の中身の位置（ファイル先頭からのバイト位置）を探す */
+async function findMoov(src: ByteSource): Promise<Box | null> {
+  let at = 0;
+  for (let i = 0; i < MAX_TOP_BOXES && at + 8 <= src.size; i++) {
+    const head = new DataView(await src.read(at, Math.min(at + 16, src.size)));
+    let size = head.getUint32(0);
+    const type = ascii(head, 4);
+    let header = 8;
+    if (size === 1) {
+      if (head.byteLength < 16) return null;
+      size = head.getUint32(8) * 2 ** 32 + head.getUint32(12);
+      header = 16;
+    } else if (size === 0) {
+      size = src.size - at;
+    }
+    if (size < header || at + size > src.size) return null;
+    if (type === 'moov') return { type, start: at + header, end: at + size };
+    at += size;
+  }
+  return null;
+}
+
 /**
- * 動画ファイルから音声（AAC）を取り出す。音声がない、または AAC でない・形が読めないときは null。
- * 入力は読み込んだファイルのバイト列そのもの（コピーしない）。
+ * 箱の表（moov の中身）から、音声（AAC）の取り出しの手順を作る。音声がない、または AAC でない・形が読めないときは null。
+ * view は moov の中身だけのバイト列。かたまりの位置（stco）はファイル先頭からの位置なので、fileBytes と照らす
  */
-export function extractAacAudio(file: ArrayBuffer): ExtractedAudio | null {
-  const view = new DataView(file);
-  const top: Box = { type: '', start: 0, end: file.byteLength };
-  const moov = child(view, top, 'moov');
-  if (!moov) return null;
+function planAudio(view: DataView, fileBytes: number): AudioPlan | null {
+  const moov: Box = { type: 'moov', start: 0, end: view.byteLength };
   const mvhd = child(view, moov, 'mvhd');
   const movieTimescale = mvhd
     ? view.getUint32(fullBody(mvhd) + (view.getUint8(mvhd.start) === 1 ? 16 : 8))
@@ -302,28 +365,26 @@ export function extractAacAudio(file: ArrayBuffer): ExtractedAudio | null {
     const stsc = child(view, stbl, 'stsc');
     const offsets = chunkOffsets(view, stbl);
     if (!stsz || !stsc || !offsets) continue;
-    const sizes = sampleSizes(view, stsz, file.byteLength);
+    const sizes = sampleSizes(view, stsz, fileBytes);
     const perChunk = sizes && samplesPerChunk(view, stsc, offsets.length);
     if (!sizes || !perChunk) continue;
 
     // 音声の中身はすべてファイルの中にあるはずなので、大きさの合計がファイルより大きければ壊れている
     // （一律でない大きさは 1 つ 4 GB まで書けるため、ここで抑えないと出力の入れ物がファイルに左右される）
     const payload = sizes.reduce((s, n) => s + n, 0);
-    if (payload > file.byteLength) continue;
-    const total = payload + 7 * sizes.length;
-    const adts = new Uint8Array(total);
-    let out = 0;
+    if (payload > fileBytes || payload > MAX_AUDIO_BYTES) continue;
+    const chunks: AudioPlan['chunks'] = [];
     let sample = 0;
     for (let c = 0; c < offsets.length && sample < sizes.length; c++) {
       let at = offsets[c]!;
+      const chunk = { at, sizes: [] as number[] };
       for (let i = 0; i < perChunk[c]! && sample < sizes.length; i++, sample++) {
         const size = sizes[sample]!;
-        if (size > MAX_AAC_FRAME_BYTES || at + size > file.byteLength) return null;
-        adtsHeader(cfg, size, adts, out);
-        adts.set(new Uint8Array(file, at, size), out + 7);
-        out += 7 + size;
+        if (size > MAX_AAC_FRAME_BYTES || at + size > fileBytes) return null;
+        chunk.sizes.push(size);
         at += size;
       }
+      if (chunk.sizes.length > 0) chunks.push(chunk);
     }
     if (sample !== sizes.length) return null;
 
@@ -332,11 +393,66 @@ export function extractAacAudio(file: ArrayBuffer): ExtractedAudio | null {
       ? view.getUint32(fullBody(mdhd) + (view.getUint8(mdhd.start) === 1 ? 16 : 8))
       : SAMPLE_RATES[cfg.rateIndex]!;
     return {
-      adts: adts.subarray(0, out),
+      cfg,
       offsetSec: editOffsetSec(view, trak, movieTimescale, mediaTimescale),
       sampleRate: SAMPLE_RATES[cfg.rateIndex]!,
       channels: cfg.channels,
+      chunks,
+      sampleCount: sizes.length,
     };
   }
   return null;
+}
+
+/**
+ * 動画ファイルから音声（AAC）を取り出す。音声がない、または AAC でない・形が読めないときは null。
+ * 読むのは、箱の表（moov）と音声の実体（かたまりごと）だけ。ファイル全体はメモリに載せない。
+ * 箱の表が moov の端で切れている壊れたファイルでは、表の読み取りが例外（RangeError）になることがある
+ * （computeEnvelope の try/catch が受けて null にする）
+ */
+export async function extractAacAudioFrom(src: ByteSource): Promise<ExtractedAudio | null> {
+  const moov = await findMoov(src);
+  if (!moov || moov.end - moov.start > MOOV_MAX_BYTES) return null;
+  const plan = planAudio(new DataView(await src.read(moov.start, moov.end)), src.size);
+  if (!plan) return null;
+  const payload = plan.chunks.reduce((s, c) => s + c.sizes.reduce((t, n) => t + n, 0), 0);
+  const adts = new Uint8Array(payload + 7 * plan.sampleCount);
+  let out = 0;
+  const endOf = (c: AudioPlan['chunks'][number]) => c.at + c.sizes.reduce((s, n) => s + n, 0);
+  // 近いかたまり（範囲が READ_SPAN_MAX に収まる、位置が増えていく並び）はまとめて 1 回で読む
+  for (let i = 0; i < plan.chunks.length;) {
+    const first = plan.chunks[i]!;
+    let last = i;
+    while (
+      last + 1 < plan.chunks.length &&
+      plan.chunks[last + 1]!.at >= endOf(plan.chunks[last]!) &&
+      endOf(plan.chunks[last + 1]!) - first.at <= READ_SPAN_MAX
+    )
+      last++;
+    const start = first.at;
+    const bytes = new Uint8Array(await src.read(start, endOf(plan.chunks[last]!)));
+    for (let c = i; c <= last; c++) {
+      const chunk = plan.chunks[c]!;
+      let at = chunk.at - start;
+      for (const size of chunk.sizes) {
+        if (at + size > bytes.byteLength) return null;
+        adtsHeader(plan.cfg, size, adts, out);
+        adts.set(bytes.subarray(at, at + size), out + 7);
+        out += 7 + size;
+        at += size;
+      }
+    }
+    i = last + 1;
+  }
+  return {
+    adts: adts.subarray(0, out),
+    offsetSec: plan.offsetSec,
+    sampleRate: plan.sampleRate,
+    channels: plan.channels,
+  };
+}
+
+/** 動画ファイル（File・Blob）またはそのバイト列から音声（AAC）を取り出す。読めないときは null */
+export function extractAacAudio(input: ArrayBuffer | Blob): Promise<ExtractedAudio | null> {
+  return extractAacAudioFrom(byteSource(input));
 }
