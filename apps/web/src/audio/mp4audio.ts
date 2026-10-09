@@ -8,6 +8,8 @@
 const SAMPLE_RATES = [
   96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
 ];
+/** ADTS のヘッダに書けるフレーム長は 13 ビット（ヘッダ 7 バイトを含めて 8191）。これより大きいサンプルは AAC ではありえない */
+const MAX_AAC_FRAME_BYTES = 8191 - 7;
 
 interface Box {
   type: string;
@@ -71,6 +73,23 @@ function path(view: DataView, box: Box, ...types: string[]): Box | null {
 
 /** 「full box」（版と旗の 4 バイトが先頭に付く箱）の中身の始まり */
 const fullBody = (box: Box): number => box.start + 4;
+
+/**
+ * 表の個数の絶対の上限。96 kHz の AAC（1 フレーム 1024 標本）で約 3 時間分。
+ * 壊れたファイルの個数（32 ビット、最大約 43 億）を信じて配列や出力の入れ物を作ると、メモリを使い果たして
+ * ページごと落ちる（例外にならないので try/catch では防げない）
+ */
+const MAX_TABLE_ENTRIES = 1_000_000;
+
+/**
+ * 箱の中の表の個数を読む。箱に入りきらない個数（壊れたファイル）や上限超えは null
+ * @param at 個数が書かれている位置。表の中身はその直後から entryBytes × 個数
+ */
+function tableCount(view: DataView, at: number, box: Box, entryBytes: number): number | null {
+  const count = view.getUint32(at);
+  if (count > MAX_TABLE_ENTRIES || at + 4 + count * entryBytes > box.end) return null;
+  return count;
+}
 
 /** MPEG-4 の記述子の長さ（1〜4 バイト、上位ビットが続きの印） */
 function descriptorLength(view: DataView, at: number): { length: number; next: number } {
@@ -137,43 +156,58 @@ function adtsHeader(cfg: AacConfig, payloadLength: number, out: Uint8Array, at: 
   out[at + 6] = 0xfc;
 }
 
-/** サンプルの大きさの表（stsz） */
-function sampleSizes(view: DataView, stsz: Box): number[] {
+/** サンプルの大きさの表（stsz）。個数が妥当でなければ null（壊れたファイル） */
+function sampleSizes(view: DataView, stsz: Box, fileBytes: number): number[] | null {
   const at = fullBody(stsz);
   const uniform = view.getUint32(at);
-  const count = view.getUint32(at + 4);
+  if (uniform !== 0) {
+    // 大きさが一律：中身がファイルに収まる個数まで（表そのものはないので、箱の大きさでは測れない）
+    const count = view.getUint32(at + 4);
+    if (count > MAX_TABLE_ENTRIES || count * uniform > fileBytes) return null;
+    return new Array<number>(count).fill(uniform);
+  }
+  const count = tableCount(view, at + 4, stsz, 4);
+  if (count === null) return null;
   const sizes: number[] = new Array(count);
-  for (let i = 0; i < count; i++)
-    sizes[i] = uniform !== 0 ? uniform : view.getUint32(at + 8 + i * 4);
+  for (let i = 0; i < count; i++) sizes[i] = view.getUint32(at + 8 + i * 4);
   return sizes;
 }
 
-/** かたまり（chunk）の位置の表（stco / co64） */
+/** かたまり（chunk）の位置の表（stco / co64）。表がない、または個数が妥当でなければ null */
 function chunkOffsets(view: DataView, stbl: Box): number[] | null {
   const stco = child(view, stbl, 'stco');
   if (stco) {
     const at = fullBody(stco);
-    const count = view.getUint32(at);
+    const count = tableCount(view, at, stco, 4);
+    if (count === null) return null;
     return Array.from({ length: count }, (_, i) => view.getUint32(at + 4 + i * 4));
   }
   const co64 = child(view, stbl, 'co64');
   if (!co64) return null;
   const at = fullBody(co64);
-  const count = view.getUint32(at);
+  const count = tableCount(view, at, co64, 8);
+  if (count === null) return null;
   return Array.from(
     { length: count },
     (_, i) => view.getUint32(at + 4 + i * 8) * 2 ** 32 + view.getUint32(at + 8 + i * 8),
   );
 }
 
-/** かたまりごとのサンプル数の表（stsc）を、かたまり番号 → サンプル数 に展開する */
-function samplesPerChunk(view: DataView, stsc: Box, chunkCount: number): number[] {
+/** かたまりごとのサンプル数の表（stsc）を、かたまり番号 → サンプル数 に展開する。個数が妥当でなければ null */
+function samplesPerChunk(view: DataView, stsc: Box, chunkCount: number): number[] | null {
   const at = fullBody(stsc);
-  const count = view.getUint32(at);
+  const count = tableCount(view, at, stsc, 12);
+  if (count === null) return null;
   const entries = Array.from({ length: count }, (_, i) => ({
     first: view.getUint32(at + 4 + i * 12), // 1 始まり
     samples: view.getUint32(at + 8 + i * 12),
   }));
+  // 規格どおり、かたまり番号は 1 以上で厳密に増えていること。そうでないファイルは壊れている
+  // （検査しないと、下の展開のループが「かたまり数 × 項目数」になり、細工したファイルで固まる）
+  for (let e = 0; e < entries.length; e++) {
+    const first = entries[e]!.first;
+    if (first < 1 || (e > 0 && first <= entries[e - 1]!.first)) return null;
+  }
   const result: number[] = new Array(chunkCount).fill(0);
   for (let e = 0; e < entries.length; e++) {
     const from = entries[e]!.first - 1;
@@ -197,7 +231,9 @@ function editOffsetSec(
   if (!elst) return 0;
   const version = view.getUint8(elst.start);
   let at = fullBody(elst);
-  const count = view.getUint32(at);
+  // 個数は箱に入る分までしか信じない（壊れたファイルで箱の外を読まない）
+  const entryBytes = version === 1 ? 20 : 12;
+  const count = Math.min(view.getUint32(at), Math.floor((elst.end - (at + 4)) / entryBytes));
   at += 4;
   let offset = 0;
   for (let i = 0; i < count; i++) {
@@ -266,10 +302,15 @@ export function extractAacAudio(file: ArrayBuffer): ExtractedAudio | null {
     const stsc = child(view, stbl, 'stsc');
     const offsets = chunkOffsets(view, stbl);
     if (!stsz || !stsc || !offsets) continue;
-    const sizes = sampleSizes(view, stsz);
-    const perChunk = samplesPerChunk(view, stsc, offsets.length);
+    const sizes = sampleSizes(view, stsz, file.byteLength);
+    const perChunk = sizes && samplesPerChunk(view, stsc, offsets.length);
+    if (!sizes || !perChunk) continue;
 
-    const total = sizes.reduce((s, n) => s + n + 7, 0);
+    // 音声の中身はすべてファイルの中にあるはずなので、大きさの合計がファイルより大きければ壊れている
+    // （一律でない大きさは 1 つ 4 GB まで書けるため、ここで抑えないと出力の入れ物がファイルに左右される）
+    const payload = sizes.reduce((s, n) => s + n, 0);
+    if (payload > file.byteLength) continue;
+    const total = payload + 7 * sizes.length;
     const adts = new Uint8Array(total);
     let out = 0;
     let sample = 0;
@@ -277,7 +318,7 @@ export function extractAacAudio(file: ArrayBuffer): ExtractedAudio | null {
       let at = offsets[c]!;
       for (let i = 0; i < perChunk[c]! && sample < sizes.length; i++, sample++) {
         const size = sizes[sample]!;
-        if (at + size > file.byteLength) return null;
+        if (size > MAX_AAC_FRAME_BYTES || at + size > file.byteLength) return null;
         adtsHeader(cfg, size, adts, out);
         adts.set(new Uint8Array(file, at, size), out + 7);
         out += 7 + size;
