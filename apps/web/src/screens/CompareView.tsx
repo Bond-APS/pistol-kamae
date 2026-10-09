@@ -34,7 +34,7 @@ import { TransportControls } from '../components/TransportControls';
 import { useRecordVideoUrl } from '../components/useRecordVideoUrl';
 import { WaveBar, type WaveSeries } from '../components/WaveBar';
 import { SHOT_EDIT_SPAN_SEC, peakShot, shiftShot, shotFrameDelta } from '../compare/shotEdit';
-import { overwriteRecordMarksAll, updateRecordClip, type OpenedRecord } from '../db/library';
+import { overwriteRecordMarksAll, updateRecordClipAll, type OpenedRecord } from '../db/library';
 import { ja } from '../i18n/ja';
 import { captureShotImages } from '../video/capture';
 import { usePlayback, type PlaybackVideo } from '../video/usePlayback';
@@ -231,7 +231,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     }
     setClipStatus('saving');
     try {
-      for (const { side, clip } of clips) await updateRecordClip(side.recordId, clip);
+      // 2 件を 1 つのトランザクションで書く（片方だけ書き換わった状態を残さない）
+      await updateRecordClipAll(clips.map(({ side, clip }) => ({ id: side.recordId, clip })));
       setClipEdit(null);
       setClipStatus('none');
       onRecordsChanged(sides.map((side) => side.recordId));

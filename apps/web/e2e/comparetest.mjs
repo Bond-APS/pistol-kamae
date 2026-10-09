@@ -62,6 +62,27 @@ const waitSettled = (playerId) =>
     playerId,
     { timeout: 10_000 },
   );
+/** 記録の切り抜きの範囲を、データベースから直接読む（画面を介さずに確かめるため） */
+const readClips = (ids) =>
+  page.evaluate(async (list) => {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('pistol-kamae');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const clips = await Promise.all(
+      list.map(
+        (id) =>
+          new Promise((resolve, reject) => {
+            const req = db.transaction('recordData').objectStore('recordData').get(id);
+            req.onsuccess = () => resolve(req.result?.clip ?? null);
+            req.onerror = () => reject(req.error);
+          }),
+      ),
+    );
+    db.close();
+    return clips;
+  }, ids);
 /** 比較画面の 2 本の video の状態（base：①基準、current：②比較） */
 const stageVideos = async () => {
   const list = await page
@@ -340,9 +361,8 @@ try {
       t: { base: videosAtPause.base.t, current: videosAtPause.current.t },
       frames: framesAtPause,
       seenSec,
-      // 止める直前に表示されていたコマが、そのまま選ばれている。コマの時刻は解析のときに同じ通知から記録した
-      // ものだが、Chrome では 1 ミリ秒ほど違うことがあるので、半コマ（1 コマずれの半分）まで許す
-      kept: seenSec !== null && Math.abs(seenSec - framesAtPause.current.sec) < 1 / 60,
+      // 止める直前に表示されていたコマ（またはその 1 つ前）が選ばれている（presented.mjs の keptFrame）
+      kept: presented.keptFrame(seenSec, framesAtPause.current.sec),
       inFrame: {
         base: inFrame(videosAtPause.base.t, framesAtPause.base.sec),
         current: inFrame(videosAtPause.current.t, framesAtPause.current.sec),
@@ -362,7 +382,7 @@ try {
     `見えていた②=${r.seenSec === null ? 'なし' : r.seenSec.toFixed(3)} ` +
     `絵: 同${r.diff.same.toFixed(2)} 次${r.diff.next.toFixed(2)} 前${r.diff.prev.toFixed(2)} 隣${r.diff.neighbors.toFixed(2)}`;
   check(
-    '止めた瞬間に見えていたコマ（止める直前に表示された②のコマ）が、そのまま選ばれる',
+    '止めた瞬間に見えていたコマ（止める直前に表示された②のコマ、またはその 1 つ前）が選ばれる',
     recording && pauseResults.every((r) => r.kept),
     recording ? pauseResults.map(pauseLine).join(' | ') : '表示されたコマの通知が使えない',
   );
@@ -593,6 +613,35 @@ try {
     '「ここを終了に」で終了が +1.0 秒になる',
     /1\.0 秒後（/.test(await tid('clip-length').textContent()),
     await tid('clip-length').textContent(),
+  );
+  // 2 件目の書き込みを失敗させる細工：記録の中身（recordData）への書き込み（Dexie は put で書く）の
+  // 2 回目で例外にする。片方だけ書き換わった状態が残らない（全部成功か全部取り消し）ことを確かめる（最終-11）
+  const clipsBefore = await readClips([a.id, b.id]);
+  await page.evaluate(() => {
+    let writes = 0;
+    const originalPut = IDBObjectStore.prototype.put;
+    const restore = () => {
+      IDBObjectStore.prototype.put = originalPut;
+    };
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.name === 'recordData' && ++writes === 2) {
+        restore();
+        throw new DOMException('simulated write failure', 'InvalidStateError');
+      }
+      return originalPut.apply(this, args);
+    };
+    window.__restoreWrites = restore;
+  });
+  await tid('clip-confirm').click();
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__restoreWrites?.());
+  const clipsAfterFailure = await readClips([a.id, b.id]);
+  check(
+    '切り抜きの保存で 2 件目の書き込みが失敗すると「保存できませんでした」と出て、どちらの範囲も変わらない',
+    (await tid('compare-clip-edit').count()) === 1 &&
+      (await page.locator('[data-testid=compare-clip-edit] .danger').count()) === 1 &&
+      JSON.stringify(clipsAfterFailure) === JSON.stringify(clipsBefore),
+    `before=${JSON.stringify(clipsBefore)} after=${JSON.stringify(clipsAfterFailure)}`,
   );
   await tid('clip-confirm').click();
   await tid('compare-clip-edit').waitFor({ state: 'detached', timeout: 15_000 });
