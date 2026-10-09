@@ -15,13 +15,13 @@ import { StoredImg } from '../components/StoredImg';
 import {
   deleteRecord,
   hasRecordVideo,
-  openRecord,
+  openRecordResult,
   setRecordFavorite,
   updateRecordFields,
   type OpenedRecord,
   type RecordFields,
 } from '../db/library';
-import type { ShooterRow } from '../db/schema';
+import type { RecordRow, ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import { personCrop } from '../library/crop';
 import { RecordPlayer, type PlayerMode } from './RecordPlayer';
@@ -39,7 +39,15 @@ interface Props {
   onDeleted: (id: number) => void;
 }
 
-type State = { kind: 'loading' } | { kind: 'notFound' } | { kind: 'open'; opened: OpenedRecord };
+type State =
+  | { kind: 'loading' }
+  | { kind: 'open'; opened: OpenedRecord }
+  /** 見出しの行がない（削除済みなど） */
+  | { kind: 'missing' }
+  /** 中身が壊れている・形式が合わない（削除はできる） */
+  | { kind: 'invalid'; row: RecordRow }
+  /** 読み出しに失敗した（一時的な問題かもしれないので、削除は勧めない） */
+  | { kind: 'readFailed' };
 
 /**
  * ライブラリから開いた 1 本の動画。撃発の瞬間の静止画＋骨格、情報、編集・修正・再生・削除。
@@ -67,9 +75,13 @@ export function RecordDetail(props: Props) {
 
   const reload = useCallback(
     () =>
-      openRecord(recordId).then(
-        (opened) => setState(opened ? { kind: 'open', opened } : { kind: 'notFound' }),
-        () => setState({ kind: 'notFound' }),
+      openRecordResult(recordId).then(
+        (result) => {
+          if (result.kind === 'open') setState({ kind: 'open', opened: result.opened });
+          else if (result.kind === 'missing') setState({ kind: 'missing' });
+          else setState({ kind: 'invalid', row: result.row });
+        },
+        () => setState({ kind: 'readFailed' }),
       ),
     [recordId],
   );
@@ -103,8 +115,77 @@ export function RecordDetail(props: Props) {
       </section>
     );
   }
+  /** 削除の対象（開けた記録か、形が合わない記録の見出し）。読み出しの失敗では削除を勧めない */
+  const removeTarget: RecordRow | null =
+    state.kind === 'open' ? state.opened.row : state.kind === 'invalid' ? state.row : null;
+  const remove = async () => {
+    if (!removeTarget) return;
+    setRemoveBusy(true);
+    setRemoveFailed(false);
+    try {
+      await deleteRecord(removeTarget.id);
+      forgetEnvelope(removeTarget.id);
+      onDeleted(removeTarget.id);
+    } catch {
+      setRemoveFailed(true);
+      setRemoveBusy(false);
+    }
+  };
+  // 削除の確認の窓（開けた記録も、形が合わない記録も同じ窓を通す）
+  const removeDialog = removing && removeTarget && (
+    <ConfirmDialog
+      title={ja.library.removeTitle}
+      confirmLabel={ja.library.removeConfirm}
+      destructive
+      busy={removeBusy}
+      onConfirm={() => void remove()}
+      onCancel={() => setRemoving(false)}
+      testId="remove-dialog"
+    >
+      <div className="dialog-target">
+        <StoredImg image={removeTarget.thumb} className="thumb" alt="" />
+        <p className="small num">{removeTarget.title}</p>
+      </div>
+      <p className="small">{ja.library.removeBody}</p>
+      {removeFailed && <p className="danger small">{ja.library.removeFailed}</p>}
+    </ConfirmDialog>
+  );
+
+  if (state.kind === 'readFailed') {
+    // 一時的な失敗かもしれないので、読み直しだけを勧める（削除のボタンは出さない）
+    return (
+      <section>
+        {back}
+        <div className="notice err" data-testid="detail-read-failed">
+          <strong>{ja.library.readFailed}</strong>
+          <p className="small">{ja.library.readFailedBody}</p>
+        </div>
+        <div className="row">
+          <button
+            data-testid="detail-retry"
+            onClick={() => {
+              setState({ kind: 'loading' });
+              void reload();
+            }}
+          >
+            {ja.library.retry}
+          </button>
+        </div>
+      </section>
+    );
+  }
+  if (state.kind === 'missing') {
+    return (
+      <section>
+        {back}
+        <div className="notice err" data-testid="detail-missing">
+          <strong>{ja.library.missing}</strong>
+        </div>
+      </section>
+    );
+  }
   if (!opened) {
-    // 開けない記録（形式が壊れているなど）も、削除だけはできるようにしておく
+    // 形が合わない記録（中身が壊れている、古すぎるなど）は、削除だけはできるようにしておく。削除は通常と同じ確認の窓を通す
     return (
       <section>
         {back}
@@ -116,10 +197,11 @@ export function RecordDetail(props: Props) {
         <button
           className="danger full"
           data-testid="detail-remove"
-          onClick={() => void deleteRecord(recordId).then(() => onDeleted(recordId))}
+          onClick={() => setRemoving(true)}
         >
           {ja.library.remove}
         </button>
+        {removeDialog}
       </section>
     );
   }
@@ -160,19 +242,6 @@ export function RecordDetail(props: Props) {
     setEditing(false);
     onChanged(row.id);
   };
-  const remove = async () => {
-    setRemoveBusy(true);
-    setRemoveFailed(false);
-    try {
-      await deleteRecord(row.id);
-      forgetEnvelope(row.id);
-      onDeleted(row.id);
-    } catch {
-      setRemoveFailed(true);
-      setRemoveBusy(false);
-    }
-  };
-
   return (
     <section data-testid="record-detail" data-record-id={row.id}>
       {back}
@@ -318,24 +387,7 @@ export function RecordDetail(props: Props) {
         </Dialog>
       )}
 
-      {removing && (
-        <ConfirmDialog
-          title={ja.library.removeTitle}
-          confirmLabel={ja.library.removeConfirm}
-          destructive
-          busy={removeBusy}
-          onConfirm={() => void remove()}
-          onCancel={() => setRemoving(false)}
-          testId="remove-dialog"
-        >
-          <div className="dialog-target">
-            <StoredImg image={row.thumb} className="thumb" alt="" />
-            <p className="small num">{row.title}</p>
-          </div>
-          <p className="small">{ja.library.removeBody}</p>
-          {removeFailed && <p className="danger small">{ja.library.removeFailed}</p>}
-        </ConfirmDialog>
-      )}
+      {removeDialog}
     </section>
   );
 }

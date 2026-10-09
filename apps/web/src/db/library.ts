@@ -3,23 +3,23 @@
 import {
   RECORD_FORMAT_VERSION,
   checkClip,
-  checkShotRecord,
   clipDurationSec,
   shotMarkOf,
   type Clip,
   type Handedness,
   type Mark,
   type RecordAnalysis,
-  type ShotRecord,
 } from '@pistol-kamae/engine';
+import { buildOpenedRecord, type OpenRecordResult, type OpenedRecord } from './openRecord';
 import {
   db,
   type RecordAudioRow,
-  type RecordDataRow,
   type RecordRow,
   type ShooterRow,
   type StoredImage,
 } from './schema';
+
+export { toShotRecord, type OpenRecordResult, type OpenedRecord } from './openRecord';
 
 const LAST_SHOOTER_KEY = 'lastShooterId';
 const COMPARE_PAIR_KEY = 'comparePair';
@@ -200,6 +200,15 @@ export async function updateRecordClip(id: number, clip: Clip | null): Promise<v
   });
 }
 
+/** 複数の記録の切り抜きの範囲を、まとめて差し替える（全部成功するか、どれも書き換わらないか） */
+export async function updateRecordClipAll(
+  items: ReadonlyArray<{ id: number; clip: Clip | null }>,
+): Promise<void> {
+  await db.transaction('rw', db.records, db.recordData, async () => {
+    for (const item of items) await updateRecordClip(item.id, item.clip);
+  });
+}
+
 export async function updateRecordFields(id: number, fields: RecordFields): Promise<void> {
   await db.records.update(id, { ...fields, updatedAt: Date.now() });
 }
@@ -250,46 +259,21 @@ export async function getRecordRow(id: number): Promise<RecordRow | null> {
   return (await db.records.get(id)) ?? null;
 }
 
-/** 開いた 1 件の内容 */
-export interface OpenedRecord {
-  row: RecordRow;
-  shooter: ShooterRow;
-  /** engine の保存形式に組み立てたもの（角度の計算に使う） */
-  record: ShotRecord;
-  still: StoredImage;
-}
-
-/** 見出し・中身・射手を合わせて、engine の保存形式に組み立てる */
-export function toShotRecord(row: RecordRow, data: RecordDataRow, shooter: ShooterRow): ShotRecord {
-  return {
-    formatVersion: RECORD_FORMAT_VERSION,
-    analysis: data.analysis,
-    marks: data.marks,
-    clip: data.clip,
-    // 水平校正（カメラの傾きの補正）は初期バージョンから外した（2026-10-03、開発者の決定）。
-    // 以前に引いた線はデータベースに残すが、角度の計算には使わない
-    level: null,
-    meta: {
-      title: row.title,
-      shotAt: row.shotAt,
-      shooterName: shooter.name,
-      handedness: shooter.handedness,
-      score: row.score,
-      memo: row.memo,
-      favorite: row.favorite,
-    },
-  };
-}
-
-/** 1 件を開く。見つからない、または形式が壊れていれば null */
-export async function openRecord(id: number): Promise<OpenedRecord | null> {
+/**
+ * 1 件を開き、開けないときはその理由も返す（見つからない／形が合わない）。
+ * 読み出し自体の失敗（データベースの一時的なエラー）は例外のまま伝える
+ */
+export async function openRecordResult(id: number): Promise<OpenRecordResult> {
   const [row, data] = await Promise.all([db.records.get(id), db.recordData.get(id)]);
-  if (!row || !data || data.formatVersion !== RECORD_FORMAT_VERSION) return null;
+  if (!row) return { kind: 'missing' };
   const shooter = await db.shooters.get(row.shooterId);
-  if (!shooter) return null;
-  const record = toShotRecord(row, data, shooter);
-  if (checkShotRecord(record) !== null) return null;
-  return { row, shooter, record, still: data.still };
+  return buildOpenedRecord(row, data, shooter);
+}
+
+/** 1 件を開く。開けなければ null（理由を知りたいときは openRecordResult） */
+export async function openRecord(id: number): Promise<OpenedRecord | null> {
+  const result = await openRecordResult(id);
+  return result.kind === 'open' ? result.opened : null;
 }
 
 /** 比較画面で選んだ 2 件（基準と今回）。選んでいなければ null */

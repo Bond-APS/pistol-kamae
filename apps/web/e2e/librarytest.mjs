@@ -388,6 +388,167 @@ try {
     path: join(here, 'results', `library-${browserName}-old.png`),
     fullPage: true,
   });
+
+  // ── 開けない記録の扱い（最終-6）：壊れた中身の記録（番号 2）と、古い版（版 2）の中身の記録（番号 3）を直接書き込む
+  await page.goto(`${base}/__blank`);
+  await page.evaluate(async () => {
+    const jpeg = async (w, h) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').fillRect(0, 0, w, h);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      return { bytes: await blob.arrayBuffer(), type: 'image/jpeg' };
+    };
+    const still = await jpeg(640, 480);
+    const thumb = await jpeg(180, 240);
+    const p = (x, y) => ({ x, y, visibility: 1 });
+    const landmarks = {
+      nose: p(320, 80),
+      rightEar: p(315, 82),
+      leftEar: p(330, 82),
+      rightShoulder: p(270, 130),
+      leftShoulder: p(370, 140),
+      rightHip: p(290, 260),
+      leftHip: p(350, 260),
+      rightWrist: p(120, 125),
+      leftWrist: p(380, 270),
+      rightAnkle: p(270, 440),
+      leftAnkle: p(370, 440),
+    };
+    const frames = [0, 1, 2].map((i) => ({ timeSec: i / 30, landmarks }));
+    const analysis = {
+      backendId: 'mediapipe-full-video',
+      width: 640,
+      height: 480,
+      fps: 30,
+      durationSec: 0.1,
+      frames,
+    };
+    const marks = [{ id: 'shot', kind: 'shot', label: '', timeSec: 1 / 30 }];
+    // 今の版のデータベースをそのまま開く（版を指定しない）
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('pistol-kamae');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(['records', 'recordData'], 'readwrite');
+      const row = (id, title, memo) => ({
+        id,
+        shooterId: 1,
+        title,
+        shotAt: '2026-09-21T10:00',
+        score: null,
+        memo,
+        favorite: false,
+        thumb,
+        clipSec: 0.1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      tx.objectStore('records').put(row(2, '壊れた記録', '中身が壊れている'));
+      // 壊れた中身：コマが 0 個（形式の検査に落ちる）
+      tx.objectStore('recordData').put({
+        id: 2,
+        formatVersion: 3,
+        analysis: { ...analysis, frames: [] },
+        marks,
+        clip: null,
+        level: null,
+        still,
+      });
+      tx.objectStore('records').put(row(3, '古い版の記録', '版 2 の中身'));
+      // 古い版（版 2）の中身：切り抜きの範囲の項目がない
+      tx.objectStore('recordData').put({
+        id: 3,
+        formatVersion: 2,
+        analysis,
+        marks,
+        level: null,
+        still,
+      });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.goto(base);
+  await tid('tab-library').click();
+  await waitItems(3);
+  const item = (id) => page.locator(`[data-testid=lib-item][data-record-id="${id}"]`);
+  // 壊れた記録：開くと「開けませんでした」。削除は確認の窓を通る
+  await item(2).locator('[data-testid=lib-open]').click();
+  await tid('detail-not-found').waitFor();
+  check(
+    '壊れた記録を開くと「形が合わない」の案内が出て、「もう一度読む」は出ない',
+    (await tid('detail-not-found').textContent()).includes('壊れているか') &&
+      (await tid('detail-retry').count()) === 0,
+    await tid('detail-not-found').textContent(),
+  );
+  await tid('detail-remove').click();
+  const confirmShown = await tid('remove-dialog')
+    .waitFor({ timeout: 2000 })
+    .then(() => true)
+    .catch(() => false);
+  if (confirmShown) {
+    await tid('remove-dialog').locator('[data-testid=confirm-cancel]').click();
+    const stillThere = (await tid('detail-not-found').count()) === 1;
+    await tid('detail-remove').click();
+    await tid('remove-dialog').locator('[data-testid=confirm-ok]').click();
+    await waitItems(2);
+    check('壊れた記録の削除は確認の窓を通り、キャンセルで残り、「削除する」で消える', stillThere);
+  } else {
+    await waitItems(2).catch(() => {});
+    check(
+      '壊れた記録の削除は確認の窓を通り、キャンセルで残り、「削除する」で消える',
+      false,
+      '確認なしに消えた',
+    );
+  }
+  // 古い版の記録：読み替えて開ける
+  await item(3).locator('[data-testid=lib-open]').click();
+  const oldOpened = await tid('record-detail')
+    .waitFor({ timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    '古い版（版 2）の中身の記録は、読み替えて開ける（長さは全体）',
+    oldOpened && (await tid('detail-length').textContent()) === '0.1 秒',
+    oldOpened ? await tid('detail-length').textContent() : 'not opened',
+  );
+  await tid('detail-back').click();
+  await tid('lib-item').first().waitFor();
+  // 読み出しの失敗：記録の表（records）の読み出しを、旗が立っている間だけ失敗させる細工 → 「もう一度読む」で開ける。
+  // ほかの表の読み出し（動画本体の有無の確認など）はそのまま通す。回数で制御しないのは、開発サーバでは React の
+  // 開発用の二重実行で読み出しが 2 回走り、公開用ビルドでは 1 回で、回数が環境で変わるため
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.get;
+    window.__failRecordsRead = true;
+    IDBObjectStore.prototype.get = function (...args) {
+      if (this.name !== 'records' || !window.__failRecordsRead) return original.apply(this, args);
+      throw new DOMException('simulated read failure', 'InvalidStateError');
+    };
+  });
+  await item(1).locator('[data-testid=lib-open]').click();
+  const readFailed = await tid('detail-read-failed')
+    .waitFor({ timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  await page.evaluate(() => {
+    window.__failRecordsRead = false;
+  });
+  if (readFailed) {
+    await tid('detail-retry').click();
+    await tid('record-detail').waitFor({ timeout: 5000 });
+    check('読み出しに失敗すると「読み出せませんでした」と出て、「もう一度読む」で開ける', true);
+  } else {
+    check(
+      '読み出しに失敗すると「読み出せませんでした」と出て、「もう一度読む」で開ける',
+      false,
+      `shown: not-found=${await tid('detail-not-found').count()} detail=${await tid('record-detail').count()}`,
+    );
+  }
 } catch (e) {
   fatal = e instanceof Error ? (e.stack ?? e.message) : String(e);
   await page
