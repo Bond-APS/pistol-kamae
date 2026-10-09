@@ -16,6 +16,11 @@ const JPEG_QUALITY = 0.85;
 const SEEK_TIMEOUT_MS = 3000;
 /** 表示されたコマの時刻と、記録したコマの時刻のずれの許容（秒）。Chrome では通知の時刻が記録と 1 ミリ秒ほど違うことがある */
 const FRAME_TIME_TOLERANCE_SEC = 0.004;
+/**
+ * シークのあと、表示されたコマの通知を待つ猶予（ミリ秒）。通知が来れば待たずに進む。
+ * 解析の 60 ミリ秒より長くするのは、通知が少し遅れただけで照合（狙ったコマが出ているか）が抜けないように
+ */
+const FRAME_NOTICE_SETTLE_MS = 200;
 
 function toJpeg(canvas: HTMLCanvasElement): Promise<StoredImage> {
   return new Promise((resolve, reject) => {
@@ -76,6 +81,7 @@ export async function captureShotImages(
 
   video.pause();
   const seek = await seekTo(video, seekTimeForFrame(result.frames, index, result.fps), {
+    settleMs: FRAME_NOTICE_SETTLE_MS,
     timeoutMs: SEEK_TIMEOUT_MS,
   });
   if (video.readyState < 2) throw new Error('video frame not available');
