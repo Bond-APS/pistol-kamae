@@ -81,11 +81,18 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
   // 動画の URL は、ここで 1 回だけ渡して読み込みを始める（iPhone の Safari は、明示的に load() を
   // 呼ばないと読み始めないことがある）。src を属性で渡してから load() を呼ぶと読み込みが 2 回始まり、
   // WebKit では 1 回目の「最初の絵」の指示が取り消されて、先頭のコマのままになることがあった
+  // 外すとき（画面を離れる・動画を付け直す）は、src を外して load() し、要素が抱えている動画の中身を手放す
+  // （一時 URL を解放するだけでは、要素が消えるまで読み込んだ中身がメモリに残る）
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoUrl) return;
     video.src = videoUrl;
     video.load();
+    return () => {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    };
   }, [videoUrl]);
 
   if (!videoUrl) return null;

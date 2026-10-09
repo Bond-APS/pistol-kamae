@@ -36,6 +36,24 @@ const page = await browser.newPage({ viewport: { width: 430, height: 900 } });
 hidePersonInScreenshots(page);
 // 角度の数値は既定では隠れている。このテストは差分表を読むので、最初から「表示」にしておく
 await page.addInitScript(() => window.localStorage.setItem('kamae.showNumbers', '1'));
+// メモリの検査（最終-5）：動画の一時 URL（createObjectURL）が作られた回数と、画面から外れた video 要素を数える
+await page.addInitScript(() => {
+  const mem = { objectUrls: 0, removedVideos: [] };
+  window.__mem = mem;
+  const original = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = (o) => {
+    mem.objectUrls++;
+    return original(o);
+  };
+  new MutationObserver((muts) => {
+    for (const m of muts)
+      for (const n of m.removedNodes) {
+        if (n.nodeType !== 1) continue;
+        const vs = n.tagName === 'VIDEO' ? [n] : [...n.querySelectorAll('video')];
+        mem.removedVideos.push(...vs);
+      }
+  }).observe(document, { childList: true, subtree: true });
+});
 const logs = [];
 page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
@@ -591,6 +609,9 @@ try {
     `${min2} (expected -${(fixedShot - 1.0).toFixed(2)})`,
   );
   // 切り抜き範囲の修正：重ねたまま、撃発を 0 とした開始・終了を決め、①②の両方に当てはめる
+  // 「決定」の前に速さを 1/4 にしておく（決定で画面を作り直さないので、設定が保たれる）
+  await tid('compare-rate-25').click();
+  const objectUrlsBeforeDecide = await page.evaluate(() => window.__mem.objectUrls);
   await tid('compare-fix-clip').click();
   await tid('compare-clip-edit').waitFor();
   const editMin = Number(await tid('compare-bar-slider').getAttribute('min'));
@@ -654,8 +675,31 @@ try {
     near(max3, 1.0, 0.05) && near(min3, min2, 0.05),
     `${min3}〜${max3}`,
   );
+  await page.waitForTimeout(500);
+  const objectUrlsAfterDecide = await page.evaluate(() => window.__mem.objectUrls);
+  check(
+    '「決定」で比較画面を作り直さない：動画の一時 URL が作り直されない（最終-5）',
+    objectUrlsBeforeDecide >= 2 && objectUrlsAfterDecide === objectUrlsBeforeDecide,
+    `createObjectURL ${objectUrlsBeforeDecide} → ${objectUrlsAfterDecide}`,
+  );
+  check(
+    '「決定」のあとも、再生の速さの設定（1/4）が保たれる',
+    (await tid('compare-rate-25').getAttribute('aria-pressed')) === 'true',
+  );
+  await tid('compare-rate-100').click();
   // ライブラリの詳細にも反映されている（②音声なし：撃発 2.0 → 0.53〜3.0 秒）
+  await page.evaluate(() => (window.__mem.removedVideos.length = 0));
   await tid('compare-back').click();
+  await tid('pick-bar').waitFor();
+  await page.waitForTimeout(500);
+  const removedSrc = await page.evaluate(() =>
+    window.__mem.removedVideos.map((v) => v.getAttribute('src') ?? ''),
+  );
+  check(
+    '比較画面を離れると、外した video 要素から動画が手放される（src が空）（最終-5）',
+    removedSrc.length >= 2 && removedSrc.every((src) => src === ''),
+    JSON.stringify(removedSrc.map((src) => src.slice(0, 8))),
+  );
   await item(b.id).locator('[data-testid=lib-open]').click();
   await tid('record-detail').waitFor();
   const lengthB = await tid('detail-length').textContent();
