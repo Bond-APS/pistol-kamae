@@ -126,7 +126,9 @@ export function CompareScreen(props: Props) {
         </div>
       )}
       <CompareView
-        key={`${pairKey}:${version}`}
+        // 2 件を選び直したときだけ作り直す。「決定」や動画の付け直しでは作り直さず、読み直した記録を渡す
+        // （作り直すと 2 本の動画を読み直し、古い 2 本を手放す前に新しい 2 本がメモリに載るため）
+        key={pairKey}
         base={base}
         current={current}
         onRecordsChanged={(ids) => {
@@ -134,6 +136,7 @@ export function CompareScreen(props: Props) {
           ids.forEach(onRecordChanged);
         }}
         onVideoAttached={(role) => {
+          // 覚えている包絡線を捨ててから、CompareView が付けた側だけ読み直す
           forgetEnvelope((role === 'base' ? base : current).row.id);
           setVersion((v) => v + 1);
         }}

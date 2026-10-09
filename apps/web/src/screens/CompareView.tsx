@@ -133,6 +133,25 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     null,
   );
   const [shotStatus, setShotStatus] = useState<'none' | 'saving' | 'failed'>('none');
+  /**
+   * 「決定」で保存が済み、記録の読み直しを待っている。読み直した記録が届いたら修正を閉じ、時点を 0 に戻す
+   * （画面を作り直さずに済ませるため。読み直しの前に閉じると、一瞬だけ古い撃発ポイント・範囲で描いてしまう）
+   */
+  const [pendingReload, setPendingReload] = useState(false);
+  const [seen, setSeen] = useState({ base, current });
+  if (seen.base !== base || seen.current !== current) {
+    setSeen({ base, current });
+    if (pendingReload) {
+      setPendingReload(false);
+      setClipEdit(null);
+      setClipStatus('none');
+      setShotEdit(null);
+      setShotStatus('none');
+      setT(0);
+    }
+  }
+  /** 動画を付け直した側の読み直しの番号（付け直した側だけ読み直す） */
+  const [videoVersion, setVideoVersion] = useState<Record<Role, number>>({ base: 0, current: 0 });
   // 0 とする撃発ポイント。修正中は、試しに動かした位置
   const bShot = shotEdit?.base ?? b.shotSec;
   const cShot = shotEdit?.current ?? c.shotSec;
@@ -156,10 +175,18 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
       ? { start: -extent.beforeSec, end: extent.afterSec }
       : { start: -win.beforeSec, end: win.afterSec };
 
-  const baseVideo = useRecordVideoUrl(base.row.id, 0);
-  const currentVideo = useRecordVideoUrl(current.row.id, 0);
-  const baseEnvelope = useAudioEnvelope({ kind: 'record', recordId: base.row.id });
-  const currentEnvelope = useAudioEnvelope({ kind: 'record', recordId: current.row.id });
+  const baseVideo = useRecordVideoUrl(base.row.id, videoVersion.base);
+  const currentVideo = useRecordVideoUrl(current.row.id, videoVersion.current);
+  const baseEnvelope = useAudioEnvelope({
+    kind: 'record',
+    recordId: base.row.id,
+    version: videoVersion.base,
+  });
+  const currentEnvelope = useAudioEnvelope({
+    kind: 'record',
+    recordId: current.row.id,
+    version: videoVersion.current,
+  });
   const baseVideoRef = useRef<HTMLVideoElement | null>(null);
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const setBaseVideo = useCallback((el: HTMLVideoElement | null) => {
@@ -229,12 +256,14 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
       setClipStatus('invalid');
       return;
     }
+    // 再生したまま決定しても、読み直しのあとの時点（0）が再生に上書きされないように止める
+    playback.pause();
     setClipStatus('saving');
     try {
       // 2 件を 1 つのトランザクションで書く（片方だけ書き換わった状態を残さない）
       await updateRecordClipAll(clips.map(({ side, clip }) => ({ id: side.recordId, clip })));
-      setClipEdit(null);
-      setClipStatus('none');
+      // 修正を閉じるのは、読み直した記録が届いてから（上の pendingReload）
+      setPendingReload(true);
       onRecordsChanged(sides.map((side) => side.recordId));
     } catch {
       setClipStatus('failed');
@@ -292,6 +321,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
         });
       }
       await overwriteRecordMarksAll(items);
+      // 修正を閉じるのは、読み直した記録が届いてから（上の pendingReload）
+      setPendingReload(true);
       onRecordsChanged(items.map((item) => item.id));
     } catch {
       setShotStatus('failed');
@@ -523,7 +554,10 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
                   <AttachVideo
                     recordId={opened.row.id}
                     analysis={opened.record.analysis}
-                    onAttached={() => onVideoAttached(role)}
+                    onAttached={() => {
+                      onVideoAttached(role);
+                      setVideoVersion((v) => ({ ...v, [role]: v[role] + 1 }));
+                    }}
                     testId={`attach-${role}`}
                   />
                 </div>
