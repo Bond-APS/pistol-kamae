@@ -13,6 +13,7 @@ import { nearestFrameInRange, snapToFrame } from '../analysis/frames';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { loudestTimeSec } from '../audio/envelope';
 import { adoptEnvelope, useAudioEnvelope } from '../audio/useAudioEnvelope';
+import { VIDEO_MAX_BYTES, VIDEO_MAX_MB } from '../video/limits';
 import { ConfirmDialog } from '../components/Dialog';
 import { RecordForm } from '../components/RecordForm';
 import { SinglePlayer } from '../components/SinglePlayer';
@@ -29,7 +30,6 @@ import { ShooterStep } from './ShooterStep';
  * 保存する動画本体の大きさの上限（バイト）。保存と表示のとき、動画全体を一度メモリに載せるので、
  * 大きすぎる動画はスマートフォンでブラウザが落ちる恐れがある。これを超える動画は、記録だけを保存する
  */
-const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 
 export type SaveStep = 'shooter' | 'video' | 'clip' | 'shot' | 'form' | 'done';
 
@@ -284,11 +284,13 @@ export function SaveScreen(props: Props) {
     if (!tooLarge) {
       try {
         await setRecordVideo(recordId, { bytes: await file.arrayBuffer(), type: file.type });
-        await adoptEnvelope(file, recordId);
       } catch {
         videoFailed = true;
       }
     }
+    // 音のグラフは、動画本体を保存しなかった記録（上限超え・空き不足）にも写す（ファイルから計算済み。
+    // 動画本体がないと、あとから計算する手段がないため）。写せなくても記録は残す
+    await adoptEnvelope(file, recordId).catch(() => {});
     setSaved({ recordId, videoFailed, tooLarge });
     props.onSaved(recordId);
     setStep('done');
@@ -458,7 +460,7 @@ export function SaveScreen(props: Props) {
           <strong>{ja.save.savedTitle}</strong>
           {saved.tooLarge && (
             <p className="small" data-testid="save-video-too-large">
-              {ja.save.videoTooLarge}
+              {ja.save.videoTooLarge(VIDEO_MAX_MB)}
             </p>
           )}
           {saved.videoFailed && (

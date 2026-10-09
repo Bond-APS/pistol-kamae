@@ -28,7 +28,17 @@ const check = (name, ok, detail = '') => {
   console.log(`  ${ok ? 'OK  ' : 'NG  '} ${name}${detail === '' ? '' : `  [${detail}]`}`);
 };
 const logs = [];
-const watch = (p) => {
+const watch = async (p) => {
+  // メモリの検査（最終-5）：ファイルを丸ごと読んだか（Blob.arrayBuffer の大きさ）を数える
+  await p.addInitScript(() => {
+    const reads = [];
+    window.__blobReads = reads;
+    const original = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () {
+      reads.push(this.size);
+      return original.call(this);
+    };
+  });
   p.on('console', (m) => {
     if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
   });
@@ -37,7 +47,7 @@ const watch = (p) => {
 
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });
 let page = await browser.newPage({ viewport: VIEWPORT });
-watch(page);
+await watch(page);
 const tid = (id) => page.locator(`[data-testid=${id}]`);
 const waitItems = (n) =>
   page.waitForFunction(
@@ -263,7 +273,7 @@ try {
   // ── 段階③で保存した記録（保存形式の版 1）が、消えずに開ける。タイトルは撮影日時、範囲は全体になる
   const context = await browser.newContext({ viewport: VIEWPORT });
   page = await context.newPage();
-  watch(page);
+  await watch(page);
   await page.route('**/__blank', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>blank</title>' }),
   );
@@ -549,6 +559,96 @@ try {
       `shown: not-found=${await tid('detail-not-found').count()} detail=${await tid('record-detail').count()}`,
     );
   }
+
+  // ── 200 MB を超える動画（最終-5）：音のグラフは出る（ファイルの必要な部分だけ読む）、動画本体は保存しない、
+  //    「動画ファイルを選び直す」でも断られる。201 MB の動画はページの中で組み立てる（shot.mp4 の末尾に空の箱 free を足す）
+  const MB = 1024 * 1024;
+  const injectBig = (inputTestId) =>
+    page.evaluate(
+      async ([id, big]) => {
+        const head = await (await fetch('/_test/shot.mp4')).arrayBuffer();
+        const padSize = big - head.byteLength;
+        const pad = new Uint8Array(padSize);
+        new DataView(pad.buffer).setUint32(0, padSize);
+        pad.set([0x66, 0x72, 0x65, 0x65], 4); // 'free'
+        const file = new File([head, pad], 'big.mp4', { type: 'video/mp4' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const input = document.querySelector(`[data-testid=${id}]`);
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return file.size;
+      },
+      [inputTestId, 201 * MB],
+    );
+  console.log('  201 MB の動画で保存の流れ（姿勢推定を実行中）…');
+  await tid('tab-save').click();
+  if ((await tid('save-next').count()) === 1) await tid('save-next').click();
+  await tid('shooter-next').click();
+  await page.evaluate(() => (window.__blobReads.length = 0));
+  await injectBig('video-file');
+  await tid('run-analysis').and(page.locator(':enabled')).waitFor({ timeout: 60_000 });
+  await tid('run-analysis').click();
+  await tid('clip-player').waitFor({ timeout: 15 * 60_000 });
+  await waitSettled('clip-player');
+  await tid('clip-confirm').click();
+  await tid('shot-player').waitFor();
+  await waitSettled('shot-player');
+  await page.waitForTimeout(1500);
+  const bigReads = await page.evaluate(() => window.__blobReads.slice());
+  check(
+    '201 MB の動画でも音のグラフが出る（発射音の位置に置かれる）',
+    (await page.locator('.wave-none').count()) === 0 &&
+      Math.abs(Number(await tid('shot-player-bar').getAttribute('data-value-sec')) - 2.5) < 0.3,
+    await tid('shot-player-bar').getAttribute('data-value-sec'),
+  );
+  check(
+    '音のグラフのためにファイルを丸ごと読まない（読んだ 1 回の最大が 1 MB 未満）',
+    bigReads.length > 0 && Math.max(...bigReads) < MB,
+    `reads=${bigReads.length} max=${(Math.max(0, ...bigReads) / MB).toFixed(2)} MB`,
+  );
+  await tid('shot-set').click();
+  await tid('form-summary').waitFor({ timeout: 15_000 });
+  await tid('form-title').fill('大きい動画');
+  await tid('form-submit').click();
+  await tid('save-done').waitFor({ timeout: 30_000 });
+  const bigId = Number(await tid('save-done').getAttribute('data-saved-id'));
+  check(
+    '200 MB を超える動画は、記録だけ保存して「動画本体は保存しませんでした」と出る',
+    (await tid('save-video-too-large').count()) === 1 &&
+      (await tid('save-video-failed').count()) === 0,
+  );
+  const savedReads = await page.evaluate(() => window.__blobReads.slice());
+  check(
+    '保存のときも 201 MB を読まない',
+    Math.max(0, ...savedReads) < MB,
+    `max=${(Math.max(0, ...savedReads) / MB).toFixed(2)} MB`,
+  );
+  await tid('save-next').click();
+  await tid('tab-library').click();
+  await item(bigId).locator('[data-testid=lib-open]').click();
+  await tid('record-detail').waitFor();
+  await tid('detail-attach').waitFor();
+  check(
+    '大きすぎた記録は「動画：なし」で、「動画ファイルを選び直す」が出る',
+    (await tid('detail-video').getAttribute('data-has-video')) === 'false' &&
+      (await tid('detail-attach').textContent()) === '動画ファイルを選び直す',
+    await tid('detail-attach').textContent(),
+  );
+  await page.evaluate(() => (window.__blobReads.length = 0));
+  await injectBig('detail-attach-file');
+  await tid('detail-attach-error').waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(500);
+  const attachReads = await page.evaluate(() => window.__blobReads.slice());
+  check(
+    '「動画ファイルを選び直す」で 200 MB を超える動画を選ぶと、読まずに断られる',
+    (await tid('detail-attach-error').textContent()) ===
+      '！ 動画が 200 MB を超えています。動画を短く切るか、画質を下げてください。' &&
+      (await tid('detail-video').getAttribute('data-has-video')) === 'false' &&
+      attachReads.length === 0,
+    `${await tid('detail-attach-error').textContent()} reads=${attachReads.length}`,
+  );
+  await tid('detail-back').click();
 } catch (e) {
   fatal = e instanceof Error ? (e.stack ?? e.message) : String(e);
   await page
