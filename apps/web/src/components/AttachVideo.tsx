@@ -2,7 +2,7 @@ import type { RecordAnalysis } from '@pistol-kamae/engine';
 import { useRef, useState } from 'react';
 import { setRecordVideo } from '../db/library';
 import { ja } from '../i18n/ja';
-import { loadVideo, releaseVideo } from '../video/load';
+import { isNoDuration, loadVideo, releaseVideo } from '../video/load';
 
 interface Props {
   recordId: number;
@@ -18,7 +18,7 @@ interface Props {
  */
 const DURATION_TOLERANCE_SEC = 0.2;
 
-type Status = 'idle' | 'busy' | 'mismatch' | 'unsupported' | 'failed';
+type Status = 'idle' | 'busy' | 'mismatch' | 'unsupported' | 'noDuration' | 'failed';
 
 /** 選んだ動画の大きさと長さ（違ったときに見せる） */
 interface Picked {
@@ -42,8 +42,8 @@ export function AttachVideo({ recordId, analysis, onAttached, testId }: Props) {
     let video: HTMLVideoElement;
     try {
       video = await loadVideo(file);
-    } catch {
-      setStatus('unsupported');
+    } catch (e) {
+      setStatus(isNoDuration(e) ? 'noDuration' : 'unsupported');
       return;
     }
     const same =
@@ -108,6 +108,11 @@ export function AttachVideo({ recordId, analysis, onAttached, testId }: Props) {
       {status === 'unsupported' && (
         <p className="danger small" data-testid={`${testId}-error`}>
           {ja.load.unsupportedTitle}
+        </p>
+      )}
+      {status === 'noDuration' && (
+        <p className="danger small" data-testid={`${testId}-error`}>
+          {ja.load.noDurationTitle}
         </p>
       )}
       {status === 'failed' && (

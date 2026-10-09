@@ -1,5 +1,14 @@
 const METADATA_TIMEOUT_MS = 30_000;
 
+/** 長さが読み取れない動画（ブラウザで録画した WebM は長さが無限大として届く）。解析の終わりが決められないので扱わない */
+export class NoDurationError extends Error {
+  constructor() {
+    super('duration unknown');
+    this.name = 'NoDurationError';
+  }
+}
+export const isNoDuration = (e: unknown): boolean => e instanceof NoDurationError;
+
 /**
  * video 要素を作って、メタ情報が読めるまで待つ。再生できない形式なら例外。
  * signal（中断の合図）で待ちをやめられる。失敗したときは、作った video と一時 URL を手放す
@@ -32,6 +41,7 @@ export async function loadVideo(file: Blob, signal?: AbortSignal): Promise<HTMLV
       v.load();
     });
     if (v.videoWidth === 0 || v.videoHeight === 0) throw new Error('unsupported');
+    if (!(Number.isFinite(v.duration) && v.duration > 0)) throw new NoDurationError();
     return v;
   } catch (e) {
     releaseVideo(v);

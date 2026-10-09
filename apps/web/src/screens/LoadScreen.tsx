@@ -8,7 +8,7 @@ import {
 import { poseBackendConfig } from '../config/backends';
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
-import { loadVideo, releaseVideo } from '../video/load';
+import { isNoDuration, loadVideo, releaseVideo } from '../video/load';
 import { estimateFrameRate } from '../video/seek';
 import { keepScreenAwake } from '../video/wakeLock';
 
@@ -43,6 +43,8 @@ type Status =
   | { kind: 'loading' }
   | { kind: 'ready' }
   | { kind: 'unsupported' }
+  /** 長さを読み取れない動画（ブラウザで録画した WebM など） */
+  | { kind: 'noDuration' }
   | { kind: 'preparing' }
   | { kind: 'running'; done: number; total: number }
   | { kind: 'cancelled' }
@@ -102,9 +104,10 @@ export function LoadScreen(props: Props) {
       });
       setInfo({ w: v.videoWidth, h: v.videoHeight, sec: v.duration, fps });
       setStatus({ kind: 'ready' });
-    } catch {
+    } catch (e) {
       if (!current()) return;
       if (controller.signal.aborted) giveUp();
+      else if (isNoDuration(e)) setStatus({ kind: 'noDuration' });
       else setStatus({ kind: 'unsupported' });
     }
   };
@@ -234,9 +237,15 @@ export function LoadScreen(props: Props) {
       </div>
 
       {status.kind === 'unsupported' && (
-        <div className="notice err">
+        <div className="notice err" data-testid="load-unsupported">
           <strong>{ja.load.unsupportedTitle}</strong>
           <p className="small">{ja.load.unsupported}</p>
+        </div>
+      )}
+      {status.kind === 'noDuration' && (
+        <div className="notice err" data-testid="load-no-duration">
+          <strong>{ja.load.noDurationTitle}</strong>
+          <p className="small">{ja.load.noDurationBody}</p>
         </div>
       )}
       {info && (

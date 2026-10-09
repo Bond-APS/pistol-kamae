@@ -241,6 +241,106 @@ try {
     wake.requests === 1 && wake.releases === 1,
     JSON.stringify(wake),
   );
+  // 7. 長さを読み取れない動画（ブラウザで録画した WebM は長さが無限大として届く）は、案内を出して受け付けない。
+  //    録画の機能（MediaRecorder）が WebM を作れるブラウザ（Chrome）で確かめ、作れなければ飛ばす
+  console.log('  7. 長さのない動画');
+  await freshStart();
+  const recorded = await page.evaluate(async () => {
+    if (typeof MediaRecorder === 'undefined') return null;
+    const type = ['video/webm;codecs=vp8', 'video/webm'].find((t) =>
+      MediaRecorder.isTypeSupported(t),
+    );
+    if (!type) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: type });
+    const chunks = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    const stopped = new Promise((resolve) => {
+      recorder.onstop = resolve;
+    });
+    recorder.start();
+    const started = performance.now();
+    // 描き直しは setTimeout で回す（rAF は画面が隠れていると止まるため）
+    await new Promise((resolve) => {
+      const draw = () => {
+        ctx.fillStyle = `hsl(${(performance.now() / 5) % 360} 80% 50%)`;
+        ctx.fillRect(0, 0, 64, 64);
+        if (performance.now() - started < 1200) setTimeout(draw, 33);
+        else resolve();
+      };
+      draw();
+    });
+    recorder.stop();
+    await stopped;
+    const bytes = new Uint8Array(await new Blob(chunks, { type }).arrayBuffer());
+    return { type, bytes: Array.from(bytes) };
+  });
+  if (!recorded) {
+    check(
+      '長さのない動画の案内（このブラウザでは WebM を録画できないため飛ばす）',
+      true,
+      'skipped',
+    );
+  } else {
+    // ブラウザがこの WebM の長さをどう報告するかは回によって違う（Chrome は有限、WebKit は無限大だったり有限だったり）
+    // ので参考として記録だけし、長さが無限大のときの扱いは、長さを無限大に見せる細工で確かめる
+    const reported = await page.evaluate(
+      async ([type, bytes]) => {
+        const v = document.createElement('video');
+        v.muted = true;
+        v.src = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type }));
+        v.load();
+        await new Promise((resolve) => {
+          v.onloadedmetadata = resolve;
+          v.onerror = resolve;
+          setTimeout(resolve, 5000);
+        });
+        const duration = v.duration;
+        URL.revokeObjectURL(v.src);
+        return duration;
+      },
+      [recorded.type, recorded.bytes],
+    );
+    await page.evaluate(() => {
+      const proto = HTMLMediaElement.prototype;
+      const original = Object.getOwnPropertyDescriptor(proto, 'duration');
+      // 最初に読まれた 1 回だけ無限大を返し、元に戻す
+      Object.defineProperty(proto, 'duration', {
+        configurable: true,
+        get() {
+          Object.defineProperty(proto, 'duration', original);
+          return Infinity;
+        },
+      });
+    });
+    await tid('video-file').setInputFiles({
+      name: 'recorded.webm',
+      mimeType: recorded.type,
+      buffer: Buffer.from(recorded.bytes),
+    });
+    const outcome = await page.waitForFunction(
+      () => {
+        if (document.querySelector('[data-testid=load-no-duration]')) return 'no-duration';
+        if (document.querySelector('[data-testid=load-unsupported]')) return 'unsupported';
+        const run = document.querySelector('[data-testid=run-analysis]');
+        if (run && !run.disabled) return 'accepted';
+        return false;
+      },
+      null,
+      { timeout: 60_000 },
+    );
+    const outcomeValue = await outcome.jsonValue();
+    check(
+      '長さを読み取れない動画は「長さを読み取れません」と案内し、「姿勢推定を実行」が押せない',
+      outcomeValue === 'no-duration' && (await tid('run-analysis').isDisabled()),
+      `${outcomeValue}（${recorded.bytes.length} バイト、ブラウザの報告する長さ ${reported}、長さを無限大に見せて確認）`,
+    );
+  }
 } catch (e) {
   fatal = e instanceof Error ? (e.stack ?? e.message) : String(e);
   await page

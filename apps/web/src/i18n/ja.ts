@@ -70,6 +70,9 @@ export const ja = {
     unsupportedTitle: '！ この動画は再生できません',
     unsupported:
       'この動画はこのブラウザで再生できません。iPhone なら「設定 → カメラ → フォーマット → 互換性優先」で撮り直すか、別のブラウザで開いてください。',
+    noDurationTitle: '！ この動画は長さを読み取れません',
+    noDurationBody:
+      'ブラウザで録画した WebM などは長さが分からないため扱えません。別の形式に変換するか、カメラで撮り直してください。',
     videoInfo: (w: number, h: number, sec: number, fps: number | null) =>
       `${w}×${h}、${sec.toFixed(1)} 秒${fps ? `、推定 ${fps.toFixed(0)} fps` : ''}`,
     run: '姿勢推定を実行',
