@@ -410,9 +410,8 @@ try {
   const pausedFrame = await frameOf('shot-player');
   const seenSec = await presented.whilePlaying();
   check(
-    '撃発の段階で止めると、止めた瞬間に見えていたコマ（止める直前に表示されたコマ）がそのまま選ばれる',
-    // コマの時刻は解析のときに同じ通知から記録したものだが、Chrome では 1 ミリ秒ほど違うことがあるので半コマまで許す
-    recording && seenSec !== null && near(seenSec, pausedFrame.sec, 1 / 60),
+    '撃発の段階で止めると、止めた瞬間に見えていたコマ（止める直前に表示されたコマ、またはその 1 つ前）が選ばれる',
+    recording && presented.keptFrame(seenSec, pausedFrame.sec),
     `見えていた ${seenSec} / 選ばれた コマ ${pausedFrame.index}（${pausedFrame.sec.toFixed(4)} 秒）`,
   );
   check(
