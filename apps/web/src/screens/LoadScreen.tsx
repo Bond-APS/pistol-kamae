@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { isAborted, runAnalysis, type AnalysisResult } from '../analysis/runAnalysis';
+import {
+  isAborted,
+  isSeekStalled,
+  runAnalysis,
+  type AnalysisResult,
+} from '../analysis/runAnalysis';
 import { poseBackendConfig } from '../config/backends';
 import type { ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
 import { loadVideo, releaseVideo } from '../video/load';
 import { estimateFrameRate } from '../video/seek';
+import { keepScreenAwake } from '../video/wakeLock';
 
 const FALLBACK_FPS = 30;
+/** フレームレート推定で、1 回のシークの完了を待つ上限（ミリ秒）。切れたらそれまでの分で推定する */
+const ESTIMATE_SEEK_TIMEOUT_MS = 5000;
 
 interface Props {
   /** 推定に使う video 要素の置き場所（App が持つ） */
@@ -38,6 +46,8 @@ type Status =
   | { kind: 'preparing' }
   | { kind: 'running'; done: number; total: number }
   | { kind: 'cancelled' }
+  /** 解析中にシークが止まった（時間切れ）。動画を選び直してもらう */
+  | { kind: 'stalled' }
   | { kind: 'error'; message: string };
 
 export function LoadScreen(props: Props) {
@@ -60,20 +70,42 @@ export function LoadScreen(props: Props) {
   const onPick = async (file: File | undefined) => {
     if (!file) return;
     abortRef.current?.abort();
+    // 読み込みとフレームレート推定の「やめる」に使う
+    const controller = new AbortController();
+    abortRef.current = controller;
     props.onResult(null, null);
     releaseVideo(videoRef.current);
     videoRef.current = null;
     fileRef.current = file;
     setInfo(null);
     setStatus({ kind: 'loading' });
+    /** 「やめる」が押されていたら、動画を手放して動画の指定に戻る */
+    const giveUp = () => {
+      releaseVideo(videoRef.current);
+      videoRef.current = null;
+      fileRef.current = null;
+      setStatus({ kind: 'idle' });
+    };
+    /** 別の動画を選び直すと新しい読み込みが始まるので、古い読み込みは画面に触らない */
+    const current = () => abortRef.current === controller;
     try {
-      const v = await loadVideo(file);
+      const v = await loadVideo(file, controller.signal);
+      if (controller.signal.aborted) {
+        releaseVideo(v);
+        if (current()) giveUp();
+        return;
+      }
       videoRef.current = v;
-      const fps = await estimateFrameRate(v);
+      const fps = await estimateFrameRate(v, {
+        signal: controller.signal,
+        seekTimeoutMs: ESTIMATE_SEEK_TIMEOUT_MS,
+      });
       setInfo({ w: v.videoWidth, h: v.videoHeight, sec: v.duration, fps });
       setStatus({ kind: 'ready' });
     } catch {
-      setStatus({ kind: 'unsupported' });
+      if (!current()) return;
+      if (controller.signal.aborted) giveUp();
+      else setStatus({ kind: 'unsupported' });
     }
   };
 
@@ -83,6 +115,8 @@ export function LoadScreen(props: Props) {
     const controller = new AbortController();
     abortRef.current = controller;
     props.onResult(null, null);
+    // 解析の間は画面を消さないよう頼む（解析中は画面に触らないので、自動ロックで消えやすい）
+    const stopKeepingAwake = keepScreenAwake();
     try {
       const analyzed = await runAnalysis({
         video,
@@ -104,8 +138,19 @@ export function LoadScreen(props: Props) {
       // （2026-10-04、開発者の指示。完了の表示と「切り抜きへ進む」ボタンはなくした）
       props.onResult(analyzed, fileRef.current);
     } catch (e) {
+      // 別の動画を選び直して中断されたときは、新しい読み込みの画面に触らない
+      if (abortRef.current !== controller) return;
       if (isAborted(e)) setStatus({ kind: 'cancelled' });
-      else setStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
+      else if (isSeekStalled(e)) {
+        // 止まった video は待っても戻らないことが多いので手放し、動画を選び直してもらう
+        releaseVideo(video);
+        videoRef.current = null;
+        fileRef.current = null;
+        setInfo(null);
+        setStatus({ kind: 'stalled' });
+      } else setStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      stopKeepingAwake();
     }
   };
 
@@ -121,6 +166,12 @@ export function LoadScreen(props: Props) {
         <p className="waiting" role="status" aria-live="polite">
           {ja.load.pleaseWait}
         </p>
+        {/* 読み込みやフレームレート推定が止まったときの逃げ道（押すと動画の指定に戻る） */}
+        <div className="row">
+          <button data-testid="load-waiting-cancel" onClick={() => abortRef.current?.abort()}>
+            {ja.load.stopWaiting}
+          </button>
+        </div>
       </section>
     );
   }
@@ -205,7 +256,11 @@ export function LoadScreen(props: Props) {
           >
             {ja.load.run}
           </button>
-          {busy && <button onClick={() => abortRef.current?.abort()}>{ja.load.cancel}</button>}
+          {busy && (
+            <button data-testid="load-cancel" onClick={() => abortRef.current?.abort()}>
+              {ja.load.cancel}
+            </button>
+          )}
         </div>
       )}
 
@@ -217,8 +272,14 @@ export function LoadScreen(props: Props) {
         </div>
       )}
       {status.kind === 'cancelled' && <p>{ja.load.cancelled}</p>}
+      {status.kind === 'stalled' && (
+        <div className="notice err" data-testid="load-stalled">
+          <strong>{ja.load.stalledTitle}</strong>
+          <p className="small">{ja.load.stalledBody}</p>
+        </div>
+      )}
       {status.kind === 'error' && (
-        <div className="notice err">
+        <div className="notice err" data-testid="load-error">
           <strong>{ja.load.errorTitle}</strong>
           <p className="small">{ja.load.error(status.message)}</p>
         </div>

@@ -63,6 +63,7 @@ export const ja = {
     picked: '選択済み',
     repickHint: '動画を選び直すときは「ファイルを選択」を押してください。',
     pleaseWait: 'しばらくお待ちください',
+    stopWaiting: 'やめる',
     formatHint:
       '読める形式：MP4（H.264）、MOV（H.264）、WebM。iPhone の HEVC 形式は Windows の Chrome などで再生できないことがあります。',
     formatHintIphone: 'iPhone は「設定 → カメラ → フォーマット → 互換性優先」で撮影してください。',
@@ -76,6 +77,8 @@ export const ja = {
     progress: (done: number, total: number) => `処理中… ${done} / 約 ${total} フレーム`,
     preparing: 'モデルを読み込んでいます…',
     cancelled: '中断しました',
+    stalledTitle: '！ 動画の読み込みが途中で止まりました',
+    stalledBody: '「ファイルを選択」で同じ動画を選び直してください。',
     errorTitle: '！ 姿勢推定でエラーが起きました',
     error: (msg: string) => `エラー：${msg}`,
     discardTitle: '保存していない動画があります',

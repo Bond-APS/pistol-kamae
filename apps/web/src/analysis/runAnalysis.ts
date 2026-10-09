@@ -1,6 +1,9 @@
 import type { LandmarkFrame } from '@pistol-kamae/engine';
 import { PoseWorkerClient, type PoseBackendConfig } from '@pistol-kamae/engine/pose';
-import { SeekSession } from '../video/seek';
+import { SeekSession, SeekTimeoutError } from '../video/seek';
+
+/** 1 コマのシークの完了を待つ上限（ミリ秒）。過ぎたら解析を失敗にする（止まった video は待っても戻らないことが多い） */
+const SEEK_TIMEOUT_MS = 5000;
 
 export interface AnalysisTiming {
   totalMs: number;
@@ -49,6 +52,8 @@ function median(values: number[]): number {
 }
 
 export const isAborted = (e: unknown): boolean => e instanceof AbortedError;
+/** シークの時間切れで解析が失敗したか（動画を選び直してもらう案内に使う） */
+export const isSeekStalled = (e: unknown): boolean => e instanceof SeekTimeoutError;
 
 /**
  * 動画全長に姿勢推定をかける。
@@ -63,13 +68,19 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
   const throwIfAborted = () => {
     if (signal.aborted) throw new AbortedError();
   };
+  // 中断されたら Worker を即座に止め、準備や推定の返事を待っている途中でも抜けられるようにする
+  const onAbort = () => client.terminate();
+  signal.addEventListener('abort', onAbort, { once: true });
 
   try {
+    throwIfAborted();
     opts.onPreparing();
     let backendId: string;
     try {
       backendId = await client.init(opts.config);
     } catch (e) {
+      // 中断で Worker を止めたことによる失敗なら、再試行しない（止めた Worker に送っても返事は来ない）
+      if (signal.aborted) throw e;
       // GPU が使えない端末では CPU で再試行する
       if (opts.config.kind === 'mediapipe' && opts.config.delegate !== 'CPU') {
         backendId = await client.init({ ...opts.config, delegate: 'CPU' });
@@ -100,7 +111,7 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       const target = nominalTime + step / 2;
       if (target >= duration) break;
       const seekStart = performance.now();
-      const seek = await session.seek(video, target);
+      const seek = await session.seek(video, target, { timeoutMs: SEEK_TIMEOUT_MS, signal });
       // 正確な時刻が取れた場合だけ、同じフレームの二重処理を避ける
       if (seek.exact) {
         if (seek.timeSec === lastExactTime) continue;
@@ -109,7 +120,10 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       const bitmap = await createImageBitmap(video);
       seekMs += performance.now() - seekStart;
 
-      throwIfAborted();
+      if (signal.aborted) {
+        bitmap.close();
+        throw new AbortedError();
+      }
       const timeSec = seek.exact ? seek.timeSec : nominalTime;
       const result = await client.estimate(bitmap, timeSec * 1000);
       inferenceMs += result.inferenceMs;
@@ -134,7 +148,12 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       },
       notes,
     };
+  } catch (e) {
+    // 中断で Worker を止めた・シークをやめたことによる失敗は、すべて「中断」として扱う
+    if (signal.aborted) throw new AbortedError();
+    throw e;
   } finally {
+    signal.removeEventListener('abort', onAbort);
     client.terminate();
   }
 }
