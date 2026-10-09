@@ -31,6 +31,14 @@ export class SeekTimeoutError extends Error {
   }
 }
 
+/** 中断の合図（AbortSignal）でシークの待ちをやめたときの失敗 */
+export class SeekAbortedError extends Error {
+  constructor() {
+    super('seek aborted');
+    this.name = 'SeekAbortedError';
+  }
+}
+
 export interface SeekOptions {
   /** seeked の後、フレーム時刻の通知を待つ上限（ミリ秒）。既定 60 */
   settleMs?: number;
@@ -39,6 +47,8 @@ export interface SeekOptions {
    * 省略すると待ち続ける（隠れたタブなどでは完了の通知が来ないことがある）
    */
   timeoutMs?: number;
+  /** 中断の合図。中断されたら SeekAbortedError で失敗にし、待ちを解除する */
+  signal?: AbortSignal;
 }
 
 /** 指定時刻へシークし、表示されたフレームの時刻を返す */
@@ -47,9 +57,13 @@ export function seekTo(
   timeSec: number,
   options: SeekOptions = {},
 ): Promise<SeekResult> {
-  const { settleMs = 60, timeoutMs } = options;
+  const { settleMs = 60, timeoutMs, signal } = options;
   const v = video as VideoWithFrameCallback;
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new SeekAbortedError());
+      return;
+    }
     let seeked = false;
     let done = false;
     let handle: number | undefined;
@@ -65,8 +79,10 @@ export function seekTo(
       if (handle !== undefined) v.cancelVideoFrameCallback?.(handle);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
+      signal?.removeEventListener('abort', onAbort);
       return true;
     };
+    const onAbort = () => fail(new SeekAbortedError());
     const finish = (result: SeekResult) => {
       if (settle()) resolve(result);
     };
@@ -98,6 +114,7 @@ export function seekTo(
     if (timeoutMs !== undefined) {
       limit = setTimeout(() => fail(new SeekTimeoutError(timeoutMs)), timeoutMs);
     }
+    signal?.addEventListener('abort', onAbort, { once: true });
     try {
       video.currentTime = timeSec;
     } catch (error) {
@@ -116,10 +133,14 @@ export class SeekSession {
   private readonly probeCount = 5;
   private readonly settleMs = 60;
 
-  seek(video: HTMLVideoElement, timeSec: number): Promise<SeekResult> {
+  seek(
+    video: HTMLVideoElement,
+    timeSec: number,
+    options: Omit<SeekOptions, 'settleMs'> = {},
+  ): Promise<SeekResult> {
     const settle = this.exactSeen || this.attempts < this.probeCount ? this.settleMs : 0;
     this.attempts++;
-    return seekTo(video, timeSec, { settleMs: settle }).then((r) => {
+    return seekTo(video, timeSec, { ...options, settleMs: settle }).then((r) => {
       if (r.exact) this.exactSeen = true;
       return r;
     });
@@ -195,12 +216,22 @@ export function frameRateFromChangeTimes(times: ReadonlyArray<number>): number |
   return Number.isFinite(fps) && fps > 0 ? snapFrameRate(fps) : null;
 }
 
+export interface EstimateFrameRateOptions {
+  /** 中断の合図。中断されたら SeekAbortedError で失敗にする */
+  signal?: AbortSignal;
+  /** 1 回のシークの時間切れ（ミリ秒）。切れたら、それまでに集めた切り替わりだけから推定する */
+  seekTimeoutMs?: number;
+}
+
 /**
  * フレームレートを推定する。HTML video は fps を教えてくれないので、
  * 先頭 1 秒を 1/120 秒刻みでシークし、フレームが切り替わった時刻を集める。
  * 判定できなければ null（呼び出し側で既定値を使う）。
  */
-export async function estimateFrameRate(video: HTMLVideoElement): Promise<number | null> {
+export async function estimateFrameRate(
+  video: HTMLVideoElement,
+  options: EstimateFrameRateOptions = {},
+): Promise<number | null> {
   const span = Math.min(1, video.duration);
   if (!(span > 0)) return null;
   const step = 1 / 120;
@@ -210,9 +241,20 @@ export async function estimateFrameRate(video: HTMLVideoElement): Promise<number
   const changeTimes: number[] = [];
   let prev: Uint8ClampedArray | null = null;
   let allExact = true;
+  const seekOptions: Omit<SeekOptions, 'settleMs'> = {
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.seekTimeoutMs !== undefined ? { timeoutMs: options.seekTimeoutMs } : {}),
+  };
 
   for (let t = 0; t < span; t += step) {
-    const r = await session.seek(video, t);
+    let r: SeekResult;
+    try {
+      r = await session.seek(video, t, seekOptions);
+    } catch (e) {
+      // シークが止まったら、それまでに集めた分だけで推定する（止まった video は待っても戻らないことが多い）
+      if (e instanceof SeekTimeoutError) break;
+      throw e;
+    }
     if (r.exact) exactTimes.add(Math.round(r.timeSec * 1e5) / 1e5);
     else allExact = false;
     const s = sig.of(video);

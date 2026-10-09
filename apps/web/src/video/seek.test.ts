@@ -3,6 +3,7 @@ import {
   FrameSignature,
   frameRateFromChangeTimes,
   seekTo,
+  SeekAbortedError,
   SeekTimeoutError,
   snapFrameRate,
 } from './seek';
@@ -96,6 +97,24 @@ describe('seekTo', () => {
     const video = new FakeVideo();
     const promise = seekTo(asVideo(video), 1.5, { timeoutMs: 20 });
     await expect(promise).rejects.toBeInstanceOf(SeekTimeoutError);
+    expect(video.listening.size).toBe(0);
+  });
+  it('中断の合図で SeekAbortedError にし、待ちを解除する', async () => {
+    const video = new FakeVideo();
+    const controller = new AbortController();
+    const promise = seekTo(asVideo(video), 1.5, { signal: controller.signal });
+    controller.abort();
+    await expect(promise).rejects.toBeInstanceOf(SeekAbortedError);
+    expect(video.listening.size).toBe(0);
+  });
+  it('すでに中断されていれば、シークせずに失敗にする', async () => {
+    const video = new FakeVideo();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(seekTo(asVideo(video), 1.5, { signal: controller.signal })).rejects.toBeInstanceOf(
+      SeekAbortedError,
+    );
+    expect(video.currentTime).toBe(0);
     expect(video.listening.size).toBe(0);
   });
   it('上限を指定しなければ待ち続ける（これまでどおり）', async () => {

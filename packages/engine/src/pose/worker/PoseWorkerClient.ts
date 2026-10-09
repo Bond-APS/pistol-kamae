@@ -19,6 +19,8 @@ export class PoseWorkerClient {
     { resolve: (r: EstimateResult) => void; reject: (e: Error) => void }
   >();
   private readyWaiter: { resolve: (id: string) => void; reject: (e: Error) => void } | null = null;
+  /** terminate() 済みか。止めた Worker への送信は黙って捨てられ返事が来ないので、以後の約束はすぐ失敗にする */
+  private terminated = false;
 
   constructor() {
     this.worker = new Worker(new URL('./poseWorker.ts', import.meta.url), { type: 'module' });
@@ -34,6 +36,7 @@ export class PoseWorkerClient {
 
   /** バックエンドを準備する。返り値はバックエンドの識別子 */
   init(config: PoseBackendConfig): Promise<string> {
+    if (this.terminated) return Promise.reject(new Error('terminated'));
     return new Promise((resolve, reject) => {
       this.readyWaiter = { resolve, reject };
       this.send({ type: 'init', config });
@@ -42,6 +45,10 @@ export class PoseWorkerClient {
 
   /** 1 フレームを推定する。image の所有権は Worker に移る（呼び出し側では使えなくなる） */
   estimate(image: ImageBitmap, timestampMs: number): Promise<EstimateResult> {
+    if (this.terminated) {
+      image.close();
+      return Promise.reject(new Error('terminated'));
+    }
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -49,11 +56,15 @@ export class PoseWorkerClient {
     });
   }
 
-  /** Worker を止めて解放する */
+  /** Worker を止めて解放する。準備や推定を待っている約束は失敗にする（中断で待ちを打ち切るため） */
   terminate(): void {
+    if (this.terminated) return;
+    this.terminated = true;
     this.send({ type: 'dispose' });
     this.worker.terminate();
     const err = new Error('terminated');
+    this.readyWaiter?.reject(err);
+    this.readyWaiter = null;
     for (const p of this.pending.values()) p.reject(err);
     this.pending.clear();
   }
