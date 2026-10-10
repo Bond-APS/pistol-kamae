@@ -609,6 +609,27 @@ try {
     `${min2} (expected -${(fixedShot - 1.0).toFixed(2)})`,
   );
   // 切り抜き範囲の修正：重ねたまま、撃発を 0 とした開始・終了を決め、①②の両方に当てはめる
+  // 撃発を外す範囲（開始を撃発より後ろ）で決定すると、専用の案内が出る（最終-24）。やめてから本番の修正へ
+  await tid('compare-fix-clip').click();
+  await tid('compare-clip-edit').waitFor();
+  await slideTo('compare-bar', 0.5);
+  await waitBothReady();
+  await tid('clip-set-start').click();
+  await tid('clip-confirm').click();
+  await page.waitForTimeout(300);
+  // 案内が出なければ（範囲がそのまま保存されるなど）、待ち続けずに不合格にする
+  const outsideMessage = await page
+    .locator('[data-testid=compare-clip-edit] .danger')
+    .textContent({ timeout: 2000 })
+    .catch(() => '(none)');
+  check(
+    '撃発を外す範囲で決定すると「撃発ポイントが範囲の外になります」と出る（最終-24）',
+    outsideMessage ===
+      '！ 撃発ポイントが範囲の外になります。撃発ポイントを含む範囲にしてください。',
+    outsideMessage,
+  );
+  await tid('clip-cancel').click();
+  await tid('compare-clip-edit').waitFor({ state: 'detached' });
   // 「決定」の前に速さを 1/4 にしておく（決定で画面を作り直さないので、設定が保たれる）
   await tid('compare-rate-25').click();
   const objectUrlsBeforeDecide = await page.evaluate(() => window.__mem.objectUrls);

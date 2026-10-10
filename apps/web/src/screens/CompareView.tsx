@@ -1,6 +1,7 @@
 import {
   IDENTITY,
   checkClip,
+  type ClipProblem,
   clipOf,
   commonWindow,
   compareMetrics,
@@ -124,7 +125,7 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
    * （2026-10-03、開発者の希望。片方ずつ別の画面で直すのではなく、重ねた絵を見ながら双方を切る）
    */
   const [clipEdit, setClipEdit] = useState<{ startT: number; endT: number } | null>(null);
-  const [clipStatus, setClipStatus] = useState<'none' | 'saving' | 'failed' | 'invalid'>('none');
+  const [clipStatus, setClipStatus] = useState<'none' | 'saving' | 'failed' | ClipProblem>('none');
   /**
    * 撃発ポイントの修正（重ねたまま）。①②それぞれの、試しに動かした撃発ポイント（動画の時刻）を持ち、
    * 「決定」で保存する（2026-10-04、開発者の希望。2 本の撃発ポイントがずれているとき、相手を見ながら揃える）
@@ -252,8 +253,12 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
       const whole = startSec <= 0 && endSec >= side.durationSec;
       return { side, clip: whole ? null : clip };
     });
-    if (clips.some(({ side, clip }) => checkClip(clip, side.durationSec, side.shotSec) !== null)) {
-      setClipStatus('invalid');
+    // 問題の種類（撃発が外・範囲が不正）を捨てずに持ち、案内を分ける
+    const problem = clips
+      .map(({ side, clip }) => checkClip(clip, side.durationSec, side.shotSec))
+      .find((p) => p !== null);
+    if (problem) {
+      setClipStatus(problem);
       return;
     }
     // 再生したまま決定しても、読み直しのあとの時点（0）が再生に上書きされないように止める
@@ -622,7 +627,10 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
           <p className="small num" data-testid="clip-length">
             {ja.compare.clipEditRange(clipEdit.startT, clipEdit.endT)}
           </p>
-          {clipStatus === 'invalid' && <p className="danger small">{ja.clip.invalid}</p>}
+          {clipStatus === 'shotOutsideClip' && (
+            <p className="danger small">{ja.clip.shotOutside}</p>
+          )}
+          {clipStatus === 'invalidClip' && <p className="danger small">{ja.clip.invalid}</p>}
           {clipStatus === 'failed' && <p className="danger small">{ja.library.fixFailed}</p>}
           <div className="row nowrap">
             <button
