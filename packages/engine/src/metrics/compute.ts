@@ -34,8 +34,9 @@ export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}):
   const shoulderCenter = midpoint(lm.gunShoulder, lm.offShoulder);
   const hipCenter = midpoint(lm.gunHip, lm.offHip);
   const ankleCenter = midpoint(lm.gunAnkle, lm.offAnkle);
-  // 顔：銃側の耳。見えなければ鼻で代替（要件 6.1）
-  const face = usable(lm.gunEar) ? lm.gunEar : lm.nose;
+  // 顔：カメラに見える非銃側の耳（へそ側から撮ると頭はターゲット方向を向くので、カメラ側に来るのは非銃側の耳。
+  // 2026-10-08、開発者の説明で「銃側の耳」から訂正）。見えなければ鼻で代替（要件 6.1。2026-10-10、開発者の決定）
+  const face = usable(lm.offEar) ? lm.offEar : lm.nose;
 
   const trunkOk = ok(lm.gunShoulder, lm.offShoulder, lm.gunHip, lm.offHip);
   const trunkLength = trunkOk ? distance(hipCenter, shoulderCenter) : null;

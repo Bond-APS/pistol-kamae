@@ -52,6 +52,21 @@ describe('toSided', () => {
     expect(s.gunWrist).toEqual(p(100, 180));
   });
 
+  it('顔の点（非銃側の耳）は、右利きは射手の左耳、左利きは射手の右耳（どちらもカメラに見える側）', () => {
+    // 右利き：非銃側＝左耳 (520,100) がそのまま
+    expect(toSided(rightHander, 'right', WIDTH).offEar).toEqual(rightHander.leftEar);
+    // 左利き：非銃側＝射手の右耳 (480,100) を反転した (520,100)
+    expect(toSided(leftHander, 'left', WIDTH).offEar).toEqual(p(WIDTH - 480, 100));
+    // 顔の点を見える側の耳だけ動かすと、鏡像どうしで首の傾きが一致する（銃側の耳を誤って使えば一致しない）
+    const right = { ...rightHander, leftEar: p(450, 100), rightEar: p(480, 100, 0.2) };
+    const left = { ...leftHander, rightEar: p(550, 100), leftEar: p(520, 100, 0.2) };
+    const mr = computeMetrics(toSided(right, 'right', WIDTH));
+    const ml = computeMetrics(toSided(left, 'left', WIDTH));
+    expect(mr.neckTilt).toBeCloseTo(ml.neckTilt!, 6);
+    // 肩中心 (500,190) → 耳 (450,100)：atan(50/90) = 29.05°、銃側へ寄っているので正
+    expect(mr.neckTilt).toBeCloseTo(29.05, 2);
+  });
+
   it('鏡像の左利きと右利きは同じ計測値になる', () => {
     const mr = computeMetrics(toSided(rightHander, 'right', WIDTH));
     const ml = computeMetrics(toSided(leftHander, 'left', WIDTH));

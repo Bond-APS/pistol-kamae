@@ -12,8 +12,8 @@ const p = (x: number, y: number, visibility = 1): Point => ({ x, y, visibility }
 function upright(overrides: Partial<SidedLandmarks> = {}): SidedLandmarks {
   return {
     nose: p(500, 100),
-    gunEar: p(500, 100), // 肩中心の真上
-    offEar: p(520, 100),
+    gunEar: p(480, 100),
+    offEar: p(500, 100), // 肩中心の真上。顔の点＝カメラに見える非銃側の耳（要件 6.1）
     gunShoulder: p(400, 200),
     offShoulder: p(600, 200),
     gunHip: p(440, 400),
@@ -68,13 +68,20 @@ describe('computeMetrics', () => {
     expect(m.trunkTilt).toBeCloseTo(-5.71, 2);
   });
 
-  it('(d) 首：顔が銃側へ寄ると正、耳が見えなければ鼻で代替', () => {
-    // 肩中心 (500,200)。耳 (400,100)：atan(100/100) = 45°
-    const m1 = computeMetrics(upright({ gunEar: p(400, 100) }));
+  it('(d) 首：顔（非銃側の耳）が銃側へ寄ると正、耳が見えなければ鼻で代替', () => {
+    // 肩中心 (500,200)。非銃側の耳 (400,100)：atan(100/100) = 45°
+    const m1 = computeMetrics(upright({ offEar: p(400, 100) }));
     expect(m1.neckTilt).toBeCloseTo(45, 6);
-    // 耳が見えない → 鼻 (500,100) を使う → 0°
-    const m2 = computeMetrics(upright({ gunEar: p(400, 100, 0.1) }));
+    // 非銃側の耳が見えない → 鼻 (500,100) を使う → 0°
+    const m2 = computeMetrics(upright({ offEar: p(400, 100, 0.1) }));
     expect(m2.neckTilt).toBeCloseTo(0, 6);
+    // 銃側の耳（カメラから遠い側）は使わない：動かしても変わらない
+    const m3 = computeMetrics(upright({ gunEar: p(300, 100) }));
+    expect(m3.neckTilt).toBeCloseTo(0, 6);
+    expect(m3.wristFaceDistance).toBeCloseTo((500 - 100) / 200, 6);
+    // (j) 手首と顔の水平距離も非銃側の耳から測る：耳が (540,100) なら (540-100)/200
+    const m4 = computeMetrics(upright({ offEar: p(540, 100) }));
+    expect(m4.wristFaceDistance).toBeCloseTo((540 - 100) / 200, 6);
   });
 
   it('(f) 腕：手首が上がると正', () => {
@@ -145,8 +152,8 @@ describe('computeMetrics', () => {
 
   it('耳が画面の外なら鼻で代替する', () => {
     const size = { imageSize: { width: 1000, height: 1000 } };
-    // 耳 (400,-5) は画面の上にはみ出し → 鼻 (500,100) を使う → 0°
-    expect(computeMetrics(upright({ gunEar: p(400, -5) }), size).neckTilt).toBeCloseTo(0, 6);
+    // 非銃側の耳 (400,-5) は画面の上にはみ出し → 鼻 (500,100) を使う → 0°
+    expect(computeMetrics(upright({ offEar: p(400, -5) }), size).neckTilt).toBeCloseTo(0, 6);
   });
 
   it('動画の大きさを渡さなければ、画面の内外は調べない', () => {
