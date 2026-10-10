@@ -192,7 +192,7 @@ try {
       (await tid('video-pick-label').textContent()) === '下のボタンを押して動画を選ぶ',
     await tid('video-pick-label').textContent(),
   );
-  const TRIM_HINT = '動画は、1回の射撃のみにトリミングしておいてください。';
+  const TRIM_HINT = '動画は、1 回の射撃のみにトリミングしておいてください。';
   check(
     '読み込む前に、トリミングの注記が「ファイルを選択」の下に出る（最終-23）',
     (await tid('load-trim-hint').count()) === 1 &&
