@@ -23,6 +23,7 @@ import {
 } from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
+import { useNav, useNavListener } from '../navigation/useNav';
 import { personCrop } from '../library/crop';
 import { RecordPlayer, type PlayerMode } from './RecordPlayer';
 
@@ -57,6 +58,16 @@ export function RecordDetail(props: Props) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [editing, setEditing] = useState(false);
   const [player, setPlayer] = useState<PlayerMode | null>(null);
+  // 「動画を再生」「撃発ポイントの修正」「切り抜き範囲の修正」は履歴を 1 つ積み、ブラウザの「戻る」で詳細に戻る
+  const nav = useNav();
+  const openPlayer = (mode: PlayerMode) => {
+    setPlayer(mode);
+    nav.push({ view: 'library', detail: recordId, player: mode });
+  };
+  const closePlayer = () => nav.back({ view: 'library', detail: recordId });
+  useNavListener((entry) => {
+    if (entry.view === 'library' && entry.detail === recordId) setPlayer(entry.player ?? null);
+  });
   /** 動画本体が保存されているか。調べ終わるまでは null */
   const [hasVideo, setHasVideo] = useState<boolean | null>(null);
   const checkVideo = useCallback(
@@ -213,7 +224,7 @@ export function RecordDetail(props: Props) {
         mode={player}
         active={props.active}
         backLabel={ja.library.backToDetail}
-        onClose={() => setPlayer(null)}
+        onClose={closePlayer}
         onChanged={(id) => {
           void reload();
           onChanged(id);
@@ -298,7 +309,7 @@ export function RecordDetail(props: Props) {
           className="full"
           data-testid="detail-play"
           disabled={hasVideo !== true}
-          onClick={() => setPlayer('play')}
+          onClick={() => openPlayer('play')}
         >
           {ja.library.play}
         </button>
@@ -309,7 +320,7 @@ export function RecordDetail(props: Props) {
           className="full"
           data-testid="detail-fix-shot"
           disabled={hasVideo !== true}
-          onClick={() => setPlayer('shot')}
+          onClick={() => openPlayer('shot')}
         >
           {ja.library.fixShot}
         </button>
@@ -317,7 +328,7 @@ export function RecordDetail(props: Props) {
           className="full"
           data-testid="detail-fix-clip"
           disabled={hasVideo !== true}
-          onClick={() => setPlayer('clip')}
+          onClick={() => openPlayer('clip')}
         >
           {ja.library.fixClip}
         </button>

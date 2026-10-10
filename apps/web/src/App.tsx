@@ -12,10 +12,13 @@ import {
 } from './db/library';
 import type { ShooterRow } from './db/schema';
 import { ja } from './i18n/ja';
+import { createNav, type NavEntry } from './navigation/history';
+import { NavProvider } from './navigation/NavProvider';
+import { useNavListener } from './navigation/useNav';
 import { CompareScreen } from './screens/CompareScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
 import { NoiseScreen } from './screens/NoiseScreen';
-import { SaveScreen } from './screens/SaveScreen';
+import { SaveScreen, type SaveStep } from './screens/SaveScreen';
 
 /** 入口は 2 つ。比較はライブラリから入る（タブではない）。ノイズ測定は開発用で、?noise=1 のときだけ */
 type Tab = 'save' | 'library' | 'noise';
@@ -27,8 +30,24 @@ const params = new URLSearchParams(window.location.search);
 const autoTestRequested = import.meta.env.DEV && params.has('autotest');
 const TABS: Tab[] = params.has('noise') ? ['save', 'library', 'noise'] : ['save', 'library'];
 
+/**
+ * 画面の履歴（最終-10）。起点は「動画の保存」の射手の選択。段階が進むたびに各画面が 1 つ積み、
+ * ブラウザの「戻る」（iPhone の画面左端からのスワイプ）で 1 つ前の段階へ戻れるようにする
+ */
+const nav = createNav({ view: 'save', step: 'shooter' });
+
 export function App() {
+  return (
+    <NavProvider nav={nav}>
+      <AppBody />
+    </NavProvider>
+  );
+}
+
+function AppBody() {
   const [view, setView] = useState<View>('save');
+  /** 保存の流れの今の段階（タブの切り替えで積む項目に書くため） */
+  const [saveStep, setSaveStep] = useState<SaveStep>('shooter');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [shooters, setShooters] = useState<ShooterRow[]>([]);
   /** 起動時の射手の一覧を読み終えたか（読み終える前に「射手を登録」を出さないため） */
@@ -79,17 +98,47 @@ export function App() {
     void setLastShooterId(id).catch(() => {});
   }, []);
 
-  const changeView = useCallback((v: View) => {
-    setView(v);
-    window.scrollTo(0, 0);
-  }, []);
+  // 履歴の項目が知らされたら（タブの切り替え、各画面の段階、ブラウザの「戻る」）、その画面を出す
+  useNavListener((entry) => {
+    if (view !== entry.view) window.scrollTo(0, 0);
+    setView(entry.view);
+  });
+  /** タブに対応する履歴の項目。「動画の保存」は今の段階のまま */
+  const entryForTab = useCallback(
+    (t: Tab, step: SaveStep = saveStep): NavEntry =>
+      t === 'save' ? { view: 'save', step } : { view: t },
+    [saveStep],
+  );
+  const changeTab = useCallback(
+    (t: Tab) => {
+      if (t !== view) nav.push(entryForTab(t));
+    },
+    [view, entryForTab],
+  );
   const [newRequest, setNewRequest] = useState(0);
+  // ライブラリの「動画を読み込む」：保存し終えた状態なら射手の選択から、途中ならその段階のまま
   const goLoad = useCallback(() => {
     setNewRequest((n) => n + 1);
-    changeView('save');
-  }, [changeView]);
-  const goLibrary = useCallback(() => changeView('library'), [changeView]);
-  const goCompare = useCallback(() => changeView('compare'), [changeView]);
+    nav.push(entryForTab('save', saveStep === 'done' ? 'shooter' : saveStep));
+  }, [entryForTab, saveStep]);
+  /** 保存の完了からライブラリへ（進む） */
+  const goLibrary = useCallback(() => nav.push({ view: 'library' }), []);
+  /** 比較画面の「← ライブラリへ」（比較を 1 つ積んであるので、戻る） */
+  const backToLibrary = useCallback(() => nav.back({ view: 'library' }), []);
+  const goCompare = useCallback(() => nav.push({ view: 'compare' }), []);
+
+  // 解析結果があって保存していないときは、タブを閉じる・再読込の前に確認を出す
+  // （Mac・Windows・Android 向け。iPhone の Safari はこの確認を出さない）
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // 古いブラウザ向け（文面はブラウザが決める）
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsaved]);
 
   const changePair = useCallback((next: ComparePair) => {
     setPair(next);
@@ -144,7 +193,7 @@ export function App() {
             className={tab === t ? 'tab active' : 'tab'}
             data-testid={`tab-${t}`}
             aria-current={tab === t ? 'page' : undefined}
-            onClick={() => changeView(t)}
+            onClick={() => changeTab(t)}
           >
             {ja.tabs[t]}
             {t === 'save' && unsaved && (
@@ -172,6 +221,7 @@ export function App() {
             onShooterChange={changeShooter}
             onShootersChanged={reloadShooters}
             onUnsavedChange={setUnsaved}
+            onStepChange={setSaveStep}
             onResultChange={setResult}
             newRequest={newRequest}
             onGoLibrary={goLibrary}
@@ -198,7 +248,7 @@ export function App() {
             shooters={shooters}
             pair={pair}
             onPairChange={changePair}
-            onGoLibrary={goLibrary}
+            onGoLibrary={backToLibrary}
             onRecordChanged={bumpLibrary}
           />
         )}

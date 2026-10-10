@@ -37,6 +37,7 @@ import { WaveBar, type WaveSeries } from '../components/WaveBar';
 import { SHOT_EDIT_SPAN_SEC, peakShot, shiftShot, shotFrameDelta } from '../compare/shotEdit';
 import { overwriteRecordMarksAll, updateRecordClipAll, type OpenedRecord } from '../db/library';
 import { ja } from '../i18n/ja';
+import { useNav, useNavListener } from '../navigation/useNav';
 import { captureShotImages } from '../video/capture';
 import { usePlayback, type PlaybackVideo } from '../video/usePlayback';
 
@@ -234,11 +235,34 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     const e0 = Math.min(snapT(endT), extent.afterSec);
     if (e0 - s0 >= 1 / c.fps) setClipEdit({ startT: s0, endT: e0 });
   };
+  // 「撃発ポイントの修正」「切り抜き範囲の修正」は履歴を 1 つ積み、ブラウザの「戻る」は「やめる」と同じにする
+  // （iPhone の画面左端からのスワイプで、修正の途中を失わないため）。「決定」で保存したときも項目を 1 つ戻す
+  const nav = useNav();
+  /**
+   * 「決定」で保存したあとに自分で戻した履歴の合図を 1 回だけ読み飛ばす印。React の状態（pendingReload）は
+   * 合図が届くより後に画面へ反映されることがあるので、その場で書ける ref で持つ
+   */
+  const skipPopRef = useRef(false);
+  /** 「決定」で保存が済んだ：読み直しを待ちつつ、修正の履歴の項目を戻す */
+  const finishSave = () => {
+    setPendingReload(true);
+    skipPopRef.current = true;
+    nav.back({ view: 'compare' });
+  };
   const beginClipEdit = () => {
     playback.pause();
     setClipStatus('none');
     setClipEdit({ startT: -win.beforeSec, endT: win.afterSec });
+    nav.push({ view: 'compare', edit: 'clip' });
   };
+  /** 切り抜きの修正を閉じ、共通の区間へ戻る */
+  const closeClipEdit = () => {
+    setClipEdit(null);
+    setClipStatus('none');
+    if (playback.playing) playback.pause();
+    setT(Math.min(Math.max(t, -win.beforeSec), win.afterSec));
+  };
+  const cancelEdit = () => nav.back({ view: 'compare' });
   /** 決めた開始・終了を、①②それぞれの動画の時刻に直して保存する */
   const saveClips = async () => {
     if (!clipEdit || clipStatus === 'saving') return;
@@ -267,8 +291,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     try {
       // 2 件を 1 つのトランザクションで書く（片方だけ書き換わった状態を残さない）
       await updateRecordClipAll(clips.map(({ side, clip }) => ({ id: side.recordId, clip })));
-      // 修正を閉じるのは、読み直した記録が届いてから（上の pendingReload）
-      setPendingReload(true);
+      // 修正を閉じるのは、読み直した記録が届いてから（上の pendingReload）。履歴の項目は先に戻す
+      finishSave();
       onRecordsChanged(sides.map((side) => side.recordId));
     } catch {
       setClipStatus('failed');
@@ -280,13 +304,36 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     setShotEdit({ role: 'current', base: b.shotSec, current: c.shotSec });
     // 撃発の瞬間どうしを見比べるところから始める
     setT(0);
+    nav.push({ view: 'compare', edit: 'shot' });
   };
-  const endShotEdit = () => {
+  const closeShotEdit = () => {
     if (playback.playing) playback.pause();
     setShotEdit(null);
     setShotStatus('none');
     setT(0);
   };
+  // ブラウザの「戻る」で修正の項目を離れたら「やめる」と同じ。保存の書き込み中は受け付けない（項目を積み直す）。
+  // 「決定」のあと読み直しを待っている間は、読み直しが届いたときに閉じる（上の pendingReload）
+  useNavListener((entry, source) => {
+    if (source !== 'pop' || entry.view !== 'compare') return;
+    if (skipPopRef.current) {
+      skipPopRef.current = false;
+      return;
+    }
+    const editing = clipEdit ? 'clip' : shotEdit ? 'shot' : undefined;
+    if (entry.edit === editing || pendingReload) return;
+    if (entry.edit !== undefined) {
+      // 「進む」で修正の項目へ来た：作り込まないので、履歴を 1 つ戻して今の状態に留まる
+      nav.back({ view: 'compare' });
+      return;
+    }
+    if (editing && (clipStatus === 'saving' || shotStatus === 'saving')) {
+      nav.push({ view: 'compare', edit: editing });
+      return;
+    }
+    if (clipEdit) closeClipEdit();
+    if (shotEdit) closeShotEdit();
+  });
   /** 選んでいる側の撃発ポイントを動かす。動かしたあとは、撃発の瞬間どうしを表示する */
   const moveShot = (next: number | null) => {
     if (!shotEdit || next === null || shotStatus === 'saving') return;
@@ -302,7 +349,7 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
       role === 'base' ? shotEdit.base !== b.shotSec : shotEdit.current !== c.shotSec,
     );
     if (changed.length === 0) {
-      endShotEdit();
+      cancelEdit();
       return;
     }
     playback.pause();
@@ -326,8 +373,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
         });
       }
       await overwriteRecordMarksAll(items);
-      // 修正を閉じるのは、読み直した記録が届いてから（上の pendingReload）
-      setPendingReload(true);
+      // 修正を閉じるのは、読み直した記録が届いてから（上の pendingReload）。履歴の項目は先に戻す
+      finishSave();
       onRecordsChanged(items.map((item) => item.id));
     } catch {
       setShotStatus('failed');
@@ -636,13 +683,7 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
             <button
               data-testid="clip-cancel"
               disabled={clipStatus === 'saving'}
-              onClick={() => {
-                setClipEdit(null);
-                setClipStatus('none');
-                // 共通の区間へ戻る
-                if (playback.playing) playback.pause();
-                setT(Math.min(Math.max(t, -win.beforeSec), win.afterSec));
-              }}
+              onClick={cancelEdit}
             >
               {ja.common.cancel}
             </button>
@@ -733,7 +774,7 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
             </p>
           )}
           <div className="row nowrap">
-            <button data-testid="shot-edit-cancel" disabled={savingShot} onClick={endShotEdit}>
+            <button data-testid="shot-edit-cancel" disabled={savingShot} onClick={cancelEdit}>
               {ja.common.cancel}
             </button>
             <button

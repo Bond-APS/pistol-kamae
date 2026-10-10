@@ -3,6 +3,7 @@ import { RecordSummary } from '../components/RecordSummary';
 import { listRecords, setRecordFavorite, storageUsage, type ComparePair } from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
 import { ja } from '../i18n/ja';
+import { useNav, useNavListener } from '../navigation/useNav';
 import {
   NO_FILTER,
   countByShooter,
@@ -29,15 +30,6 @@ interface Props {
   /** 2 件が選ばれた状態で「この 2 件を比較する」を押したとき */
   onCompare: () => void;
 }
-
-/** ブラウザの「戻る」の履歴に付ける目印。記録を開いている間だけ積む */
-interface DetailState {
-  kamaeDetail: number;
-}
-const detailIdOf = (state: unknown): number | null => {
-  const id = (state as Partial<DetailState> | null)?.kamaeDetail;
-  return typeof id === 'number' ? id : null;
-};
 
 /** ライブラリ画面：保存した動画の一覧（比較する 2 件の選択）と、開いた 1 本 */
 export function LibraryScreen(props: Props) {
@@ -67,19 +59,14 @@ export function LibraryScreen(props: Props) {
 
   useEffect(() => {
     if (active) void reload();
-    // 別のタブへ移るときは、開いていた記録を閉じて一覧に戻しておく
-    else if (detailIdOf(window.history.state) !== null) window.history.back();
   }, [active, reload, version]);
 
   // 記録を開いている間は履歴を 1 つ積み、ブラウザの「戻る」（iPhone では画面左端からのスワイプ）で
-  // 一覧へ戻れるようにする
-  useEffect(() => {
-    // 再読込の直後に目印だけが残っていたら消す
-    if (detailIdOf(window.history.state) !== null) window.history.replaceState(null, '');
-    const onPop = (e: PopStateEvent) => setOpenId(detailIdOf(e.state));
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
+  // 一覧へ戻れるようにする。タブの切り替えで積まれる「ライブラリ」の項目は一覧なので、開いていた記録は閉じる
+  const nav = useNav();
+  useNavListener((entry) => {
+    if (entry.view === 'library') setOpenId(entry.detail ?? null);
+  });
 
   // 記録を開いたら先頭へ、一覧へ戻ったら元の位置へ。別のタブを表示中は動かさない
   const activeRef = useRef(active);
@@ -92,13 +79,10 @@ export function LibraryScreen(props: Props) {
 
   const open = (id: number) => {
     listScrollY.current = window.scrollY;
-    window.history.pushState({ kamaeDetail: id } satisfies DetailState, '');
     setOpenId(id);
+    nav.push({ view: 'library', detail: id });
   };
-  const close = () => {
-    if (detailIdOf(window.history.state) !== null) window.history.back();
-    else setOpenId(null);
-  };
+  const close = () => nav.back({ view: 'library' });
 
   const shooterById = useMemo(() => new Map(shooters.map((s) => [s.id, s])), [shooters]);
   const counts = useMemo(() => countByShooter(rows ?? []), [rows]);

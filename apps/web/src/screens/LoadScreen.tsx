@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type MutableRefObject } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
 import {
   isAborted,
   isSeekStalled,
@@ -52,7 +59,13 @@ type Status =
   | { kind: 'stalled' }
   | { kind: 'error'; message: string };
 
-export function LoadScreen(props: Props) {
+/** 親（保存の流れ）から呼ぶ操作 */
+export interface LoadHandle {
+  /** 読み込み・推定の途中なら「やめる」「中断」と同じに止めて true を返す。途中でなければ false */
+  cancel(): boolean;
+}
+
+export const LoadScreen = forwardRef<LoadHandle, Props>(function LoadScreen(props, ref) {
   // video 要素は React の管理外（DOM を直接いじる）なので ref で持つ
   const { videoRef, shooter, result } = props;
   const [info, setInfo] = useState<VideoInfo | null>(null);
@@ -158,6 +171,17 @@ export function LoadScreen(props: Props) {
   };
 
   const busy = status.kind === 'preparing' || status.kind === 'running';
+  useImperativeHandle(
+    ref,
+    () => ({
+      cancel: () => {
+        if (!busy && status.kind !== 'loading') return false;
+        abortRef.current?.abort();
+        return true;
+      },
+    }),
+    [busy, status.kind],
+  );
   /** 動画を読み込み済みか。読み込んだあとは、選び直しの案内と「選択済み」を出す */
   const picked = info !== null;
 
@@ -299,4 +323,4 @@ export function LoadScreen(props: Props) {
       )}
     </section>
   );
-}
+});

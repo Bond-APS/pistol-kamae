@@ -8,13 +8,23 @@ import {
   type Clip,
   type RecordAnalysis,
 } from '@pistol-kamae/engine';
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { frameRange, nearestFrameInRange, snapToFrame } from '../analysis/frames';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { loudestTimeSec } from '../audio/envelope';
 import { adoptEnvelope, useAudioEnvelope } from '../audio/useAudioEnvelope';
 import { VIDEO_MAX_BYTES, VIDEO_MAX_MB } from '../video/limits';
 import { ConfirmDialog } from '../components/Dialog';
+import type { NavEntry } from '../navigation/history';
+import { useNav, useNavListener } from '../navigation/useNav';
 import { RecordForm } from '../components/RecordForm';
 import { SinglePlayer } from '../components/SinglePlayer';
 import { StepBar } from '../components/StepBar';
@@ -25,6 +35,7 @@ import { ja } from '../i18n/ja';
 import { captureShotImages } from '../video/capture';
 import { LoadScreen } from './LoadScreen';
 import { ShooterStep } from './ShooterStep';
+import type { LoadHandle } from './LoadScreen';
 
 /**
  * 保存する動画本体の大きさの上限（バイト）。保存と表示のとき、動画全体を一度メモリに載せるので、
@@ -32,6 +43,10 @@ import { ShooterStep } from './ShooterStep';
  */
 
 export type SaveStep = 'shooter' | 'video' | 'clip' | 'shot' | 'form' | 'done';
+/** 段階の順（履歴の合図が「前へ」か「先へ」かを見分ける） */
+const ORDER: SaveStep[] = ['shooter', 'video', 'clip', 'shot', 'form', 'done'];
+/** その動画のために積んだ段階（保存が終わったら履歴から取り除く） */
+const isFlowStep = (e: NavEntry) => e.view === 'save' && e.step !== 'shooter' && e.step !== 'done';
 
 interface Props {
   /** この画面が表示中か。隠れたら再生を止める */
@@ -46,6 +61,8 @@ interface Props {
   onShootersChanged: () => Promise<void>;
   /** 保存していない動画があるかどうかが変わったとき（タブの印に使う） */
   onUnsavedChange: (unsaved: boolean) => void;
+  /** 段階が変わったとき（App がタブの切り替えで履歴に積む項目に書く） */
+  onStepChange: (step: SaveStep) => void;
   /** 推定の結果が変わったとき（開発用のノイズ測定に渡す） */
   onResultChange: (result: AnalysisResult | null) => void;
   /** ライブラリの「動画を読み込む」などで来たときに増える番号。保存し終えた状態なら、新しい動画の受け入れに戻す */
@@ -73,7 +90,7 @@ const clipOrNull = (clip: Clip, durationSec: number): Clip | null =>
  * 射手の選択は ShooterStep、動画の指定（推定が終わるまで）は読込画面（LoadScreen）が受け持ち、その後は 1 本のプレイヤーで切り抜きと撃発ポイントを決める。
  */
 export function SaveScreen(props: Props) {
-  const { videoRef, shooters, shooter, onUnsavedChange } = props;
+  const { active, videoRef, shooters, shooter, onUnsavedChange } = props;
   const [step, setStep] = useState<SaveStep>('shooter');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -100,6 +117,57 @@ export function SaveScreen(props: Props) {
     playerVideoRef.current = v;
   }, []);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  /** 保存の書き込み中（「戻る」を受け付けない） */
+  const [saving, setSaving] = useState(false);
+  const nav = useNav();
+  const loadRef = useRef<LoadHandle>(null);
+  /** 今の段階（撮影のあとなど、時間のかかる処理の終わりに最新の段階で判断するため） */
+  const stepRef = useRef(step);
+  useLayoutEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+  /** 「保存せずに進む」を押したあと（履歴を戻した先で、確認なしに捨てる） */
+  const discardRef = useRef(false);
+  const { onStepChange } = props;
+  useEffect(() => onStepChange(step), [step, onStepChange]);
+  /**
+   * 別のタブを見ている間に段階が進んだ（推定が終わって切り抜きへ、など）ので、履歴にまだ積んでいない印。
+   * 積むと画面がこのタブへ切り替わってしまうため、積まずに段階だけ進め、戻ってきたときに履歴を合わせる
+   */
+  const pendingPushRef = useRef(false);
+  /** このタブが表示中か（推定の完了は、始めたときの古い関数から知らされるので、最新の値を ref で見る） */
+  const activeRef = useRef(active);
+  useLayoutEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+  /** 段階を 1 つ進め、履歴に積む（このタブが表示中のときだけ） */
+  const advance = useCallback(
+    (to: SaveStep) => {
+      setStep(to);
+      if (activeRef.current) {
+        pendingPushRef.current = false;
+        nav.push({ view: 'save', step: to });
+      } else pendingPushRef.current = true;
+    },
+    [nav],
+  );
+  /**
+   * 1 つ前の段階へ戻る。履歴の 1 つ前がその段階なら履歴を 1 つ戻し、その合図で段階を戻す（ブラウザの「戻る」と
+   * 同じ道）。そうでなければ（タブを往復したあとなど、1 つ前が別のタブ）、先頭を置き換えて自分で段階を戻す
+   */
+  const goBack = useCallback(
+    (to: SaveStep, apply: () => void, beforeBack?: () => void) => {
+      const prev = nav.previous();
+      if (prev?.view === 'save' && prev.step === to) {
+        beforeBack?.();
+        nav.back({ view: 'save', step: to });
+      } else {
+        nav.replace({ view: 'save', step: to });
+        apply();
+      }
+    },
+    [nav],
+  );
 
   const envelope = useAudioEnvelope(file ? { kind: 'file', file } : null);
   const loudest = useMemo(
@@ -150,22 +218,96 @@ export function SaveScreen(props: Props) {
   }, [file, result]);
   // ファイルが替わった直後は、前のファイルの（解放済みの）URL を渡さない
   const playerUrl = urlEntry && urlEntry.file === file ? urlEntry.url : null;
-  const onResult = useCallback((r: AnalysisResult | null, f: File | null) => {
-    setResult(r);
-    setFile(f);
-    setShotSec(null);
-    setImages(null);
-    setSaved(null);
-    setClipProblem(null);
-    setCaptureFailed(false);
-    setTouched(false);
-    if (r) {
-      setClip({ startSec: 0, endSec: r.durationSec });
-      setValueSec(0);
-      // 推定が終わったら、自動で切り抜きへ進む（2026-10-04、開発者の指示）
-      setStep('clip');
+  const onResult = useCallback(
+    (r: AnalysisResult | null, f: File | null) => {
+      setResult(r);
+      setFile(f);
+      setShotSec(null);
+      setImages(null);
+      setSaved(null);
+      setClipProblem(null);
+      setCaptureFailed(false);
+      setTouched(false);
+      if (r) {
+        setClip({ startSec: 0, endSec: r.durationSec });
+        setValueSec(0);
+        // 推定が終わったら、自動で切り抜きへ進む（2026-10-04、開発者の指示）
+        advance('clip');
+      }
+    },
+    [advance],
+  );
+
+  // ブラウザの「戻る」（履歴の合図）：画面の「戻る」ボタンと同じ動きにする。
+  // 推定の実行中は「中断」、撮っている間と保存の書き込み中は受け付けない（項目を積み直す）
+  useNavListener((entry, source) => {
+    if (entry.view !== 'save') return;
+    const cur = step;
+    const target = entry.step;
+    if (source === 'push') {
+      // タブの切り替えで今の段階が積まれた：積み残しは解消
+      if (target === cur) pendingPushRef.current = false;
+      return;
     }
-  }, []);
+    if (pendingPushRef.current) {
+      // 別のタブを見ている間に進んだ段階をまだ積んでいない：戻ってきた先頭を今の段階に置き換えて、そのまま出す
+      pendingPushRef.current = false;
+      nav.replace({ view: 'save', step: cur });
+      return;
+    }
+    if (target === cur) return;
+    const stay = () => nav.push({ view: 'save', step: cur });
+    // 「進む」の作り込みはしない：先の段階の項目へ進んだら、履歴を 1 つ戻して今の段階に留まる
+    if (ORDER.indexOf(target) > ORDER.indexOf(cur)) {
+      nav.back({ view: 'save', step: cur });
+      return;
+    }
+    /** 戻った結果の段階（null＝留まる）。着地した項目と違えば、先頭をその段階に置き換えて合わせる */
+    let next: SaveStep | null = null;
+    switch (cur) {
+      case 'video':
+        // 解析中（読み込み・推定）なら中断して、動画の指定に留まる
+        if (loadRef.current?.cancel()) stay();
+        else {
+          setStep('shooter');
+          next = 'shooter';
+        }
+        break;
+      case 'clip':
+        if (discardRef.current) {
+          discardRef.current = false;
+          next = target === 'shooter' ? 'shooter' : 'video';
+          reset(next);
+        } else {
+          // 解析結果を捨ててよいか確かめる（確認の間は項目を積み直しておく）
+          stay();
+          setConfirmingReset(true);
+        }
+        break;
+      case 'shot':
+        if (capturing) stay();
+        else {
+          setStep('clip');
+          next = 'clip';
+        }
+        break;
+      case 'form':
+        if (saving) stay();
+        else {
+          setStep('shot');
+          next = 'shot';
+        }
+        break;
+      case 'done':
+        // 保存が終わった状態から戻るのは「次の動画を保存する」と同じ
+        reset('shooter');
+        next = 'shooter';
+        break;
+      case 'shooter':
+        break;
+    }
+    if (next !== null && next !== target) nav.replace({ view: 'save', step: next });
+  });
 
   // 撃発の段階で、まだつまみを動かしていなければ、音の最大（分かり次第）を表示する
   const shownSec =
@@ -183,15 +325,16 @@ export function SaveScreen(props: Props) {
             shooter={shooter}
             onShooterChange={props.onShooterChange}
             onShootersChanged={props.onShootersChanged}
-            onNext={() => setStep('video')}
+            onNext={() => advance('video')}
           />
         )}
         {/* 動画の指定は隠すだけにして、射手の選択へ戻っても読み込んだ動画を保つ */}
         <div hidden={openStep !== 'video'}>
           <LoadScreen
+            ref={loadRef}
             videoRef={videoRef}
             shooter={shooter}
-            onBackToShooter={() => setStep('shooter')}
+            onBackToShooter={() => goBack('shooter', () => setStep('shooter'))}
             result={result}
             onResult={onResult}
           />
@@ -245,7 +388,7 @@ export function SaveScreen(props: Props) {
       if (!clipContains(clip, durationSec, valueSec)) setValueSec(clip.startSec);
       setTouched(false);
     }
-    setStep('shot');
+    advance('shot');
   };
   const setShotHere = async () => {
     const video = playerVideoRef.current;
@@ -253,7 +396,7 @@ export function SaveScreen(props: Props) {
     if (!video || capturing || playing || !video.paused || !shotInClip) return;
     // 確定済みの撃発ポイントと同じコマなら、撮り直さずに保存へ進む（保存の段階から戻ってきたとき）
     if (shotSec !== null && images && frameSec === shotSec) {
-      setStep('form');
+      advance('form');
       return;
     }
     // つまみをこのコマに固定してから撮る。音の最大に置かれたまま触らずに確定した場合に、撮っている間に
@@ -270,7 +413,7 @@ export function SaveScreen(props: Props) {
       setShotSec(sec);
       setImages(captured);
       // 確定したら、自動で保存の段階へ進む（2026-10-04、開発者の指示）。撮っている間に撃発の段階を離れていたら進めない
-      setStep((s) => (s === 'shot' ? 'form' : s));
+      if (stepRef.current === 'shot') advance('form');
     } catch {
       // 撮れなければ撃発ポイントは付けず、もう一度押してもらう（保存の段階ではプレイヤーがなく撮り直せない）
       setCaptureFailed(true);
@@ -279,6 +422,15 @@ export function SaveScreen(props: Props) {
   };
 
   const saveNew = async (fields: RecordFields) => {
+    if (shotSec === null || !file || !images) throw new Error('nothing to save');
+    setSaving(true);
+    try {
+      await writeNew(fields);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const writeNew = async (fields: RecordFields) => {
     if (shotSec === null || !file || !images) throw new Error('nothing to save');
     const recordId = await addRecord(
       fields,
@@ -303,7 +455,12 @@ export function SaveScreen(props: Props) {
     setSaved({ recordId, videoFailed, tooLarge });
     props.onSaved(recordId);
     setStep('done');
+    // この動画のために積んだ段階（動画の指定〜保存）を履歴から取り除き、完了を 1 つ置く。
+    // 戻ると「次の動画を保存する」と同じ（射手の選択）になる
+    nav.unwindAndPush(isFlowStep, { view: 'save', step: 'done' });
   };
+  /** 「次の動画を保存する」：完了の項目を戻す（戻る先が射手の選択でなければ、置き換える） */
+  const nextVideo = () => goBack('shooter', () => reset('shooter'));
 
   const shotMarkers: BarMarker[] = [];
   if (shotSec !== null) shotMarkers.push({ key: 'shot', sec: shotSec, label: ja.shot.marker });
@@ -428,7 +585,11 @@ export function SaveScreen(props: Props) {
             </p>
           )}
           <div className="row">
-            <button data-testid="shot-back" disabled={capturing} onClick={() => setStep('clip')}>
+            <button
+              data-testid="shot-back"
+              disabled={capturing}
+              onClick={() => goBack('clip', () => setStep('clip'))}
+            >
               {ja.shot.backToClip}
             </button>
           </div>
@@ -457,7 +618,11 @@ export function SaveScreen(props: Props) {
             />
           )}
           <div className="row">
-            <button data-testid="form-back" onClick={() => setStep('shot')}>
+            <button
+              data-testid="form-back"
+              disabled={saving}
+              onClick={() => goBack('shot', () => setStep('shot'))}
+            >
               {ja.common.back}
             </button>
           </div>
@@ -478,11 +643,7 @@ export function SaveScreen(props: Props) {
             </p>
           )}
           <div className="stack">
-            <button
-              className="primary full"
-              data-testid="save-next"
-              onClick={() => reset('shooter')}
-            >
+            <button className="primary full" data-testid="save-next" onClick={nextVideo}>
               {ja.save.nextVideo}
             </button>
             <button className="full" data-testid="save-view" onClick={props.onGoLibrary}>
@@ -499,7 +660,14 @@ export function SaveScreen(props: Props) {
           destructive
           onConfirm={() => {
             setConfirmingReset(false);
-            reset('video');
+            // 履歴を 1 つ戻し、その合図で捨てる（ブラウザの「戻る」と同じ道）。1 つ前が動画の指定でなければ、その場で捨てる
+            goBack(
+              'video',
+              () => reset('video'),
+              () => {
+                discardRef.current = true;
+              },
+            );
           }}
           onCancel={() => setConfirmingReset(false)}
           testId="discard-dialog"
