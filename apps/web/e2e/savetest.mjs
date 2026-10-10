@@ -362,31 +362,25 @@ try {
     const m = /（(\d+) \/ (\d+) コマ）/.exec(text ?? '');
     return m ? { n: Number(m[1]), total: Number(m[2]) } : null;
   };
-  // 番号は範囲の先頭を 1 として数える（最終-25）。期待値は、画面が出している動画全体のコマ番号
-  // （data-frame-index）から作る：バーの端に置いたときの番号を範囲の最初・最後とする
-  // （コマの時刻は Chrome で 1/30 秒から揺れることがあり、「1.0〜4.0 秒は 91 コマ」と決め打ちしない）
-  const rangeOf = async (playerId, barId) => {
+  // 番号は範囲の先頭を 1 として数える（最終-25）。期待値は、表示中のコマの時刻とバーの両端（切り抜きの範囲）から
+  // 30 fps で求める。コマの時刻は Chrome で 1/30 秒から揺れることがあるので、番号も総数も ±1 を許す
+  // （バーの端へシークして番号を読む方法は、Chrome では端のコマの 1 つ手前が表示されることがあり使えない）
+  const expectFrames = async (playerId, barId) => {
     const min = Number(await tid(`${barId}-slider`).getAttribute('min'));
     const max = Number(await tid(`${barId}-slider`).getAttribute('max'));
-    await slideTo(barId, min);
-    await waitSettled(playerId);
-    const first = (await frameOf(playerId)).index;
-    await slideTo(barId, max);
-    await waitSettled(playerId);
-    const last = (await frameOf(playerId)).index;
-    return { first, last };
+    const sec = (await frameOf(playerId)).sec;
+    return { n: Math.round((sec - min) * 30) + 1, total: Math.round((max - min) * 30) + 1 };
   };
-  const shotRange = await rangeOf('shot-player', 'shot-player-bar');
-  await slideTo('shot-player-bar', loudest);
-  await waitSettled('shot-player');
-  const shotAbs = (await frameOf('shot-player')).index;
+  const nearFrames = (label, expected) =>
+    label !== null &&
+    Math.abs(label.n - expected.n) <= 1 &&
+    Math.abs(label.total - expected.total) <= 1;
+  const shotExpected = await expectFrames('shot-player', 'shot-player-bar');
   const shotLabel = frameNumbers(await tid('shot-player-label').textContent());
   check(
     '撃発の段階のコマ番号と総数は、切り抜きの範囲の先頭から数える（最終-25）',
-    shotLabel !== null &&
-      shotLabel.n === shotAbs - shotRange.first + 1 &&
-      shotLabel.total === shotRange.last - shotRange.first + 1,
-    `${await tid('shot-player-label').textContent()} (expected ${shotAbs - shotRange.first + 1} / ${shotRange.last - shotRange.first + 1})`,
+    nearFrames(shotLabel, shotExpected),
+    `${await tid('shot-player-label').textContent()} (expected ${shotExpected.n} / ${shotExpected.total})`,
   );
   check(
     'つまみが音の最大（発射音）に置かれている',
@@ -421,8 +415,8 @@ try {
   const summaryFrame = /（(\d+) コマ目）/.exec(firstSummary);
   check(
     '「撃発ポイント：…（n コマ目）」も、切り抜きの範囲の先頭から数える（最終-25）',
-    summaryFrame !== null && Number(summaryFrame[1]) === shotAbs - shotRange.first + 1,
-    `${firstSummary} (expected ${shotAbs - shotRange.first + 1})`,
+    summaryFrame !== null && Math.abs(Number(summaryFrame[1]) - shotExpected.n) <= 1,
+    `${firstSummary} (expected ${shotExpected.n})`,
   );
   // 保存から戻ると、つまみは確定した撃発ポイントにいる。動かさずに確定し直しても、撃発ポイントは変わらない
   await tid('form-back').click();
@@ -665,17 +659,12 @@ try {
   await tid('record-player').waitFor();
   await waitSettled('player');
   check('再生画面を開くと撃発の瞬間', near(await valueSecOf('player-bar'), shotSec, 0.02));
-  const playRange = await rangeOf('player', 'player-bar');
-  await slideTo('player-bar', shotSec);
-  await waitSettled('player');
-  const playAbs = (await frameOf('player')).index;
+  const playExpected = await expectFrames('player', 'player-bar');
   const playLabel = frameNumbers(await tid('player-label').textContent());
   check(
     '「動画を再生」のコマ番号と総数も、切り抜きの範囲の先頭から数える（最終-25）',
-    playLabel !== null &&
-      playLabel.n === playAbs - playRange.first + 1 &&
-      playLabel.total === playRange.last - playRange.first + 1,
-    `${await tid('player-label').textContent()} (expected ${playAbs - playRange.first + 1} / ${playRange.last - playRange.first + 1})`,
+    nearFrames(playLabel, playExpected),
+    `${await tid('player-label').textContent()} (expected ${playExpected.n} / ${playExpected.total})`,
   );
   check('止めているときは角度表が出る', (await tid('player-table').count()) === 1);
   await shotPng('player');
