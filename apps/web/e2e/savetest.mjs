@@ -192,6 +192,12 @@ try {
       (await tid('video-pick-label').textContent()) === '下のボタンを押して動画を選ぶ',
     await tid('video-pick-label').textContent(),
   );
+  const TRIM_HINT = '動画は、1回の射撃のみにトリミングしておいてください。';
+  check(
+    '読み込む前に、トリミングの注記が「ファイルを選択」の下に出る（最終-23）',
+    (await tid('load-trim-hint').count()) === 1 &&
+      (await tid('load-trim-hint').textContent()) === TRIM_HINT,
+  );
   check(
     '読み込む前は「ファイルを選択」の右に「ファイル未選択」と出る',
     (await tid('video-pick').textContent()) === 'ファイルを選択' &&
@@ -224,6 +230,11 @@ try {
     (await tid('video-pick-label').textContent()) ===
       '動画を選び直すときは「ファイルを選択」を押してください。',
     await tid('video-pick-label').textContent(),
+  );
+  check(
+    '読み込んだあとも、トリミングの注記が出たまま（最終-23）',
+    (await tid('load-trim-hint').count()) === 1 &&
+      (await tid('load-trim-hint').textContent()) === TRIM_HINT,
   );
   check(
     '読み込んだあとは「ファイルを選択」の右に「選択済み」と出る',
@@ -346,6 +357,37 @@ try {
   );
   const loudest = await valueSecOf('shot-player-bar');
   summary.loudestSec = loudest;
+  /** 「2.50 秒（46 / 91 コマ）」から番号と総数を読む */
+  const frameNumbers = (text) => {
+    const m = /（(\d+) \/ (\d+) コマ）/.exec(text ?? '');
+    return m ? { n: Number(m[1]), total: Number(m[2]) } : null;
+  };
+  // 番号は範囲の先頭を 1 として数える（最終-25）。期待値は、画面が出している動画全体のコマ番号
+  // （data-frame-index）から作る：バーの端に置いたときの番号を範囲の最初・最後とする
+  // （コマの時刻は Chrome で 1/30 秒から揺れることがあり、「1.0〜4.0 秒は 91 コマ」と決め打ちしない）
+  const rangeOf = async (playerId, barId) => {
+    const min = Number(await tid(`${barId}-slider`).getAttribute('min'));
+    const max = Number(await tid(`${barId}-slider`).getAttribute('max'));
+    await slideTo(barId, min);
+    await waitSettled(playerId);
+    const first = (await frameOf(playerId)).index;
+    await slideTo(barId, max);
+    await waitSettled(playerId);
+    const last = (await frameOf(playerId)).index;
+    return { first, last };
+  };
+  const shotRange = await rangeOf('shot-player', 'shot-player-bar');
+  await slideTo('shot-player-bar', loudest);
+  await waitSettled('shot-player');
+  const shotAbs = (await frameOf('shot-player')).index;
+  const shotLabel = frameNumbers(await tid('shot-player-label').textContent());
+  check(
+    '撃発の段階のコマ番号と総数は、切り抜きの範囲の先頭から数える（最終-25）',
+    shotLabel !== null &&
+      shotLabel.n === shotAbs - shotRange.first + 1 &&
+      shotLabel.total === shotRange.last - shotRange.first + 1,
+    `${await tid('shot-player-label').textContent()} (expected ${shotAbs - shotRange.first + 1} / ${shotRange.last - shotRange.first + 1})`,
+  );
   check(
     'つまみが音の最大（発射音）に置かれている',
     near(loudest, SHOT_SEC, SHOT_TOLERANCE_SEC),
@@ -376,6 +418,12 @@ try {
   await tid('shot-set').click();
   await tid('form-summary').waitFor({ timeout: 15_000 });
   const firstSummary = await tid('form-summary').locator('strong').textContent();
+  const summaryFrame = /（(\d+) コマ目）/.exec(firstSummary);
+  check(
+    '「撃発ポイント：…（n コマ目）」も、切り抜きの範囲の先頭から数える（最終-25）',
+    summaryFrame !== null && Number(summaryFrame[1]) === shotAbs - shotRange.first + 1,
+    `${firstSummary} (expected ${shotAbs - shotRange.first + 1})`,
+  );
   // 保存から戻ると、つまみは確定した撃発ポイントにいる。動かさずに確定し直しても、撃発ポイントは変わらない
   await tid('form-back').click();
   await tid('shot-player').waitFor();
@@ -617,6 +665,18 @@ try {
   await tid('record-player').waitFor();
   await waitSettled('player');
   check('再生画面を開くと撃発の瞬間', near(await valueSecOf('player-bar'), shotSec, 0.02));
+  const playRange = await rangeOf('player', 'player-bar');
+  await slideTo('player-bar', shotSec);
+  await waitSettled('player');
+  const playAbs = (await frameOf('player')).index;
+  const playLabel = frameNumbers(await tid('player-label').textContent());
+  check(
+    '「動画を再生」のコマ番号と総数も、切り抜きの範囲の先頭から数える（最終-25）',
+    playLabel !== null &&
+      playLabel.n === playAbs - playRange.first + 1 &&
+      playLabel.total === playRange.last - playRange.first + 1,
+    `${await tid('player-label').textContent()} (expected ${playAbs - playRange.first + 1} / ${playRange.last - playRange.first + 1})`,
+  );
   check('止めているときは角度表が出る', (await tid('player-table').count()) === 1);
   await shotPng('player');
   await tid('player-rate-50').click();

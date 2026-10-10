@@ -9,7 +9,7 @@ import {
   type RecordAnalysis,
 } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { nearestFrameInRange, snapToFrame } from '../analysis/frames';
+import { frameRange, nearestFrameInRange, snapToFrame } from '../analysis/frames';
 import type { AnalysisResult } from '../analysis/runAnalysis';
 import { loudestTimeSec } from '../audio/envelope';
 import { adoptEnvelope, useAudioEnvelope } from '../audio/useAudioEnvelope';
@@ -218,7 +218,16 @@ export function SaveScreen(props: Props) {
     envelope.state === 'ready'
       ? [{ key: 'audio', envelope: envelope.envelope, className: 'wave-single' }]
       : undefined;
-  const timeLabel = ja.player.timeLabel(frameSec, index, frames.length);
+  // コマ番号と総数は、バーの範囲（撃発の段階では切り抜きの範囲）の先頭を 1 コマ目として数える（要件 5 章 3）
+  const barFrames = frameRange(frames, barStart, barEnd);
+  const timeLabel = ja.player.timeLabel(
+    frameSec,
+    index - barFrames.first,
+    barFrames.last - barFrames.first + 1,
+  );
+  /** 撃発ポイントのコマ番号（切り抜きの範囲の先頭から数える。撃発の段階と保存の段階で出す） */
+  const shotFrameInClip = (sec: number) =>
+    Math.max(frameIndexAt(frames, sec), 0) - frameRange(frames, clip.startSec, clip.endSec).first;
   const fileDate = Number.isFinite(file?.lastModified) ? new Date(file!.lastModified) : null;
 
   const confirmClip = () => {
@@ -415,7 +424,7 @@ export function SaveScreen(props: Props) {
           {/* 保存の段階から戻ってきたときだけ、前に確定した撃発ポイントを出す */}
           {shotSec !== null && (
             <p className="small num" data-testid="shot-status">
-              {ja.shot.setAt(shotSec, Math.max(frameIndexAt(frames, shotSec), 0))}
+              {ja.shot.setAt(shotSec, shotFrameInClip(shotSec))}
             </p>
           )}
           <div className="row">
@@ -429,7 +438,7 @@ export function SaveScreen(props: Props) {
       {step === 'form' && shotSec !== null && (
         <>
           <div className="notice" data-testid="form-summary">
-            <strong>{ja.shot.setAt(shotSec, Math.max(frameIndexAt(frames, shotSec), 0))}</strong>
+            <strong>{ja.shot.setAt(shotSec, shotFrameInClip(shotSec))}</strong>
             <p className="small num">{ja.save.summaryClip(clip.startSec, clip.endSec)}</p>
           </div>
           {shooter && (

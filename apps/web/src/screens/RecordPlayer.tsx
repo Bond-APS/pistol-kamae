@@ -9,7 +9,7 @@ import {
   type Clip,
 } from '@pistol-kamae/engine';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { nearestFrameInRange, snapToFrame } from '../analysis/frames';
+import { frameRange, nearestFrameInRange, snapToFrame } from '../analysis/frames';
 import { loudestTimeSec } from '../audio/envelope';
 import { useAudioEnvelope } from '../audio/useAudioEnvelope';
 import { MetricTable } from '../components/MetricTable';
@@ -69,6 +69,13 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
   const range = mode === 'clip' ? { startSec: 0, endSec: durationSec } : savedClip;
   const index = nearestFrameInRange(frames, valueSec, range.startSec, range.endSec);
   const frameSec = frames[index]?.timeSec ?? valueSec;
+  // コマ番号と総数は、動く範囲（再生と撃発の修正では切り抜きの範囲）の先頭を 1 コマ目として数える（要件 5 章 3）
+  const rangeFrames = frameRange(frames, range.startSec, range.endSec);
+  const frameLabel = ja.player.timeLabel(
+    frameSec,
+    index - rangeFrames.first,
+    rangeFrames.last - rangeFrames.first + 1,
+  );
   const snap = (sec: number) => snapToFrame(frames, sec);
   /** 範囲の端はコマの時刻に吸着させ、動画の中に収め、1 コマ以上の長さを保つ */
   const setClipSnapped = (startSec: number, endSec: number) => {
@@ -202,7 +209,7 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
           {...(mode === 'play'
             ? { transport: { rate, loop, onRate: setRate, onLoop: setLoop } }
             : {})}
-          timeLabel={`${timeLabel}\u3000${ja.player.timeLabel(frameSec, index, frames.length)}`}
+          timeLabel={`${timeLabel}\u3000${frameLabel}`}
           onVideo={onVideo}
           onPlayingChange={setPlaying}
           active={active ?? true}
