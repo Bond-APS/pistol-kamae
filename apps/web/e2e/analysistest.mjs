@@ -53,6 +53,9 @@ page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
 });
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
+// 解析結果があって保存していないときは、再読込・ページ移動の前にブラウザの確認（beforeunload）が出る（最終-10）。
+// 自動テストでは、その確認を受け入れて先へ進める（受け入れないと goto・reload が止まる）
+page.on('dialog', (d) => void d.accept());
 
 const tid = (id) => page.locator(`[data-testid=${id}]`);
 const textOf = (sel) => page.locator(sel);
@@ -184,6 +187,22 @@ try {
     '解析中にシークが止まっても、「中断」を押すとすぐ「中断しました」になる',
     cancelledFast,
     stalledLine,
+  );
+
+  // 3c. 解析中にブラウザの「戻る」をすると、「中断」と同じで動画の指定に留まる（最終-10）
+  console.log('  3c. 解析中 → ブラウザの「戻る」');
+  await freshStart();
+  await pickAndWait();
+  await tid('run-analysis').click();
+  await textOf('text=/処理中|モデルを読み込んで/').first().waitFor({ timeout: 10_000 });
+  await page.goBack();
+  const cancelledByBack = await waitFor(textOf('text=中断しました'), { timeout: 3000 });
+  check(
+    '解析中にブラウザの「戻る」をすると「中断しました」になり、動画の指定に留まる（最終-10）',
+    cancelledByBack &&
+      page.url().startsWith(base) &&
+      (await tid('save-screen').getAttribute('data-step')) === 'video',
+    page.url(),
   );
 
   // 3b. モデルの準備の返事が来ないとき（「モデルを読み込んでいます…」のまま）も、「中断」がすぐ効く

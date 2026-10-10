@@ -59,6 +59,9 @@ page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
 });
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
+// 解析結果があって保存していないときは、再読込・ページ移動の前にブラウザの確認（beforeunload）が出る（最終-10）。
+// 自動テストでは、その確認を受け入れて先へ進める（受け入れないと goto・reload が止まる）
+page.on('dialog', (d) => void d.accept());
 
 const tid = (id) => page.locator(`[data-testid=${id}]`);
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
@@ -261,6 +264,17 @@ try {
       (await tid('compare-pair').textContent()).includes('②音声なし'),
     await tid('compare-pair').textContent(),
   );
+  // ブラウザの「戻る」（iPhone では画面左端からのスワイプ）でライブラリへ戻り、開き直せる（最終-10）
+  await page.goBack();
+  await tid('pick-compare').waitFor({ timeout: 5000 });
+  check(
+    '比較画面でブラウザの「戻る」をするとライブラリに戻る（最終-10）',
+    (await tid('compare').count()) === 0 &&
+      (await tid('tab-library').getAttribute('aria-current')) === 'page',
+  );
+  await tid('pick-compare').click();
+  await tid('compare').waitFor();
+  await tid('compare-bar').waitFor();
   await waitBothReady();
   const min = Number(await tid('compare-bar-slider').getAttribute('min'));
   const max = Number(await tid('compare-bar-slider').getAttribute('max'));
@@ -548,6 +562,19 @@ try {
       (await tid('shot-edit-line-base').textContent()).includes('変更なし'),
     `${await shotEditAttr('data-base-shot')} (expected ${savedShot}、音の最大 ${a.shotSec})`,
   );
+  // 修正中にブラウザの「戻る」をすると「やめる」と同じ（修正を閉じ、比較画面に留まる。最終-10）
+  await tid('shot-edit-earlier').click();
+  await page.goBack();
+  await tid('compare-shot-edit').waitFor({ state: 'detached', timeout: 5000 });
+  check(
+    '撃発ポイントの修正中にブラウザの「戻る」をすると、「やめる」と同じで比較画面に留まる（最終-10）',
+    (await tid('compare').count()) === 1 &&
+      near(Number(await tid('compare-bar-slider').getAttribute('min')), minBefore, 0.02),
+    await tid('compare-bar-slider').getAttribute('min'),
+  );
+  await tid('compare-fix-shot').click();
+  await tid('compare-shot-edit').waitFor();
+  await waitBothReady();
   // キャンセルでは何も変わらない
   await tid('shot-edit-earlier').click();
   await tid('shot-edit-cancel').click();
@@ -608,6 +635,17 @@ try {
     near(-min2, fixedShot - 1.0, 0.02),
     `${min2} (expected -${(fixedShot - 1.0).toFixed(2)})`,
   );
+  // 「決定」で保存したあとは修正の項目が履歴に残らず、ブラウザの「戻る」でライブラリに戻る（最終-10）
+  await page.goBack();
+  await tid('pick-compare').waitFor({ timeout: 5000 });
+  check(
+    '「決定」のあとブラウザの「戻る」をするとライブラリに戻る（修正の項目が残らない。最終-10）',
+    (await tid('compare').count()) === 0,
+  );
+  await tid('pick-compare').click();
+  await tid('compare').waitFor();
+  await tid('compare-bar').waitFor();
+  await waitBothReady();
   // 切り抜き範囲の修正：重ねたまま、撃発を 0 とした開始・終了を決め、①②の両方に当てはめる
   // 撃発を外す範囲（開始を撃発より後ろ）で決定すると、専用の案内が出る（最終-24）。やめてから本番の修正へ
   await tid('compare-fix-clip').click();

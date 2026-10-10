@@ -43,6 +43,9 @@ const watch = async (p) => {
     if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
   });
   p.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
+  // 解析結果があって保存していないときは、再読込・ページ移動の前にブラウザの確認（beforeunload）が出る（最終-10）。
+  // 自動テストでは、その確認を受け入れて先へ進める（受け入れないと goto・reload が止まる）
+  p.on('dialog', (d) => void d.accept());
 };
 
 const browser = await launcher.launch({ headless: process.env.HEADLESS === '1' });

@@ -42,6 +42,9 @@ page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
 });
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
+// 解析結果があって保存していないときは、再読込・ページ移動の前にブラウザの確認（beforeunload）が出る（最終-10）。
+// 自動テストでは、その確認を受け入れて先へ進める（受け入れないと goto・reload が止まる）
+page.on('dialog', (d) => void d.accept());
 
 const tid = (id) => page.locator(`[data-testid=${id}]`);
 const valueSecOf = async (barId) => Number(await tid(barId).getAttribute('data-value-sec'));
@@ -95,6 +98,13 @@ try {
 
   check('入口は 2 つ（動画の保存・ライブラリ）', (await page.locator('.tab').count()) === 2);
   const stepOf = () => tid('save-screen').getAttribute('data-step');
+  /** 保存の流れが、その段階になるのを待つ */
+  const waitStep = (step) =>
+    page.waitForFunction(
+      (s) => document.querySelector('[data-testid=save-screen]')?.dataset.step === s,
+      step,
+      { timeout: 5000 },
+    );
   /**
    * 静止画の撮影（最終-3）を確かめるための細工：ページ側で video の currentTime の書き込み（シーク）を、
    * 指定した回数だけ順に横取りする。drop＝書き込まない（完了の通知が来ない）、delay＝1.2 秒遅らせる、
@@ -255,6 +265,19 @@ try {
     (await tid('video-pick-state').textContent()) === '選択済み' &&
       (await tid('run-analysis').isEnabled()),
   );
+  // ブラウザの「戻る」（iPhone では画面左端からのスワイプ）でも、アプリの外へ出ずに 1 つ前の段階へ戻る（最終-10）
+  await page.goBack();
+  await waitStep('shooter');
+  check(
+    'ブラウザの「戻る」で、動画の指定から射手の選択へ戻る（最終-10）',
+    page.url().startsWith(base) && (await stepOf()) === 'shooter',
+    page.url(),
+  );
+  await tid('shooter-next').click();
+  check(
+    '戻ったあと「次へ」で動画の指定へ進め、読み込んだ動画が残っている',
+    (await stepOf()) === 'video' && (await tid('video-pick-state').textContent()) === '選択済み',
+  );
   check(
     '番号付きの「手順 1：」「手順 2：」は出ない',
     !(await page.locator('body').textContent()).includes('手順 1') &&
@@ -273,6 +296,36 @@ try {
     await tid('step-title').textContent(),
   );
   await tid('clip-player').waitFor();
+  await waitSettled('clip-player');
+  // 切り抜きでブラウザの「戻る」をすると、アプリの外へ出ずに「保存していない動画」の確認が出る（最終-10）
+  await page.goBack();
+  await tid('discard-dialog').waitFor({ timeout: 5000 });
+  check(
+    '切り抜きでブラウザの「戻る」をすると、確認の窓が出て切り抜きに留まる（最終-10）',
+    (await stepOf()) === 'clip' && (await tid('discard-dialog').count()) === 1,
+  );
+  await tid('discard-dialog').locator('[data-testid=confirm-cancel]').click();
+  await tid('discard-dialog').waitFor({ state: 'detached' });
+  check(
+    '確認でキャンセルすると、解析結果はそのまま',
+    (await stepOf()) === 'clip' && (await tid('clip-player').count()) === 1,
+  );
+  // ライブラリのタブへ移ってからブラウザの「戻る」をすると、切り抜きに戻る
+  await tid('tab-library').click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid=tab-library]')?.getAttribute('aria-current') === 'page',
+  );
+  await page.goBack();
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid=tab-save]')?.getAttribute('aria-current') === 'page',
+    null,
+    { timeout: 5000 },
+  );
+  check(
+    'タブを切り替えたあとブラウザの「戻る」をすると、切り抜きに戻る（最終-10）',
+    (await stepOf()) === 'clip' && (await tid('clip-player').isVisible()),
+  );
   await waitSettled('clip-player');
   check('切り抜きの取っ手が 2 つある', (await page.locator('.wave-handle').count()) === 2);
   check(
@@ -602,8 +655,13 @@ try {
     await tid('form-summary').textContent(),
   );
   // 保存の段階から戻ると、確定した撃発ポイントの印が出ていて、もう一度確定すれば保存へ進む
-  await tid('form-back').click();
-  await tid('shot-player').waitFor();
+  // （ここはブラウザの「戻る」で戻る。画面の「戻る」ボタンと同じ動き。最終-10）
+  await page.goBack();
+  await tid('shot-player').waitFor({ timeout: 5000 });
+  check(
+    '保存の段階でブラウザの「戻る」をすると撃発の段階へ戻る（最終-10）',
+    (await stepOf()) === 'shot',
+  );
   await waitSettled('shot-player');
   check(
     '保存から戻ると、確定した撃発ポイントの印と時刻が出る',
@@ -623,6 +681,17 @@ try {
   const recordId = Number(await tid('save-done').getAttribute('data-saved-id'));
   check('保存できた', recordId > 0, recordId);
   check('保存後は「保存していない」印が消える', (await tid('unsaved-dot').count()) === 0);
+  // 保存が終わったあとのブラウザの「戻る」は「次の動画を保存する」と同じ（射手の選択。最終-10）。
+  // 保存の直後は、その動画のために積んだ段階を履歴から取り除いている途中なので、終わる（先頭が完了になる）のを待つ
+  await page.waitForFunction(() => window.history.state?.kamae?.entry?.step === 'done', null, {
+    timeout: 5000,
+  });
+  await page.goBack();
+  await waitStep('shooter');
+  check(
+    '保存の完了でブラウザの「戻る」をすると射手の選択に戻る（最終-10）',
+    (await stepOf()) === 'shooter' && (await tid('save-done').count()) === 0,
+  );
 
   // ライブラリ
   await tid('tab-library').click();
@@ -728,7 +797,13 @@ try {
     stopped.paused && near(stopped.t, 4.0, 0.15),
     JSON.stringify(stopped),
   );
-  await tid('player-back').click();
+  // 「動画を再生」でブラウザの「戻る」をすると詳細に戻る（一覧まで戻らない。最終-10）
+  await page.goBack();
+  await tid('record-detail').waitFor({ timeout: 5000 });
+  check(
+    '「動画を再生」でブラウザの「戻る」をすると詳細に戻る（最終-10）',
+    (await tid('record-detail').count()) === 1 && (await tid('record-player').count()) === 0,
+  );
 
   // 撃発ポイントの修正
   await tid('detail-fix-shot').click();
