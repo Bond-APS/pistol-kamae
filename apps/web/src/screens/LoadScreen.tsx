@@ -234,6 +234,10 @@ export function LoadScreen(props: Props) {
             e.target.value = '';
           }}
         />
+        {/* 動画を選ぶ前も後も出す（要件 4 章「読込前に…の注記を読込ボタン付近に」） */}
+        <p className="muted small" data-testid="load-trim-hint">
+          {ja.load.trimHint}
+        </p>
       </div>
 
       {status.kind === 'unsupported' && (
