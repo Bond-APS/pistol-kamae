@@ -2,7 +2,7 @@ import { frameIndexAt } from '../landmarks/frames';
 import type { LandmarkFrame } from '../landmarks/types';
 import { toSided, type Handedness } from '../normalize/handedness';
 import { applyLevel } from '../normalize/level';
-import { computeMetrics, type MetricOptions } from './compute';
+import { computeMetrics, isSideReversed, type MetricOptions } from './compute';
 import type { MetricValues } from './types';
 
 /** 1 フレームの計測結果 */
@@ -12,6 +12,8 @@ export interface FrameMetrics {
   timeSec: number;
   /** 計測値。人物を検出できなかったフレームは null */
   values: MetricValues | null;
+  /** 左右が逆（銃側の肩が画面の右）で、符号の付く項目を「—」にしたか（最終-12） */
+  sideReversed: boolean;
 }
 
 export interface FrameMetricsInput {
@@ -37,19 +39,22 @@ export function metricsAtFrame(input: FrameMetricsInput, frameIndex: number): Fr
   const imageSize = { width: input.imageWidth, height: input.imageHeight };
   const tiltDeg = input.tiltDeg ?? 0;
   let values: MetricValues | null = null;
+  let sideReversed = false;
   if (frame.landmarks && tiltDeg !== 0) {
     // 画面の外にある点は applyLevel が先に外すので、回したあとの座標では画面の内外を調べない
     const leveled = applyLevel(frame.landmarks, tiltDeg, imageSize);
     const options = { ...input.options };
     delete options.imageSize;
-    values = computeMetrics(toSided(leveled, input.handedness, input.imageWidth), options);
+    const sided = toSided(leveled, input.handedness, input.imageWidth);
+    values = computeMetrics(sided, options);
+    sideReversed = isSideReversed(sided, options);
   } else if (frame.landmarks) {
-    values = computeMetrics(toSided(frame.landmarks, input.handedness, input.imageWidth), {
-      imageSize,
-      ...input.options,
-    });
+    const options = { imageSize, ...input.options };
+    const sided = toSided(frame.landmarks, input.handedness, input.imageWidth);
+    values = computeMetrics(sided, options);
+    sideReversed = isSideReversed(sided, options);
   }
-  return { frameIndex, timeSec: frame.timeSec, values };
+  return { frameIndex, timeSec: frame.timeSec, values, sideReversed };
 }
 
 /** 指定した時刻（マークの時刻など）を含むフレームの計測値。フレームがなければ null */

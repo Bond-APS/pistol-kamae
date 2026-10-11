@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeMetrics } from '../src/metrics/compute';
+import { computeMetrics, isSideReversed } from '../src/metrics/compute';
 import type { SidedLandmarks } from '../src/normalize/handedness';
 import type { Point } from '../src/landmarks/types';
 
@@ -167,5 +167,48 @@ describe('computeMetrics', () => {
     expect(m.stanceWidth).toBeNull();
     expect(m.wristFaceDistance).toBeNull();
     expect(m.shoulderTilt).toBeCloseTo(0, 6);
+  });
+});
+
+describe('左右が逆・長さ 0 の防御（最終-12・13）', () => {
+  it('(g) 腕と肩線のなす角は −180〜180° に折り返す', () => {
+    // 非銃側の肩が真上（肩線 −89.6°）、手首が真上よりわずかに右（腕 +95.7°）→ 差 185.3° は −174.7° として出す
+    const m = computeMetrics(
+      upright({ offShoulder: p(401, 50), gunWrist: p(410, 100), offWrist: p(620, 500) }),
+    );
+    expect(m.armShoulderAngle).toBeCloseTo(-174.7, 1);
+  });
+
+  it('銃側の肩が非銃側より右（左右が逆）なら、スタンス幅以外は「—」', () => {
+    const m = computeMetrics(upright({ gunShoulder: p(600, 199), offShoulder: p(400, 200) }));
+    expect(m.shoulderTilt).toBeNull();
+    expect(m.hipTilt).toBeNull();
+    expect(m.trunkTilt).toBeNull();
+    expect(m.neckTilt).toBeNull();
+    expect(m.armElevation).toBeNull();
+    expect(m.armShoulderAngle).toBeNull();
+    expect(m.hipLateralOffset).toBeNull();
+    expect(m.wristFaceDistance).toBeNull();
+    // スタンス幅（向きによらない）だけは出す。肩を 1px 上げたぶん体幹長がわずかに変わる
+    expect(m.stanceWidth).toBeCloseTo(1, 2);
+  });
+
+  it('左右が逆かどうかを別に調べられる（肩が見えなければ逆とはしない）', () => {
+    expect(isSideReversed(upright())).toBe(false);
+    expect(isSideReversed(upright({ gunShoulder: p(600, 200), offShoulder: p(400, 200) }))).toBe(
+      true,
+    );
+    expect(
+      isSideReversed(upright({ gunShoulder: p(600, 200, 0.1), offShoulder: p(400, 200) })),
+    ).toBe(false);
+  });
+
+  it('2 点が一致する線（長さ 0）の傾きは「—」', () => {
+    const m = computeMetrics(upright({ offShoulder: p(400, 200) }));
+    expect(m.shoulderTilt).toBeNull();
+    expect(m.armShoulderAngle).toBeNull();
+    const w = computeMetrics(upright({ gunWrist: p(400, 200) }));
+    expect(w.armElevation).toBeNull();
+    expect(w.armShoulderAngle).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 // 2 つの記録（基準と今回）の計測値の差と、その差が測定の揺れを超えているかの判定（要件 7 章・8 章）。
 
+import { wrapDeg } from './compute';
 import {
   METRIC_DECIMALS,
   METRIC_IDS,
@@ -79,7 +80,10 @@ export function compareMetrics(
   for (const id of METRIC_IDS) {
     const b = base[id] === null ? null : roundMetric(id, base[id]);
     const c = current[id] === null ? null : roundMetric(id, current[id]);
-    const diff = b === null || c === null ? null : roundMetric(id, c - b);
+    // 腕と肩線のなす角（−180〜180°）は差も折り返す（+179° と −179° の差は −358° ではなく +2°）
+    const raw = b === null || c === null ? null : c - b;
+    const diff =
+      raw === null ? null : roundMetric(id, id === 'armShoulderAngle' ? wrapDeg(raw) : raw);
     let level: DiffLevel = 'none';
     if (diff !== null) {
       const size = Math.abs(diff) + EPSILON;

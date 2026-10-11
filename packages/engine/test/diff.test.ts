@@ -36,6 +36,11 @@ describe('roundMetric：表示の桁に丸める', () => {
 });
 
 describe('compareMetrics：基準と今回の差', () => {
+  it('腕と肩線のなす角の差は −180〜180° に折り返す', () => {
+    const d = compareMetrics(values({ armShoulderAngle: 179 }), values({ armShoulderAngle: -179 }));
+    expect(d.armShoulderAngle.diff).toBe(2);
+  });
+
   it('差は「今回 − 基準」', () => {
     const d = compareMetrics(values(), values({ shoulderTilt: 13.6, trunkTilt: -10.5 }));
     expect(d.shoulderTilt).toEqual({ base: 12.4, current: 13.6, diff: 1.2, level: 'large' });

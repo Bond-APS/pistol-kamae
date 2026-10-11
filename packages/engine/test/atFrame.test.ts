@@ -173,3 +173,16 @@ describe('frameIndexAt', () => {
     expect(frameIndexAt([], 0)).toBe(-1);
   });
 });
+
+describe('左右が逆の印（最終-12）', () => {
+  it('右利きで右肩が左肩より画面の右にあれば sideReversed', () => {
+    const mirrored: LandmarkFrame = {
+      timeSec: 0,
+      landmarks: { ...rightHanded(), rightShoulder: p(600, 200), leftShoulder: p(400, 200) },
+    };
+    const m = metricsAtFrame({ ...input, frames: [mirrored] }, 0);
+    expect(m?.sideReversed).toBe(true);
+    expect(m?.values?.shoulderTilt).toBeNull();
+    expect(metricsAtFrame(input, 0)?.sideReversed).toBe(false);
+  });
+});

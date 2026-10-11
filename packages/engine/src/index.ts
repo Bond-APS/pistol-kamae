@@ -51,7 +51,7 @@ export {
   type MetricUnit,
   type MetricValues,
 } from './metrics/types';
-export { computeMetrics, type MetricOptions } from './metrics/compute';
+export { computeMetrics, isSideReversed, type MetricOptions } from './metrics/compute';
 export {
   metricsAtFrame,
   metricsAtTime,

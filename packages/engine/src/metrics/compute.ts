@@ -20,6 +20,20 @@ const midpoint = (a: Point, b: Point): Point => ({
 
 const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y);
 
+/** 角度を −180〜180° に折り返す（2 つの角度の差は ±360° まで出るため） */
+export const wrapDeg = (deg: number): number => ((((deg + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * 左右が逆（鏡像・背面からの撮影・利き手の設定違い）か。
+ * 反転後の座標では銃側が画面左（x が小さい側）のはずなので、銃側の肩が非銃側より右にあれば逆とみなす。
+ * 肩が見えなければ判断しない（false）
+ */
+export function isSideReversed(lm: SidedLandmarks, options: MetricOptions = {}): boolean {
+  const th = options.visibilityThreshold ?? DEFAULT_VISIBILITY_THRESHOLD;
+  const usable = (p: Point): boolean => isPointUsable(p, th, options.imageSize);
+  return usable(lm.gunShoulder) && usable(lm.offShoulder) && lm.gunShoulder.x > lm.offShoulder.x;
+}
+
 /**
  * 全計測項目を 1 フレーム分計算する。
  *
@@ -41,14 +55,18 @@ export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}):
   const trunkOk = ok(lm.gunShoulder, lm.offShoulder, lm.gunHip, lm.offHip);
   const trunkLength = trunkOk ? distance(hipCenter, shoulderCenter) : null;
   const trunkUsable = trunkLength !== null && trunkLength > 0;
+  // 左右が逆（鏡像・背面・利き手の設定違い）なら、符号の付く項目は意味を持たないので「—」にする（最終-12）。
+  // スタンス幅（向きによらない）だけは出す
+  const reversed = isSideReversed(lm, options);
+  const sided = (value: number | null): number | null => (reversed ? null : value);
 
-  // 水平基準の傾き：非銃側 → 銃側 のベクトル。銃側が上（y が小さい）なら正。
-  const tiltFromHorizontal = (off: Point, gun: Point): number =>
-    toDeg(Math.atan2(off.y - gun.y, off.x - gun.x));
+  // 水平基準の傾き：非銃側 → 銃側 のベクトル。銃側が上（y が小さい）なら正。2 点が一致していれば null（最終-13）
+  const tiltFromHorizontal = (off: Point, gun: Point): number | null =>
+    distance(off, gun) > 0 ? toDeg(Math.atan2(off.y - gun.y, off.x - gun.x)) : null;
 
   // 鉛直基準の傾き：下の点 → 上の点 のベクトル。上の点が銃側（x が小さい）に寄れば正。
-  const tiltFromVertical = (lower: Point, upper: Point): number =>
-    toDeg(Math.atan2(lower.x - upper.x, lower.y - upper.y));
+  const tiltFromVertical = (lower: Point, upper: Point): number | null =>
+    distance(lower, upper) > 0 ? toDeg(Math.atan2(lower.x - upper.x, lower.y - upper.y)) : null;
 
   const shoulderTilt = ok(lm.gunShoulder, lm.offShoulder)
     ? tiltFromHorizontal(lm.offShoulder, lm.gunShoulder)
@@ -68,9 +86,10 @@ export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}):
     ? tiltFromHorizontal(lm.gunShoulder, lm.gunWrist)
     : null;
 
-  // 腕と肩線のなす角：どちらも「ターゲット方向」を向いた線なので、差がそのまま身体基準の角度になる
+  // 腕と肩線のなす角：どちらも「ターゲット方向」を向いた線なので、差がそのまま身体基準の角度になる。
+  // 差は ±360° まで出るので −180〜180° に折り返す
   const armShoulderAngle =
-    armElevation !== null && shoulderTilt !== null ? armElevation - shoulderTilt : null;
+    armElevation !== null && shoulderTilt !== null ? wrapDeg(armElevation - shoulderTilt) : null;
 
   const hipLateralOffset =
     trunkUsable && ok(lm.gunAnkle, lm.offAnkle)
@@ -86,14 +105,14 @@ export function computeMetrics(lm: SidedLandmarks, options: MetricOptions = {}):
     trunkUsable && ok(lm.gunWrist) && usable(face) ? (face.x - lm.gunWrist.x) / trunkLength : null;
 
   return {
-    shoulderTilt,
-    hipTilt,
-    trunkTilt,
-    neckTilt,
-    armElevation,
-    armShoulderAngle,
-    hipLateralOffset,
+    shoulderTilt: sided(shoulderTilt),
+    hipTilt: sided(hipTilt),
+    trunkTilt: sided(trunkTilt),
+    neckTilt: sided(neckTilt),
+    armElevation: sided(armElevation),
+    armShoulderAngle: sided(armShoulderAngle),
+    hipLateralOffset: sided(hipLateralOffset),
     stanceWidth,
-    wristFaceDistance,
+    wristFaceDistance: sided(wristFaceDistance),
   };
 }
