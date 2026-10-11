@@ -32,6 +32,12 @@ export interface LandmarkFrame {
   /** 動画の媒体時刻（秒） */
   timeSec: number;
   landmarks: CommonLandmarks | null;
+  /**
+   * timeSec が「実際に表示されたコマの時刻」（requestVideoFrameCallback が教えたもの）なら true。
+   * 省略時は名目の時刻（コマ番号 ÷ fps）として扱う。表示のときのシーク先の決め方に使う（最終-15。
+   * 保存形式の版 3 の途中で追加、省略可）
+   */
+  exact?: boolean;
 }
 
 /** 骨格を線で結ぶときの組み合わせ（描画用） */

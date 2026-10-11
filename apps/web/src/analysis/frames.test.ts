@@ -1,6 +1,6 @@
 import type { LandmarkFrame } from '@pistol-kamae/engine';
 import { describe, expect, it } from 'vitest';
-import { frameIndexAt, frameRange, seekTimeForFrame } from './frames';
+import { frameIndexAt, frameRange, seekTimeForFrame, snapClipEdges } from './frames';
 
 const frames: LandmarkFrame[] = [0, 0.033, 0.067, 0.1].map((t) => ({
   timeSec: t,
@@ -85,5 +85,42 @@ describe('frameRange', () => {
       const endSec = n % 7 === 0 ? uneven[Math.floor(rand() * 200)]!.timeSec : b;
       expect(frameRange(uneven, startSec, endSec)).toEqual(linear(uneven, startSec, endSec));
     }
+  });
+});
+
+describe('seekTimeForFrame：時刻が実時刻のコマ（最終-15）', () => {
+  // 60 fps の動画を 30 fps と推定し、1 コマおきに実時刻で記録した並び
+  const skipped: LandmarkFrame[] = [0, 2 / 60, 4 / 60].map((t) => ({
+    timeSec: t,
+    landmarks: null,
+    exact: true,
+  }));
+  it('実時刻のコマは、そのコマの時刻のすぐあと（飛ばしたコマの始まりより手前）を狙う', () => {
+    const target = seekTimeForFrame(skipped, 0, 30);
+    expect(target).toBeGreaterThan(0);
+    expect(target).toBeLessThan(1 / 60);
+    expect(seekTimeForFrame(skipped, 1, 30)).toBeCloseTo(2 / 60 + 0.002, 6);
+  });
+  it('印のないコマ（名目の時刻）は今までどおり次のコマとの中間', () => {
+    expect(seekTimeForFrame(frames, 1, 30)).toBeCloseTo(0.05, 6);
+  });
+  it('コマの間隔が 2 ミリ秒より短ければ中間を超えない', () => {
+    const dense: LandmarkFrame[] = [0, 0.001].map((t) => ({
+      timeSec: t,
+      landmarks: null,
+      exact: true,
+    }));
+    expect(seekTimeForFrame(dense, 0, 1000)).toBeCloseTo(0.0005, 6);
+  });
+});
+
+describe('snapClipEdges：範囲の端の吸着（最終-27）', () => {
+  // 30 fps・長さ 0.12 秒。最後のコマは 0.1 秒から
+  it('終了が最後のコマの時刻以上なら動画の長さ、開始が最初のコマ以下なら 0 にする', () => {
+    expect(snapClipEdges(frames, 0.01, 0.1, 0.12)).toEqual({ startSec: 0, endSec: 0.12 });
+    expect(snapClipEdges(frames, 0, 0.12, 0.12)).toEqual({ startSec: 0, endSec: 0.12 });
+  });
+  it('途中の端はいちばん近いコマの時刻に吸着する', () => {
+    expect(snapClipEdges(frames, 0.03, 0.07, 0.12)).toEqual({ startSec: 0.033, endSec: 0.067 });
   });
 });

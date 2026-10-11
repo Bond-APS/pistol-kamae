@@ -37,6 +37,7 @@ function isPoint(v: unknown): v is Point {
 
 function isFrame(v: unknown): v is LandmarkFrame {
   if (!isObject(v) || !isFiniteNumber(v.timeSec)) return false;
+  if (v.exact !== undefined && typeof v.exact !== 'boolean') return false;
   const lm = v.landmarks;
   if (lm === null) return true;
   return isObject(lm) && LANDMARK_NAMES.every((name) => isPoint(lm[name]));
@@ -52,8 +53,17 @@ function isAnalysis(v: unknown): v is RecordAnalysis {
     isPositive(v.durationSec) &&
     Array.isArray(v.frames) &&
     v.frames.length > 0 &&
-    v.frames.every(isFrame)
+    v.frames.every(isFrame) &&
+    isStrictlyIncreasing(v.frames as LandmarkFrame[])
   );
+}
+
+/** コマの時刻が狭義に増えているか（コマの検索は二分探索で、並んでいることを前提にしている。最終-26） */
+function isStrictlyIncreasing(frames: LandmarkFrame[]): boolean {
+  for (let i = 1; i < frames.length; i++) {
+    if (frames[i]!.timeSec <= frames[i - 1]!.timeSec) return false;
+  }
+  return true;
 }
 
 function isMark(v: unknown): v is Mark {
@@ -134,6 +144,18 @@ export function upgradeShotRecord(value: unknown): unknown {
     const meta = isObject(v.meta) ? v.meta : {};
     const shotAt = typeof meta.shotAt === 'string' ? meta.shotAt : '';
     v = { ...v, formatVersion: 3, clip: null, meta: { ...meta, title: defaultTitle(shotAt) } };
+  }
+  // 版 3（並びの修復）：時刻が前のコマ以下のコマを落とす。並びの検査（最終-26）を足す前に保存した記録に
+  // そういうコマが混じっていても、開けなくならないように（書くときは検査で落とす）
+  if (isObject(v) && v.formatVersion === 3 && isObject(v.analysis)) {
+    const frames = v.analysis.frames;
+    if (Array.isArray(frames) && frames.every(isFrame) && !isStrictlyIncreasing(frames)) {
+      const kept: LandmarkFrame[] = [];
+      for (const f of frames) {
+        if (kept.length === 0 || f.timeSec > kept[kept.length - 1]!.timeSec) kept.push(f);
+      }
+      v = { ...v, analysis: { ...v.analysis, frames: kept } };
+    }
   }
   return v;
 }

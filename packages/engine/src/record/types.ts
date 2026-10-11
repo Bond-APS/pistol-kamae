@@ -11,7 +11,8 @@ import type { Clip } from './clip';
 /**
  * 保存形式の版番号。形式を変えたら上げ、古い版を読むときの変換を足す。
  * 1：段階③。2：段階④で水平校正の線（level）を追加。
- * 3：段階⑤で切り抜きの範囲（clip）とタイトル（meta.title）を追加
+ * 3：段階⑤で切り抜きの範囲（clip）とタイトル（meta.title）を追加。
+ *    版 3 のまま、各コマに省略できる exact（時刻が実時刻のとき true。省略時は名目）を追加（2026-10-11、最終-15）
  */
 export const RECORD_FORMAT_VERSION = 3;
 

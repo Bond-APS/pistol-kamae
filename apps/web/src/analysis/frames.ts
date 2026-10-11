@@ -4,15 +4,47 @@ import type { LandmarkFrame } from '@pistol-kamae/engine';
 import { frameIndexAt } from '@pistol-kamae/engine';
 export { frameIndexAt };
 
+/** 実時刻のコマのシーク先を、そのコマの始まりからどれだけ後ろにするか（秒） */
+const EXACT_SEEK_OFFSET_SEC = 0.002;
+
 /**
  * フレーム i を確実に表示させるためのシーク先の時刻。
- * 境界ぴったりだと前後どちらが表示されるか曖昧になるため、次のフレームとの中間を狙う。
+ * 時刻が実時刻（実際に表示されたコマの始まり。exact）なら、その少しあと（2 ミリ秒）を狙う。解析でコマを
+ * 飛ばしていても（60 fps の動画を 30 と推定したときなど）、飛ばしたコマの始まりより手前なので同じコマが出る（最終-15）。
+ * 名目の時刻（コマ番号 ÷ fps）なら、境界ぴったりで前後どちらが表示されるか曖昧になるため、次のフレームとの中間を狙う
+ * （解析のときのシーク先と同じ）。
  */
-export function seekTimeForFrame(frames: LandmarkFrame[], index: number, fps: number): number {
+export function seekTimeForFrame(
+  frames: ReadonlyArray<LandmarkFrame>,
+  index: number,
+  fps: number,
+): number {
   const frame = frames[index]!;
   const next = frames[index + 1];
   const end = next ? next.timeSec : frame.timeSec + 1 / fps;
-  return (frame.timeSec + end) / 2;
+  const middle = (frame.timeSec + end) / 2;
+  return frame.exact ? Math.min(frame.timeSec + EXACT_SEEK_OFFSET_SEC, middle) : middle;
+}
+
+/**
+ * 切り抜きの範囲の端をコマの時刻に吸着させ、動画の中に収める。
+ * 終了が最後のコマの時刻以上なら動画の長さ（＝終わりまで）、開始が最初のコマの時刻以下なら 0 にする。
+ * 取っ手を端まで戻したときに「全体」に戻るように（最後のコマの時刻に吸着させると 1 コマ分短く記録される。最終-27）
+ */
+export function snapClipEdges(
+  frames: ReadonlyArray<LandmarkFrame>,
+  startSec: number,
+  endSec: number,
+  durationSec: number,
+): { startSec: number; endSec: number } {
+  const first = frames[0]?.timeSec ?? 0;
+  const last = frames[frames.length - 1]?.timeSec ?? durationSec;
+  const s = snapToFrame(frames, startSec);
+  const e = snapToFrame(frames, endSec);
+  return {
+    startSec: s <= first ? 0 : Math.max(s, 0),
+    endSec: e >= last ? durationSec : Math.min(e, durationSec),
+  };
 }
 
 /**

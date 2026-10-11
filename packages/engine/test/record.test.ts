@@ -227,6 +227,28 @@ describe('保存形式の検査', () => {
     const noFrames = record();
     noFrames.analysis.frames = [];
     expect(checkShotRecord(noFrames)).toBe('invalidAnalysis');
+    // コマの時刻は狭義に増えていること（最終-26）
+    const backwards = {
+      ...record(),
+      analysis: { ...record().analysis, frames: [frames[1]!, frames[0]!] },
+    };
+    expect(checkShotRecord(backwards)).toBe('invalidAnalysis');
+    const same = {
+      ...record(),
+      analysis: { ...record().analysis, frames: [frames[0]!, frames[0]!] },
+    };
+    expect(checkShotRecord(same)).toBe('invalidAnalysis');
+    // コマの時刻が実時刻かどうかの印 exact は省略でき、付けるなら真偽値（最終-15）
+    const exact = {
+      ...record(),
+      analysis: { ...record().analysis, frames: [{ ...frames[0]!, exact: true }, frames[1]!] },
+    };
+    expect(checkShotRecord(exact)).toBeNull();
+    const badExact = {
+      ...record(),
+      analysis: { ...record().analysis, frames: [{ ...frames[0]!, exact: 'yes' }, frames[1]!] },
+    };
+    expect(checkShotRecord(badExact)).toBe('invalidAnalysis');
 
     const badPoint = JSON.parse(JSON.stringify(record())) as ShotRecord;
     // 関節が 1 つ欠けている
@@ -299,6 +321,17 @@ describe('保存形式の検査', () => {
     // 今の版はそのまま
     expect(upgradeShotRecord(record())).toEqual(record());
     expect(upgradeShotRecord(null)).toBeNull();
+  });
+
+  it('版 3 で時刻が前のコマ以下のコマがあれば、開くときに落とす（書くときの検査は厳しいまま）', () => {
+    const jumbled = {
+      ...record(),
+      analysis: { ...record().analysis, frames: [frames[0]!, frames[1]!, frames[0]!, frames[2]!] },
+    };
+    expect(checkShotRecord(jumbled)).toBe('invalidAnalysis');
+    const repaired = upgradeShotRecord(jumbled) as ShotRecord;
+    expect(repaired.analysis.frames.map((f) => f.timeSec)).toEqual([0, 1 / 30, 2 / 30]);
+    expect(checkShotRecord(repaired)).toBeNull();
   });
 
   it('切り抜きの範囲は、なし（null）か、動画の中に収まり撃発ポイントを含む区間であること', () => {

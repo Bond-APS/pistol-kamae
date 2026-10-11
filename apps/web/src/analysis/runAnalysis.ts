@@ -112,9 +112,10 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       if (target >= duration) break;
       const seekStart = performance.now();
       const seek = await session.seek(video, target, { timeoutMs: SEEK_TIMEOUT_MS, signal });
-      // 正確な時刻が取れた場合だけ、同じフレームの二重処理を避ける
+      // 正確な時刻が取れた場合だけ、同じフレームの二重処理を避ける。時刻が戻るコマも飛ばす（コマの時刻は
+      // 増える順に並んでいることを前提にしているため。最終-26）
       if (seek.exact) {
-        if (seek.timeSec === lastExactTime) continue;
+        if (seek.timeSec <= lastExactTime) continue;
         lastExactTime = seek.timeSec;
       }
       const bitmap = await createImageBitmap(video);
@@ -128,7 +129,12 @@ export async function runAnalysis(opts: RunAnalysisOptions): Promise<AnalysisRes
       const result = await client.estimate(bitmap, timeSec * 1000);
       inferenceMs += result.inferenceMs;
       inferenceTimes.push(result.inferenceMs);
-      frames.push({ timeSec, landmarks: result.landmarks });
+      // 実時刻のコマには印を付ける（表示のときのシーク先の決め方に使う。最終-15）
+      frames.push(
+        seek.exact
+          ? { timeSec, landmarks: result.landmarks, exact: true }
+          : { timeSec, landmarks: result.landmarks },
+      );
       opts.onProgress(frames.length, total);
     }
 
