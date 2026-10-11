@@ -387,6 +387,23 @@ try {
     /開始 0\.5 s/.test(await page.locator('.wave-handle.start').textContent()),
     await page.locator('.wave-handle.start').textContent(),
   );
+  // 終了の取っ手を右端まで引くと、最後のコマの時刻ではなく動画の長さ（＝全体の終わり）に戻る（最終-27）
+  const endHandle = await page.locator('.wave-handle.end').boundingBox();
+  await page.mouse.move(endHandle.x + endHandle.width / 2, endHandle.y + endHandle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width + 20, endHandle.y + endHandle.height / 2, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  const endValue = Number(await page.locator('.wave-handle.end').getAttribute('aria-valuenow'));
+  check(
+    '終了の取っ手を右端まで引くと、終了が動画の長さ（全体）に戻る（最終-27）',
+    near(endValue, total, 1e-6),
+    `${endValue} (長さ ${total})`,
+  );
+  await slideTo('clip-player-bar', 4.0);
+  await waitSettled('clip-player');
+  await tid('clip-set-end').click();
   await slideTo('clip-player-bar', 1.0);
   await waitSettled('clip-player');
   await tid('clip-set-start').click();
