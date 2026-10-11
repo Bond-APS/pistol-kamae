@@ -2,7 +2,6 @@
 // 保存はすべてこの端末の中で完結する。動画本体も端末の中にだけ保存する（比較画面で、任意の時点の絵を出すため）。
 
 import {
-  RECORD_FORMAT_VERSION,
   clipDurationSec,
   defaultTitle,
   type Clip,
@@ -130,8 +129,9 @@ export class KamaeDb extends Dexie {
     this.version(4).upgrade(async (tx) => {
       const data = tx.table<RecordDataRow, number>('recordData');
       await data.toCollection().modify((row) => {
+        // 移し替えの行き先は数字で固定する（定数を書くと、将来版を上げたときに 2 → 4 の移し替えになってしまう。最終-22）
         if (row.formatVersion === 2) {
-          row.formatVersion = RECORD_FORMAT_VERSION;
+          row.formatVersion = 3;
           row.clip = null;
         }
       });

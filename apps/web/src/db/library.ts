@@ -9,6 +9,8 @@ import {
   type Handedness,
   type Mark,
   type RecordAnalysis,
+  checkShotRecord,
+  type ShotRecord,
 } from '@pistol-kamae/engine';
 import { buildOpenedRecord, type OpenRecordResult, type OpenedRecord } from './openRecord';
 import {
@@ -139,7 +141,27 @@ export async function addRecord(
   images: RecordImages,
 ): Promise<number> {
   assertConsistent(analysis, marks, clip);
-  return db.transaction('rw', db.records, db.recordData, async () => {
+  return db.transaction('rw', db.records, db.recordData, db.shooters, async () => {
+    // 書く前に、開くときと同じ検査（保存形式）を通す。開けない記録を書かないため（最終-22）
+    const shooter = await db.shooters.get(fields.shooterId);
+    if (!shooter) throw new Error('no shooter');
+    const problem = checkShotRecord({
+      formatVersion: RECORD_FORMAT_VERSION,
+      analysis,
+      marks,
+      clip,
+      level: null,
+      meta: {
+        title: fields.title,
+        shotAt: fields.shotAt,
+        shooterName: shooter.name,
+        handedness: shooter.handedness,
+        score: null,
+        memo: fields.memo,
+        favorite: fields.favorite,
+      },
+    } satisfies ShotRecord);
+    if (problem) throw new Error(problem);
     const now = Date.now();
     const id = await db.records.add({
       ...fields,
