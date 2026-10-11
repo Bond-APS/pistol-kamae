@@ -1,6 +1,6 @@
 import { useContext, useEffect, useLayoutEffect, useRef } from 'react';
 import type { Nav, NavListener } from './history';
-import { NavContext } from './NavProvider';
+import { NavContext } from './navContext';
 
 /** 画面の履歴（積む・戻す） */
 export function useNav(): Nav {
