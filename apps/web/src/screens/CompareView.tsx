@@ -13,8 +13,14 @@ import {
   tiltDegOfRecord,
   type LandmarkFrame,
 } from '@pistol-kamae/engine';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { nearestFrameIndex, seekTimeForFrame, snapToFrame } from '../analysis/frames';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  frameRange,
+  nearestFrameIndex,
+  seekTimeForFrame,
+  snapClipEdges,
+  snapToFrame,
+} from '../analysis/frames';
 import { useAudioEnvelope } from '../audio/useAudioEnvelope';
 import {
   canNormalize,
@@ -67,16 +73,19 @@ function sideOf(opened: OpenedRecord) {
   const shotSec = shotMarkOf(record.marks)!.timeSec;
   const shotIndex = Math.max(frameIndexAt(frames, shotSec), 0);
   const tiltDeg = tiltDegOfRecord(record);
+  const clip = clipOf(record.clip, durationSec);
   // 位置合わせ（揃える）は撃発の瞬間の姿勢で決め、動画の全体を通して動かさない。
-  // フレームごとに合わせ直すと、関節の位置の細かい揺れで写真が揺れ、体の動きも打ち消してしまう
+  // フレームごとに合わせ直すと、関節の位置の細かい揺れで写真が揺れ、体の動きも打ち消してしまう。
+  // 人物を収める範囲は、切り抜きの範囲のコマだけから求める（外した部分で人物が小さく写らないように。最終-21）。
+  // 範囲のコマで人物を検出できていなければ渡さない（撃発の瞬間の関節から求める）
+  const bounds = sequenceBounds(frames, size, 3, frameRange(frames, clip.startSec, clip.endSec));
   const pose: PoseSide = {
     landmarks: frames[shotIndex]?.landmarks ?? null,
     size,
     tiltDeg,
     handedness: record.meta.handedness,
-    bounds: sequenceBounds(frames, size),
+    ...(bounds ? { bounds } : {}),
   };
-  const clip = clipOf(record.clip, durationSec);
   return {
     opened,
     frames,
@@ -209,9 +218,17 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     ],
     [b, c, bShot, cShot],
   );
-  // 再生中の時点はコマの時刻に丸めて持つ（毎フレーム違う値で画面全体を描き直さないため）
+  // 再生中の時点はコマの時刻に丸めて持つ（毎フレーム違う値で画面全体を描き直さないため）。
+  // 丸めたあとバーの範囲に収める（fps の違う 2 本では、終わりで①の切り抜きの外のコマを指すため。最終-16）
+  const barRef = useRef(bar);
+  useLayoutEffect(() => {
+    barRef.current = bar;
+  });
   const onTick = useCallback(
-    (next: number) => setT(c.frames[nearestFrameIndex(c.frames, cShot + next)]!.timeSec - cShot),
+    (next: number) => {
+      const rounded = c.frames[nearestFrameIndex(c.frames, cShot + next)]!.timeSec - cShot;
+      setT(Math.min(Math.max(rounded, barRef.current.start), barRef.current.end));
+    },
     [c, cShot],
   );
   const playback = usePlayback({
@@ -231,8 +248,10 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
   /** 撃発を 0 とした時刻を、②比較のコマの時刻に吸着させる */
   const snapT = (next: number) => snapToFrame(c.frames, cShot + next) - cShot;
   const setClipEditSnapped = (startT: number, endT: number) => {
-    const s0 = Math.max(snapT(startT), -extent.beforeSec);
-    const e0 = Math.min(snapT(endT), extent.afterSec);
+    // 端まで戻せば②の動画の端（保存される範囲と表示を合わせる。最終-27）
+    const edges = snapClipEdges(c.frames, cShot + startT, cShot + endT, c.durationSec);
+    const s0 = Math.max(edges.startSec - cShot, -extent.beforeSec);
+    const e0 = Math.min(edges.endSec - cShot, extent.afterSec);
     if (e0 - s0 >= 1 / c.fps) setClipEdit({ startT: s0, endT: e0 });
   };
   // 「撃発ポイントの修正」「切り抜き範囲の修正」は履歴を 1 つ積み、ブラウザの「戻る」は「やめる」と同じにする
@@ -268,13 +287,14 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     if (!clipEdit || clipStatus === 'saving') return;
     const sides = [b, c];
     const clips = sides.map((side) => {
-      const startSec = Math.max(snapToFrame(side.frames, side.shotSec + clipEdit.startT), 0);
-      const endSec = Math.min(
-        snapToFrame(side.frames, side.shotSec + clipEdit.endT),
+      // 端まで戻せば「全体」（最後のコマの時刻に吸着させると 1 コマ分短く記録される。最終-27）
+      const clip = snapClipEdges(
+        side.frames,
+        side.shotSec + clipEdit.startT,
+        side.shotSec + clipEdit.endT,
         side.durationSec,
       );
-      const clip = { startSec, endSec };
-      const whole = startSec <= 0 && endSec >= side.durationSec;
+      const whole = clip.startSec <= 0 && clip.endSec >= side.durationSec;
       return { side, clip: whole ? null : clip };
     });
     // 問題の種類（撃発が外・範囲が不正）を捨てずに持ち、案内を分ける
@@ -408,10 +428,16 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
           tiltDeg: s.tiltDeg,
         },
         index,
-      )?.values ?? null;
-    const baseValues = at(b, baseIndex);
-    const currentValues = at(c, currentIndex);
-    return baseValues && currentValues ? compareMetrics(baseValues, currentValues) : null;
+      );
+    const baseMetrics = at(b, baseIndex);
+    const currentMetrics = at(c, currentIndex);
+    const baseValues = baseMetrics?.values ?? null;
+    const currentValues = currentMetrics?.values ?? null;
+    return {
+      table: baseValues && currentValues ? compareMetrics(baseValues, currentValues) : null,
+      // どちらかで左右が逆（銃側の肩が画面の右）なら案内を出す（最終-12）
+      sideReversed: Boolean(baseMetrics?.sideReversed || currentMetrics?.sideReversed),
+    };
   }, [b, c, baseIndex, currentIndex, playing]);
 
   const bothVideos = baseVideo.state === 'ready' && currentVideo.state === 'ready';
@@ -889,8 +915,13 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
             <p className="muted small num" data-testid="diff-times">
               {ja.compare.tableTimes(timeLabel)}
             </p>
-            {diffs ? (
-              <DiffTable diffs={diffs} testId="diff-table" />
+            {diffs?.sideReversed && (
+              <p className="danger small" data-testid="diff-side-reversed">
+                {ja.metricTable.sideReversed}
+              </p>
+            )}
+            {diffs?.table ? (
+              <DiffTable diffs={diffs.table} testId="diff-table" />
             ) : (
               <p className="danger small" data-testid="diff-none">
                 {ja.metricTable.noPerson}

@@ -16,6 +16,11 @@ export function MetricTable({ metrics, testId }: Props) {
     <>
       <p className="muted small">{ja.metricTable.signNote}</p>
       {!metrics.values && <p className="danger small">{ja.metricTable.noPerson}</p>}
+      {metrics.sideReversed && (
+        <p className="danger small" data-testid="side-reversed">
+          {ja.metricTable.sideReversed}
+        </p>
+      )}
       <table className="metric-table" data-testid={testId} data-frame-index={metrics.frameIndex}>
         {METRIC_GROUPS.map((group) => (
           <tbody key={group.unit}>

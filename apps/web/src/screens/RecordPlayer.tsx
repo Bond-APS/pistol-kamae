@@ -9,7 +9,7 @@ import {
   type Clip,
 } from '@pistol-kamae/engine';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { frameRange, nearestFrameInRange, snapToFrame } from '../analysis/frames';
+import { frameRange, nearestFrameInRange, snapClipEdges, snapToFrame } from '../analysis/frames';
 import { loudestTimeSec } from '../audio/envelope';
 import { useAudioEnvelope } from '../audio/useAudioEnvelope';
 import { MetricTable } from '../components/MetricTable';
@@ -77,11 +77,10 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
     rangeFrames.last - rangeFrames.first + 1,
   );
   const snap = (sec: number) => snapToFrame(frames, sec);
-  /** 範囲の端はコマの時刻に吸着させ、動画の中に収め、1 コマ以上の長さを保つ */
+  /** 範囲の端はコマの時刻に吸着させ、動画の中に収め、1 コマ以上の長さを保つ（端まで戻せば全体） */
   const setClipSnapped = (startSec: number, endSec: number) => {
-    const s0 = Math.max(snap(startSec), 0);
-    const e0 = Math.min(snap(endSec), durationSec);
-    setClip(e0 - s0 >= 1 / fps ? { startSec: s0, endSec: e0 } : clip);
+    const next = snapClipEdges(frames, startSec, endSec, durationSec);
+    setClip(next.endSec - next.startSec >= 1 / fps ? next : clip);
   };
   const waves: WaveSeries[] | undefined =
     envelope.state === 'ready'

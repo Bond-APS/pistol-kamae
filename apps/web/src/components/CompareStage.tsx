@@ -170,6 +170,9 @@ export function CompareStage({ view, layers, onHold, label, testId, children }: 
   };
   const startHold = (e: ReactPointerEvent) => {
     if (!onHold || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    // 2 本目の指で前のタイマーを上書きしない（1 本目のタイマーが指を離したあとに動き、基準だけの表示のまま
+    // 戻らなくなるため。最終-17）
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
     holdStart.current = { x: e.clientX, y: e.clientY };
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;

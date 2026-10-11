@@ -215,6 +215,20 @@ describe('sequenceBounds：動画全体を通した人物の範囲', () => {
     // 腕を上げた姿勢は x 100〜620、下ろした姿勢は x 380〜620。y はどちらも 100〜800
     expect(sequenceBounds(frames, SIZE, 1)).toEqual({ x: 100, y: 100, width: 520, height: 700 });
     expect(sequenceBounds([{ timeSec: 0, landmarks: null }], SIZE, 1)).toBeNull();
+    // 調べるコマの範囲を渡すと、その外（切り抜きで外した部分）は含めない（最終-21）
+    expect(sequenceBounds(frames, SIZE, 1, { first: 0, last: 0 })).toEqual({
+      x: 380,
+      y: 100,
+      width: 240,
+      height: 700,
+    });
+    // とびとびで調べても、範囲の最後のコマは必ず入れる（0 と 2 を調べる。1 は飛ばす）
+    expect(sequenceBounds(frames, SIZE, 2, { first: 1, last: 2 })).toEqual({
+      x: 100,
+      y: 100,
+      width: 520,
+      height: 700,
+    });
     expect(sequenceBounds([], SIZE)).toBeNull();
   });
 

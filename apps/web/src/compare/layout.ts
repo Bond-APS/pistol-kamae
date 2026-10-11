@@ -60,20 +60,27 @@ const boundsOf = (side: PoseSide): Rect | null =>
       : null;
 
 /**
- * 動画の全フレームを通して、人物が写っている範囲。人物を 1 度も検出できていなければ null。
+ * 動画のフレームを通して、人物が写っている範囲。人物を 1 度も検出できていなければ null。
  * every は何フレームおきに調べるか（全フレームを調べなくても範囲はほとんど変わらない）。
+ * range を渡すと、その番号の範囲（切り抜きの範囲のコマ）だけを調べる（最終-21）。
  */
 export function sequenceBounds(
   frames: ReadonlyArray<LandmarkFrame>,
   size: ImageSize,
   every = 3,
+  range?: { first: number; last: number },
 ): Rect | null {
   let bounds: Rect | null = null;
-  for (let i = 0; i < frames.length; i += every) {
-    const landmarks = frames[i]!.landmarks;
+  const first = Math.max(range?.first ?? 0, 0);
+  const last = Math.min(range?.last ?? frames.length - 1, frames.length - 1);
+  const add = (i: number) => {
+    const landmarks = frames[i]?.landmarks;
     const b = landmarks ? personBounds(landmarks, size) : null;
     if (b) bounds = bounds ? unionRect(bounds, b) : b;
-  }
+  };
+  for (let i = first; i <= last; i += every) add(i);
+  // 最後のコマは必ず調べる（範囲が短いときに、とびとびで 1 コマも当たらないことがないように）
+  if (last >= first && (last - first) % every !== 0) add(last);
   return bounds;
 }
 
