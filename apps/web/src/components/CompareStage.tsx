@@ -1,3 +1,4 @@
+import type { VideoWithFrameCallback } from '../video/seek';
 import { composeAffine, type Affine, type ImageSize, type Rect } from '@pistol-kamae/engine';
 import {
   useCallback,
@@ -48,6 +49,19 @@ const HOLD_DELAY_MS = 180;
 const HOLD_MOVE_LIMIT_PX = 10;
 /** シーク先との差がこれ未満なら、動かさない（同じ時刻への無駄なシークを避ける） */
 const SEEK_EPSILON_SEC = 0.001;
+/**
+ * 止めた直後に、シーク先との差が小さくても必ず移すときのずらし幅（秒）。
+ * Chrome は再生中、currentTime より 1 コマ先の絵を出していることがあり、止めたあとに移さないとその絵が残る
+ * （最終-1 の追補）。同じ時刻への書き込みでは絵を出し直さないことがあるので、わずかにずらして確実にシークさせる
+ * （コマの中に収まる幅）
+ */
+const PAUSE_NUDGE_SEC = 0.0005;
+/**
+ * シークが終わったあと、表示されたコマを確かめるまでの猶予（ミリ秒）。止めた直後は、再生中に送り出されていた
+ * 次のコマの絵が遅れて届くことがあり（WebKit で約 5%）、シークが終わってもそのコマの絵のまま出し直されないことが
+ * ある。猶予のあと、表示されたコマの時刻がシーク先より後ろなら 1 回だけ移し直す（最終-1 の追補）
+ */
+const VERIFY_DELAY_MS = 100;
 
 /** メタ情報が読めてから、最初のフレームが読めるのを待つ時間。過ぎたら一瞬だけ再生して読ませる */
 const FIRST_FRAME_WAIT_MS = 800;
@@ -57,6 +71,12 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   /** いちばん新しい「表示したい時刻」。シークの最中に次の指示が来たら、終わってからここへ移す */
   const targetRef = useRef(timeSec);
+  /** 最後に画面へ出たコマの媒体時刻（requestVideoFrameCallback が教える）。使えない端末では null */
+  const presentedRef = useRef<number | null>(null);
+  /** 移し直しを 1 回だけにするための印（移し直した先）。新しくシークするたびに消す */
+  const retriedRef = useRef<number | null>(null);
+  const verifyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifyFrame = useRef<number | null>(null);
   const setVideo = useCallback(
     (el: HTMLVideoElement | null) => {
       videoRef.current = el;
@@ -64,16 +84,73 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
     },
     [onVideo],
   );
-  /** 止まっているときだけ、表示したい時刻へ移す（再生中は動画の進みに任せる） */
-  const seekToTarget = useCallback(() => {
+  /**
+   * 止まっているときだけ、表示したい時刻へ移す（再生中は動画の進みに任せる）。
+   * force は止めた直後：差が小さくても必ず移す（上の PAUSE_NUDGE_SEC）
+   */
+  const seekToTarget = useCallback((force = false) => {
     const video = videoRef.current;
     // バーを引いている間は指示が続けて来る。前のシークが終わる前に次を入れ続けると、
     // iPhone では重くなる・終わらなくなることがあるので、終わってから最新の時刻へ 1 回だけ移す
     if (!video || !video.paused || video.readyState === 0 || video.seeking) return;
-    if (Math.abs(video.currentTime - targetRef.current) > SEEK_EPSILON_SEC) {
-      video.currentTime = targetRef.current;
+    // シーク先は動画の長さを超えない（超えると currentTime が長さに丸められ、差が残って seeked のたびにシークが続く）
+    const target = Number.isFinite(video.duration)
+      ? Math.min(targetRef.current, video.duration)
+      : targetRef.current;
+    if (Math.abs(video.currentTime - target) > SEEK_EPSILON_SEC) {
+      retriedRef.current = null;
+      video.currentTime = target;
+    } else if (force) {
+      // 今の位置から必ず離れる向きにずらす（同じ時刻を 2 回書いて出し直されないことがないように）
+      retriedRef.current = null;
+      video.currentTime =
+        video.currentTime >= target ? target - PAUSE_NUDGE_SEC : target + PAUSE_NUDGE_SEC;
     }
   }, []);
+  const cancelVerify = () => {
+    if (verifyTimer.current !== null) clearTimeout(verifyTimer.current);
+    if (verifyFrame.current !== null) cancelAnimationFrame(verifyFrame.current);
+    verifyTimer.current = null;
+    verifyFrame.current = null;
+  };
+  /**
+   * シークが終わったあと、表示されたコマがシーク先より後ろのままなら 1 回だけ移し直す。
+   * 判定は描画の機会（requestAnimationFrame）の中で行う。表示されたコマの通知は描画の更新の中で届くので、
+   * 主スレッドがふさがっていて通知が遅れていても、判定の時点では反映済みになる
+   */
+  const verifyPresented = useCallback(() => {
+    cancelVerify();
+    verifyTimer.current = setTimeout(() => {
+      verifyTimer.current = null;
+      verifyFrame.current = requestAnimationFrame(() => {
+        verifyFrame.current = null;
+        const video = videoRef.current;
+        const target = targetRef.current;
+        const presented = presentedRef.current;
+        if (!video || !video.paused || video.seeking || presented === null) return;
+        if (presented <= target + SEEK_EPSILON_SEC || retriedRef.current === target) return;
+        retriedRef.current = target;
+        // 同じ時刻への書き込みでは絵を出し直さないことがあるので、わずかに手前へ（コマの中に収まる幅）
+        video.currentTime = target - PAUSE_NUDGE_SEC;
+      });
+    }, VERIFY_DELAY_MS);
+  }, []);
+  // 表示されたコマの時刻を追い続ける（使える端末だけ）。動画が替わったら前の動画の値は捨てる
+  useEffect(() => {
+    presentedRef.current = null;
+    retriedRef.current = null;
+    const video = videoRef.current as VideoWithFrameCallback | null;
+    if (!video?.requestVideoFrameCallback) return;
+    let handle = 0;
+    const onFrame = (_now: number, meta: { mediaTime: number }) => {
+      presentedRef.current = meta.mediaTime;
+      handle = video.requestVideoFrameCallback!(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    return () => video.cancelVideoFrameCallback?.(handle);
+  }, [videoUrl]);
+  // 画面を離れるときは、待っている検査を消す
+  useEffect(() => cancelVerify, []);
   useEffect(() => {
     targetRef.current = timeSec;
     seekToTarget();
@@ -105,9 +182,12 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
       data-testid={`stage-video-${layer.key}`}
       // 最初の絵を出す。Safari（WebKit）は、メタ情報が読めた時点（loadedmetadata）で時刻を移しても
       // 絵が出ず黒いままになるので、最初のフレームが読めてから（loadeddata）移す
-      onLoadedData={seekToTarget}
-      onCanPlay={seekToTarget}
-      onSeeked={seekToTarget}
+      onLoadedData={() => seekToTarget()}
+      onCanPlay={() => seekToTarget()}
+      onSeeked={() => {
+        seekToTarget();
+        verifyPresented();
+      }}
       // 止まったら必ず表示したい時刻へ移す。再生中は動画の進みに任せているので、止めた瞬間の絵と
       // 骨格のコマは同じでも、再生位置はそのコマの中のどこかにある。表示したい時刻が止める前と
       // 同じなら上の effect は動かないため、止まったこと自体に反応して、そのコマを確実に出す時刻へ
@@ -115,7 +195,7 @@ function LayerVideo({ layer }: { layer: StageLayer }) {
       // 動画の末尾に達して止まった（ended）ときは動かさない。usePlayback が「末尾に達した」ことを
       // 見て繰り返しの先頭へ戻すので、ここで動かすとその判定が消える
       onPause={(e) => {
-        if (!e.currentTarget.ended) seekToTarget();
+        if (!e.currentTarget.ended) seekToTarget(true);
       }}
       // 省データの設定などで、再生するまで最初のフレームを読まない端末への保険：
       // しばらく待っても読めなければ、一瞬だけ再生して読ませる（音は消してある）
