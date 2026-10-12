@@ -1,7 +1,20 @@
+import { toLocalDateTime } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ExportStatusLine } from '../components/ExportStatusLine';
+import { ImportJson } from '../components/ImportJson';
 import { RecordSummary } from '../components/RecordSummary';
-import { listRecords, setRecordFavorite, storageUsage, type ComparePair } from '../db/library';
+import {
+  getRecordAudio,
+  listRecords,
+  openRecordResult,
+  setRecordFavorite,
+  storageUsage,
+  type ComparePair,
+} from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
+import { allRecordsFileName } from '../export/filename';
+import { buildExportBlob, type ExportItem } from '../export/json';
+import { useExport } from '../export/useExport';
 import { ja } from '../i18n/ja';
 import { useNav, useNavListener } from '../navigation/useNav';
 import {
@@ -43,6 +56,9 @@ export function LibraryScreen(props: Props) {
   const [openId, setOpenId] = useState<number | null>(null);
   /** 記録を開く前の一覧のスクロール位置。戻ったときに復元する */
   const listScrollY = useRef(0);
+  const exporter = useExport();
+  /** 全件の書き出しで、開けないため含めなかった記録の数 */
+  const [exportSkipped, setExportSkipped] = useState(0);
 
   const reload = useCallback(
     () =>
@@ -125,6 +141,34 @@ export function LibraryScreen(props: Props) {
   };
 
   const total = rows?.length ?? 0;
+
+  /** すべての記録を JSON で書き出す（控え用。動画本体は含めない。2026-10-12、開発者の決定） */
+  const exportAll = () =>
+    void exporter.run(async () => {
+      const items: ExportItem[] = [];
+      let skipped = 0;
+      setExportSkipped(0);
+      for (const row of rows ?? []) {
+        const result = await openRecordResult(row.id);
+        if (result.kind !== 'open') {
+          skipped++;
+          continue;
+        }
+        const audio = await getRecordAudio(row.id);
+        const { record, still } = result.opened;
+        items.push({ record, still, thumb: row.thumb, audio, video: null });
+      }
+      if (items.length === 0) throw new Error('nothing to export');
+      setExportSkipped(skipped);
+      const exportedAt = toLocalDateTime(new Date());
+      return { blob: buildExportBlob(items, exportedAt), name: allRecordsFileName(exportedAt) };
+    });
+  /** JSON の読込が終わった：射手が増えた・直ったことがあるので射手も読み直す */
+  const afterImport = async (ids: number[]) => {
+    await onShootersChanged();
+    await reload();
+    if (ids.length > 0) onRecordChanged(ids[0]!);
+  };
 
   // 比較に選ぶ：最初の◯が①基準、次の◯が②比較。もう一度押すと外れる。2 件あるときに 3 件目を押すと②が替わる
   const togglePick = (id: number) => {
@@ -264,6 +308,38 @@ export function LibraryScreen(props: Props) {
         <p className="muted small num" data-testid="library-usage">
           {ja.video.usage(Math.round(usage / 1_000_000))}
         </p>
+      )}
+      {rows !== null && (
+        <div className="stack spaced" data-testid="library-tools">
+          {total > 0 && (
+            <>
+              <button
+                className="full"
+                data-testid="export-all"
+                disabled={exporter.status === 'busy'}
+                onClick={exportAll}
+              >
+                {ja.export.all}
+              </button>
+              <p className="muted small">{ja.export.allNote}</p>
+              <ExportStatusLine
+                status={exporter.status}
+                onShare={exporter.share}
+                testId="export-all-status"
+              />
+              {exporter.status !== 'idle' && exportSkipped > 0 && (
+                <p className="danger small" data-testid="export-all-skipped">
+                  {ja.export.allSkipped(exportSkipped)}
+                </p>
+              )}
+            </>
+          )}
+          <ImportJson
+            shooters={shooters}
+            onImported={(ids) => void afterImport(ids)}
+            testId="import-json"
+          />
+        </div>
       )}
       {(pair.baseId !== null || pair.currentId !== null) && (
         <div className="pick-bar" data-testid="pick-bar">

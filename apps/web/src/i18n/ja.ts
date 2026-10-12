@@ -15,7 +15,7 @@ const handednessName = { right: '右利き', left: '左利き' } as const;
 export const ja = {
   app: {
     title: 'Pistol Kamae',
-    stageNote: '開発中の検証用画面（段階⑤を実装中）',
+    stageNote: '開発中の検証用画面（段階⑥を実装中）',
     dbUnavailable:
       'このブラウザでは保存の機能を使えません。プライベートブラウズを切るか、別のブラウザで開いてください。',
   },
@@ -433,6 +433,75 @@ export const ja = {
     copied: 'コピーしました',
     copyFailed: 'コピーできませんでした。下のテキストを選択してコピーしてください。',
     na: '—',
+  },
+  /** 書き出し（段階⑥）。JSON・CSV はライブラリの詳細と一覧、PNG は比較画面 */
+  export: {
+    json: 'JSON で書き出す',
+    csv: 'CSV で書き出す',
+    png: 'PNG で書き出す',
+    all: 'すべての記録を JSON で書き出す',
+    allNote:
+      '控え用。動画本体は含めません（動画が要る記録は、詳細から 1 件ずつ「動画も含めて」書き出せます）。',
+    busy: '書き出しています…',
+    ready: '準備できました。右のボタンで共有シートを開きます。',
+    share: '共有する',
+    done: '✓ 書き出しました',
+    allSkipped: (n: number) => `！ ${n} 件は開けないため、含めませんでした。`,
+    failed: '！ 書き出せませんでした。もう一度押してください。',
+    jsonChoiceTitle: 'JSON で書き出す',
+    jsonChoiceBody:
+      '動画本体を含めるかを選んでください。含めると、ファイルは動画の 1.3 倍ほどの大きさになります。含めない JSON を読み込んだ記録は「動画：なし」になり、「動画ファイルを選び直す」で後から付けられます。',
+    jsonRecordOnly: '記録だけ（動画なし）',
+    jsonWithVideo: '動画も含めて書き出す',
+    pngNeedsOverlay: 'PNG は、重ねた表示（「横に並べる」を外した状態）のときに書き出せます。',
+    pngCannotOverlay: 'この 2 件は重ねられないため、PNG は書き出せません。',
+    pngNeedsVideo: 'PNG は、2 本の絵が出ているときに書き出せます。',
+    /** 帯の 1 行。例：①発射音あり ／ ②音声なし ／ 撃発の瞬間 */
+    pngTitle: (base: string, current: string, time: string) => `①${base} ／ ②${current} ／ ${time}`,
+    /** ファイル名の部分：kamae_すべて_…、kamae_比較_… */
+    fileAll: 'すべて',
+    fileCompare: '比較',
+    csvFrame: 'コマ番号',
+    csvTime: '時刻〔秒、撃発＝0〕',
+    csvUnit: (unit: 'deg' | 'ratio') => (unit === 'deg' ? '〔°〕' : '〔比〕'),
+  },
+  /** JSON の読込（段階⑥）。ライブラリの一覧の下部と、一覧が空のとき */
+  importJson: {
+    button: 'JSON を読み込む',
+    reading: '読み込んでいます…',
+    tooLarge: (mb: number) =>
+      `！ このファイルは大きすぎて読めません（動画が ${mb} MB を超えている可能性があります）。`,
+    notKamae: '！ このファイルは Pistol Kamae の JSON ではありません。',
+    unsupportedVersion:
+      '！ このファイルは新しい形式のため、このアプリでは読めません。アプリを更新してください。',
+    broken: '！ このファイルは読めませんでした（壊れているか、形式が違います）。',
+    noRecords: '！ このファイルには読み込める記録がありません。',
+    handednessTitle: '利き手が違います',
+    handednessBody: (name: string, inFile: 'right' | 'left', registered: 'right' | 'left') =>
+      `この記録の射手「${name}」は${handednessName[inFile]}として保存されていますが、登録は${handednessName[registered]}です。どちらにしますか。`,
+    keepRegistered: (registered: 'right' | 'left') =>
+      `登録どおり${handednessName[registered]}にする`,
+    useFile: (inFile: 'right' | 'left') =>
+      `${handednessName[inFile]}にする（射手の登録を直す。この射手の記録すべてに反映）`,
+    duplicateTitle: '同じ記録がすでにあります',
+    duplicateOne:
+      'この記録（撮影日時・射手・動画の長さが同じ）はすでにライブラリにあります。それでも読み込みますか。',
+    duplicateMany: (dup: number, total: number) =>
+      `${total} 件のうち ${dup} 件は、同じ記録（撮影日時・射手・動画の長さが同じ）がすでにライブラリにあります。`,
+    importAnyway: 'それでも読み込む',
+    importAll: 'すべて読み込む',
+    skipDuplicates: '重複を除いて読み込む',
+    importing: (done: number, total: number) => `読み込んでいます… ${done} / ${total} 件`,
+    doneTitle: (n: number) => `✓ ${n} 件を読み込みました`,
+    doneNone: '読み込む記録はありませんでした。',
+    skippedInvalid: (n: number) => `${n} 件は形式が合わないため飛ばしました。`,
+    skippedDuplicate: (n: number) => `${n} 件は重複のため飛ばしました。`,
+    failedSome: (n: number) => `！ ${n} 件は保存できませんでした。`,
+    videoTooLarge: (n: number, mb: number) =>
+      `${n} 件は動画が ${mb} MB を超えるため、動画本体は保存しませんでした（記録だけ）。`,
+    videoFailed: (n: number) =>
+      `！ ${n} 件は動画本体を保存できませんでした（端末の空き容量が足りない可能性があります）。`,
+    failed: '！ 読み込めませんでした。もう一度押してください。',
   },
   metrics: {
     shoulderTilt: '(a) 肩線の傾き（水平基準）',

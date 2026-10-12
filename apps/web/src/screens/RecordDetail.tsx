@@ -4,16 +4,20 @@ import {
   frameIndexAt,
   parseLocalDateTime,
   shotMarkOf,
+  toLocalDateTime,
 } from '@pistol-kamae/engine';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { forgetEnvelope } from '../audio/useAudioEnvelope';
 import { AttachVideo } from '../components/AttachVideo';
 import { ConfirmDialog, Dialog } from '../components/Dialog';
+import { ExportStatusLine } from '../components/ExportStatusLine';
 import { RecordForm } from '../components/RecordForm';
 import { StillView } from '../components/StillView';
 import { StoredImg } from '../components/StoredImg';
 import {
   deleteRecord,
+  getRecordAudio,
+  getRecordVideo,
   hasRecordVideo,
   openRecordResult,
   setRecordFavorite,
@@ -22,6 +26,10 @@ import {
   type RecordFields,
 } from '../db/library';
 import type { RecordRow, ShooterRow } from '../db/schema';
+import { buildCsv } from '../export/csv';
+import { recordFileName } from '../export/filename';
+import { buildExportBlob } from '../export/json';
+import { useExport } from '../export/useExport';
 import { ja } from '../i18n/ja';
 import { useNav, useNavListener } from '../navigation/useNav';
 import { personCrop } from '../library/crop';
@@ -81,6 +89,9 @@ export function RecordDetail(props: Props) {
     void checkVideo();
   }, [checkVideo]);
   const [removing, setRemoving] = useState(false);
+  /** 「JSON で書き出す」で、動画本体を含めるかを選ぶ窓 */
+  const [jsonChoice, setJsonChoice] = useState(false);
+  const exporter = useExport();
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeFailed, setRemoveFailed] = useState(false);
 
@@ -253,6 +264,25 @@ export function RecordDetail(props: Props) {
     setEditing(false);
     onChanged(row.id);
   };
+  /** JSON で書き出す。includeVideo なら動画本体も入れる（既定は記録だけ） */
+  const exportJson = (includeVideo: boolean) => {
+    setJsonChoice(false);
+    void exporter.run(async () => {
+      const audio = await getRecordAudio(row.id);
+      const video = includeVideo ? await getRecordVideo(row.id) : null;
+      const blob = buildExportBlob(
+        [{ record, still, thumb: row.thumb, audio, video }],
+        toLocalDateTime(new Date()),
+      );
+      return { blob, name: recordFileName(shooter.name, row.shotAt, 'json') };
+    });
+  };
+  const exportCsv = () =>
+    void exporter.run(async () => ({
+      blob: new Blob([buildCsv(record)], { type: 'text/csv' }),
+      name: recordFileName(shooter.name, row.shotAt, 'csv'),
+    }));
+  const exporting = exporter.status === 'busy';
   return (
     <section data-testid="record-detail" data-record-id={row.id}>
       {back}
@@ -332,6 +362,28 @@ export function RecordDetail(props: Props) {
         >
           {ja.library.fixClip}
         </button>
+        <button
+          className="full"
+          data-testid="detail-export-json"
+          // 動画の有無を調べ終えるまで待つ（窓を出すかどうかが決まらないため）
+          disabled={exporting || hasVideo === null}
+          onClick={() => (hasVideo ? setJsonChoice(true) : exportJson(false))}
+        >
+          {ja.export.json}
+        </button>
+        <button
+          className="full"
+          data-testid="detail-export-csv"
+          disabled={exporting}
+          onClick={exportCsv}
+        >
+          {ja.export.csv}
+        </button>
+        <ExportStatusLine
+          status={exporter.status}
+          onShare={exporter.share}
+          testId="detail-export-status"
+        />
       </div>
 
       {hasVideo !== null && (
@@ -395,6 +447,36 @@ export function RecordDetail(props: Props) {
             onCancel={() => setEditing(false)}
             onShootersChanged={onShootersChanged}
           />
+        </Dialog>
+      )}
+
+      {jsonChoice && (
+        <Dialog
+          variant="confirm"
+          title={ja.export.jsonChoiceTitle}
+          onCancel={() => setJsonChoice(false)}
+          testId="json-choice-dialog"
+        >
+          <p className="small">{ja.export.jsonChoiceBody}</p>
+          <div className="stack">
+            <button
+              className="primary full"
+              data-testid="json-record-only"
+              onClick={() => exportJson(false)}
+            >
+              {ja.export.jsonRecordOnly}
+            </button>
+            <button className="full" data-testid="json-with-video" onClick={() => exportJson(true)}>
+              {ja.export.jsonWithVideo}
+            </button>
+            <button
+              className="full"
+              data-testid="confirm-cancel"
+              onClick={() => setJsonChoice(false)}
+            >
+              {ja.common.cancel}
+            </button>
+          </div>
         </Dialog>
       )}
 

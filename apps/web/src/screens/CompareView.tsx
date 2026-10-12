@@ -34,6 +34,7 @@ import {
 import { AttachVideo } from '../components/AttachVideo';
 import { CompareStage, type StageLayer } from '../components/CompareStage';
 import { DiffTable } from '../components/DiffTable';
+import { ExportStatusLine } from '../components/ExportStatusLine';
 import { NumbersFold } from '../components/NumbersFold';
 import { skeletonParts } from '../components/skeleton';
 import { SkeletonLayer } from '../components/SkeletonLayer';
@@ -42,6 +43,17 @@ import { useRecordVideoUrl } from '../components/useRecordVideoUrl';
 import { WaveBar, type WaveSeries } from '../components/WaveBar';
 import { SHOT_EDIT_SPAN_SEC, peakShot, shiftShot, shotFrameDelta } from '../compare/shotEdit';
 import { overwriteRecordMarksAll, updateRecordClipAll, type OpenedRecord } from '../db/library';
+import { compareFileName } from '../export/filename';
+import {
+  canvasToPng,
+  drawOverlay,
+  imageFromBytes,
+  type LoadedImage,
+  type PngLayer,
+  type PngSkeleton,
+  waitVideoSettled,
+} from '../export/png';
+import { useExport } from '../export/useExport';
 import { ja } from '../i18n/ja';
 import { useNav, useNavListener } from '../navigation/useNav';
 import { captureShotImages } from '../video/capture';
@@ -144,6 +156,7 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
     null,
   );
   const [shotStatus, setShotStatus] = useState<'none' | 'saving' | 'failed'>('none');
+  const pngExport = useExport();
   /**
    * 「決定」で保存が済み、記録の読み直しを待っている。読み直した記録が届いたら修正を閉じ、時点を 0 に戻す
    * （画面を作り直さずに済ませるため。読み直しの前に閉じると、一瞬だけ古い撃発ポイント・範囲で描いてしまう）
@@ -503,6 +516,65 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
 
   // 撃発ポイントの修正は、2 本の動画が画面に出ているときだけ（静止画を作り直すのに、その動画を使う）
   const canFixShot = bothVideos && !(layout === 'overlay' && cannotOverlay);
+  // PNG の書き出し（重ねた絵）：重ねる表示で、2 本とも絵が出ているとき（動画があるか、動画のない記録なら撃発の瞬間）
+  const pngSourceReady = (role: Role) => {
+    const s = role === 'base' ? b : c;
+    const video = role === 'base' ? baseVideo : currentVideo;
+    const index = role === 'base' ? baseIndex : currentIndex;
+    return video.state === 'ready' || (video.state === 'none' && index === s.shotIndex);
+  };
+  const pngOverlay = layout === 'overlay' && !cannotOverlay;
+  const pngSources = pngSourceReady('base') && pngSourceReady('current');
+  const canExportPng = pngOverlay && pngSources;
+  /** 重ねた絵を、②比較の動画の画素で描き直して PNG にする（帯に①②のタイトルと時点） */
+  const exportPng = () =>
+    void pngExport.run(async () => {
+      playback.pause();
+      const loaded: LoadedImage[] = [];
+      try {
+        const layerFor = async (role: Role, opacity: number, transform: typeof IDENTITY) => {
+          const s = role === 'base' ? b : c;
+          const video = role === 'base' ? baseVideo : currentVideo;
+          let source: CanvasImageSource;
+          if (video.state === 'ready') {
+            const el = (role === 'base' ? baseVideoRef : currentVideoRef).current;
+            if (!el) throw new Error('video not ready');
+            // シークの途中なら、終わって狙ったコマが出るまで待つ
+            await waitVideoSettled(el);
+            source = el;
+          } else {
+            const img = await imageFromBytes(s.opened.still.bytes, s.opened.still.type);
+            loaded.push(img);
+            source = img.image;
+          }
+          return { source, size: s.size, transform, opacity } satisfies PngLayer;
+        };
+        const layers = [
+          await layerFor('current', 1, IDENTITY),
+          await layerFor('base', baseOpacity / 100, overlay.baseTransform),
+        ];
+        const skeletons: PngSkeleton[] = [];
+        for (const role of ROLES) {
+          const s = role === 'base' ? b : c;
+          const landmarks = s.frames[role === 'base' ? baseIndex : currentIndex]?.landmarks;
+          if (!landmarks) continue;
+          const transform = role === 'base' ? overlay.baseTransform : IDENTITY;
+          skeletons.push({ parts: skeletonParts(landmarks, s.size, transform), variant: role });
+        }
+        const canvas = drawOverlay({
+          view: overlay.view,
+          layers,
+          skeletons,
+          title: ja.export.pngTitle(base.row.title, current.row.title, timeLabel),
+        });
+        return {
+          blob: await canvasToPng(canvas),
+          name: compareFileName(base.row.title, current.row.title),
+        };
+      } finally {
+        loaded.forEach((l) => l.release());
+      }
+    });
   // 撃発ポイントの修正で、いま動かす側
   const editSide = shotEdit?.role === 'base' ? b : c;
   const editShot = shotEdit?.role === 'base' ? bShot : cShot;
@@ -903,6 +975,35 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
         >
           {ja.compare.fixClip}
         </button>
+        <button
+          className="full"
+          data-testid="compare-export-png"
+          // 再生中は押せない（止めた瞬間の絵と、時点から求めた骨格のコマがずれることがあるため）
+          disabled={!canExportPng || pngExport.status === 'busy' || savingShot || playing}
+          onClick={exportPng}
+        >
+          {ja.export.png}
+        </button>
+        {cannotOverlay ? (
+          <p className="muted small" data-testid="png-reason">
+            {ja.export.pngCannotOverlay}
+          </p>
+        ) : !pngOverlay ? (
+          <p className="muted small" data-testid="png-reason">
+            {ja.export.pngNeedsOverlay}
+          </p>
+        ) : (
+          !pngSources && (
+            <p className="muted small" data-testid="png-reason">
+              {ja.export.pngNeedsVideo}
+            </p>
+          )
+        )}
+        <ExportStatusLine
+          status={pngExport.status}
+          onShare={pngExport.share}
+          testId="compare-export-status"
+        />
       </div>
 
       <NumbersFold title={ja.compare.numbersTitle} testId="diff-numbers">
