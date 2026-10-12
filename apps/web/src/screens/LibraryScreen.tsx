@@ -59,6 +59,8 @@ export function LibraryScreen(props: Props) {
   const exporter = useExport();
   /** 全件の書き出しで、開けないため含めなかった記録の数 */
   const [exportSkipped, setExportSkipped] = useState(0);
+  /** JSON の読込中。一覧の記録を開く・選ぶなどを押せなくする（開くと進捗と結果の表示が消えるため） */
+  const [importing, setImporting] = useState(false);
 
   const reload = useCallback(
     () =>
@@ -209,6 +211,7 @@ export function LibraryScreen(props: Props) {
               className="full"
               data-testid="filter-shooter"
               aria-label={ja.library.filterShooter}
+              disabled={importing}
               value={filter.shooterId ?? ''}
               onChange={(e) =>
                 setFilter({
@@ -231,6 +234,7 @@ export function LibraryScreen(props: Props) {
               className="chip"
               data-testid="filter-favorite"
               aria-pressed={filter.favoritesOnly}
+              disabled={importing}
               onClick={() => setFilter({ ...filter, favoritesOnly: !filter.favoritesOnly })}
             >
               <span className={filter.favoritesOnly ? 'fav-on' : 'fav-off'}>
@@ -269,7 +273,12 @@ export function LibraryScreen(props: Props) {
                     data-favorite={r.favorite}
                     data-pick={pickMark(r.id)}
                   >
-                    <button className="lib-open" data-testid="lib-open" onClick={() => open(r.id)}>
+                    <button
+                      className="lib-open"
+                      data-testid="lib-open"
+                      disabled={importing}
+                      onClick={() => open(r.id)}
+                    >
                       <RecordSummary
                         row={r}
                         shooterName={shooterById.get(r.shooterId)?.name ?? ''}
@@ -279,6 +288,7 @@ export function LibraryScreen(props: Props) {
                       className={r.favorite ? 'icon fav-on' : 'icon fav-off'}
                       data-testid="lib-favorite"
                       aria-pressed={r.favorite}
+                      disabled={importing}
                       aria-label={r.favorite ? ja.library.removeFavorite : ja.library.addFavorite}
                       onClick={() => void toggleFavorite(r)}
                     >
@@ -288,6 +298,7 @@ export function LibraryScreen(props: Props) {
                       className="icon pick"
                       data-testid="lib-pick"
                       aria-pressed={pickMark(r.id) !== ''}
+                      disabled={importing}
                       aria-label={
                         pickMark(r.id) ? ja.library.unpick(r.title) : ja.library.pick(r.title)
                       }
@@ -316,7 +327,7 @@ export function LibraryScreen(props: Props) {
               <button
                 className="full"
                 data-testid="export-all"
-                disabled={exporter.status === 'busy'}
+                disabled={exporter.status === 'busy' || importing}
                 onClick={exportAll}
               >
                 {ja.export.all}
@@ -337,6 +348,7 @@ export function LibraryScreen(props: Props) {
           <ImportJson
             shooters={shooters}
             onImported={(ids) => void afterImport(ids)}
+            onBusyChange={setImporting}
             testId="import-json"
           />
         </div>
@@ -362,7 +374,7 @@ export function LibraryScreen(props: Props) {
           <button
             className="primary full"
             data-testid="pick-compare"
-            disabled={pair.baseId === null || pair.currentId === null}
+            disabled={pair.baseId === null || pair.currentId === null || importing}
             onClick={props.onCompare}
           >
             {ja.library.compareBoth}

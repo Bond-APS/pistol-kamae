@@ -1,5 +1,5 @@
 import type { Handedness } from '@pistol-kamae/engine';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listKnownRecordKeys } from '../db/library';
 import type { ShooterRow } from '../db/schema';
 import { planImport, type ImportPlan, type PlannedShooter } from '../export/importPlan';
@@ -13,6 +13,8 @@ interface Props {
   shooters: ShooterRow[];
   /** 読み込みが終わったとき（1 件も書かなくても呼ぶ。射手を登録・修正したことがあるため） */
   onImported: (ids: number[]) => void;
+  /** 読み取り・書き込みの間（一覧を押せなくしてもらうため。2026-10-13、開発者の決定） */
+  onBusyChange: (busy: boolean) => void;
   testId: string;
 }
 
@@ -56,9 +58,15 @@ const problemText: Record<ParseProblem | 'failed' | 'tooLarge', string> = {
  * 「JSON を読み込む」ボタンと、その流れ（ファイルを選ぶ → 検査 → 利き手の食い違い → 重複 → 書き込み → 結果）。
  * 利き手の食い違いは射手ごとに 1 回、重複は全体で 1 回だけ聞く（2026-10-12、開発者の決定）
  */
-export function ImportJson({ shooters, onImported, testId }: Props) {
+export function ImportJson({ shooters, onImported, onBusyChange, testId }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  const busy = phase.kind === 'reading' || phase.kind === 'importing';
+  useEffect(() => {
+    onBusyChange(busy);
+  }, [busy, onBusyChange]);
+  // 画面を離れるときは「読み込み中」を解く
+  useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
   const onPick = async (file: File | undefined) => {
     if (!file) return;
@@ -133,7 +141,6 @@ export function ImportJson({ shooters, onImported, testId }: Props) {
   };
 
   const cancel = () => setPhase({ kind: 'idle' });
-  const busy = phase.kind === 'reading' || phase.kind === 'importing';
 
   return (
     <div data-testid={testId} data-phase={phase.kind}>

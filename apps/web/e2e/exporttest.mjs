@@ -664,12 +664,35 @@ try {
   );
   await tid('detail-back').click();
   await waitItems(7);
-  // 新しい射手（未登録）は登録される
+  // 新しい射手（未登録）は登録される。読込中は一覧の記録を押せない（属性の変化を見張って確かめる）
   const newShooter = JSON.parse(jsonA.bytes.toString('utf8'));
   newShooter.records[0].record.meta.shooterName = '別の射手';
+  await page.evaluate(() => {
+    window.__disabledSeen = { open: false, pick: false, exportAll: false };
+    const watch = (selector, key) => {
+      const el = document.querySelector(selector);
+      new MutationObserver(() => {
+        if (el.disabled) window.__disabledSeen[key] = true;
+      }).observe(el, { attributes: true, attributeFilter: ['disabled'] });
+    };
+    watch('[data-testid=lib-open]', 'open');
+    watch('[data-testid=lib-pick]', 'pick');
+    watch('[data-testid=export-all]', 'exportAll');
+  });
   await importFile(writeJson('newshooter.json', newShooter));
   await waitImportSettled();
   await waitItems(8);
+  const disabledSeen = await page.evaluate(() => window.__disabledSeen);
+  check(
+    '読込中は、一覧の記録を開く・選ぶと全件の書き出しを押せない',
+    disabledSeen.open && disabledSeen.pick && disabledSeen.exportAll,
+    JSON.stringify(disabledSeen),
+  );
+  check(
+    '読込が終わると、また押せる',
+    (await page.locator('[data-testid=lib-open]').first().isEnabled()) &&
+      (await tid('export-all').isEnabled()),
+  );
   check(
     '未登録の射手は登録され、射手の絞り込みに現れる',
     (await tid('filter-shooter').count()) === 1 &&
