@@ -132,13 +132,14 @@ function assertConsistent(analysis: RecordAnalysis, marks: Mark[], clip: Clip | 
   if (problem) throw new Error(problem);
 }
 
-/** 新しい記録を保存し、その番号を返す */
+/** 新しい記録を保存し、その番号を返す。score は JSON の読込で元の値を残すためのもの（画面からは null） */
 export async function addRecord(
   fields: RecordFields,
   analysis: RecordAnalysis,
   marks: Mark[],
   clip: Clip | null,
   images: RecordImages,
+  score: number | null = null,
 ): Promise<number> {
   assertConsistent(analysis, marks, clip);
   return db.transaction('rw', db.records, db.recordData, db.shooters, async () => {
@@ -156,7 +157,7 @@ export async function addRecord(
         shotAt: fields.shotAt,
         shooterName: shooter.name,
         handedness: shooter.handedness,
-        score: null,
+        score,
         memo: fields.memo,
         favorite: fields.favorite,
       },
@@ -165,7 +166,7 @@ export async function addRecord(
     const now = Date.now();
     const id = await db.records.add({
       ...fields,
-      score: null,
+      score,
       clipSec: clipDurationSec(clip, analysis.durationSec),
       thumb: images.thumb,
       createdAt: now,
@@ -275,6 +276,30 @@ export async function setRecordAudio(id: number, audio: Omit<RecordAudioRow, 'id
 
 export async function listRecords(): Promise<RecordRow[]> {
   return db.records.toArray();
+}
+
+/** JSON 読込の重複の判定に使う、ライブラリの全記録の要約（射手名・撮影日時・元の動画の長さ） */
+export interface KnownRecordKey {
+  shooterName: string;
+  shotAt: string;
+  durationSec: number;
+}
+
+export async function listKnownRecordKeys(): Promise<KnownRecordKey[]> {
+  const [rows, shooters] = await Promise.all([db.records.toArray(), db.shooters.toArray()]);
+  const names = new Map(shooters.map((s) => [s.id, s.name]));
+  const keys: KnownRecordKey[] = [];
+  // 動画の長さは中身の行にしかないので、1 件ずつ読む（読込のときだけなので、時間がかかっても支障はない）
+  for (const row of rows) {
+    const data = await db.recordData.get(row.id);
+    if (!data) continue;
+    keys.push({
+      shooterName: names.get(row.shooterId) ?? '',
+      shotAt: row.shotAt,
+      durationSec: data.analysis.durationSec,
+    });
+  }
+  return keys;
 }
 
 export async function getRecordRow(id: number): Promise<RecordRow | null> {
