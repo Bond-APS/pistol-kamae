@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Pistol Kamae のアイコン：構えた射手の骨格（正面、右利き。銃側の腕は見る側の左へ）。背景は濃紺、線は骨格の緑 -->
+  <rect width="512" height="512" rx="0" fill="#0e2742"/>
+  <g fill="none" stroke="#00dc5a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 頭 -->
+    <circle cx="276" cy="118" r="34" fill="#00dc5a" stroke="none"/>
+    <!-- 肩線 -->
+    <path d="M204 184 L348 184"/>
+    <!-- 銃側の腕（水平に伸ばす） -->
+    <path d="M204 184 L92 170"/>
+    <!-- 非銃側の腕（腰へ） -->
+    <path d="M348 184 L352 290"/>
+    <!-- 体幹 -->
+    <path d="M204 184 L222 300 L330 300 L348 184"/>
+    <!-- 脚 -->
+    <path d="M222 300 L196 430 M330 300 L356 430"/>
+  </g>
+  <g fill="#00dc5a">
+    <circle cx="204" cy="184" r="16"/><circle cx="348" cy="184" r="16"/>
+    <circle cx="92" cy="170" r="16"/><circle cx="352" cy="290" r="16"/>
+    <circle cx="222" cy="300" r="16"/><circle cx="330" cy="300" r="16"/>
+    <circle cx="196" cy="430" r="16"/><circle cx="356" cy="430" r="16"/>
+  </g>
+</svg>
