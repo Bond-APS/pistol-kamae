@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { AnalysisResult } from './analysis/runAnalysis';
 import { DevErrorBanner } from './components/DevErrorBanner';
+import { InstallNotice } from './components/InstallNotice';
+import { UpdateBanner } from './components/UpdateBanner';
 import {
   EMPTY_PAIR,
   getComparePair,
@@ -185,6 +187,8 @@ function AppBody() {
           <strong>{ja.app.dbUnavailable}</strong>
         </div>
       )}
+      <UpdateBanner unsaved={unsaved} />
+      <InstallNotice />
 
       <nav className="tabs">
         {TABS.map((t) => (

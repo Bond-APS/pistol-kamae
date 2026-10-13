@@ -15,9 +15,34 @@ const handednessName = { right: '右利き', left: '左利き' } as const;
 export const ja = {
   app: {
     title: 'Pistol Kamae',
-    stageNote: '開発中の検証用画面（段階⑥を実装中）',
+    stageNote: '開発中の検証用画面（段階⑦を実装中）',
     dbUnavailable:
       'このブラウザでは保存の機能を使えません。プライベートブラウズを切るか、別のブラウザで開いてください。',
+  },
+  /** PWA（ホーム画面に追加してアプリのように開ける方式。段階⑦）：初回の案内と、新しい版の案内 */
+  pwa: {
+    /** マニフェスト（名前・説明）と index.html の説明文。静的なファイルに差し込む（vite.config.ts） */
+    manifest: {
+      name: 'Pistol Kamae',
+      shortName: 'Kamae',
+      description: 'AP（エアピストル）の射撃姿勢を、動画から比べる',
+    },
+    installTitle: 'ホーム画面に追加すると、アプリのように開けます',
+    installBodyIos:
+      'iPhone・iPad：画面の下（iPad は上）の共有ボタン（□ から ↑ が出ている印）を押し、「ホーム画面に追加」を選びます。追加しておくと、保存した記録が消えにくくなります（Safari は 7 日間使わないサイトの保存データを消すことがあります）。',
+    /** ホーム画面から開くアプリは Safari とは保存場所が別（レビューで判明、2026-10-13）。移し方を添える */
+    installStorageIos:
+      'ホーム画面から開くアプリは、Safari とは保存場所が別です。Safari で保存した記録があれば、先にライブラリの「すべての記録を JSON で書き出す」で控えを取り、ホーム画面のアプリの「JSON を読み込む」で移してください。',
+    installBodyOther:
+      'ブラウザのメニューから「ホーム画面に追加」「Dock に追加」「アプリをインストール」のいずれかを選びます。',
+    backupNote:
+      '大切な記録は、ライブラリの「すべての記録を JSON で書き出す」で控えを取っておいてください。',
+    close: '閉じる',
+    updateTitle: '新しい版があります。',
+    updateBody: '「更新」を押すと開き直します。',
+    updateUnsaved: '保存していない動画があります。保存するか、やめてから更新してください。',
+    update: '更新',
+    later: 'あとで',
   },
   devErrors: {
     title: '開発サーバ限定：画面内エラー表示',
@@ -417,6 +442,8 @@ export const ja = {
     rangeStart: '区間の開始（秒）',
     rangeEnd: '区間の終了（秒）',
     rangeDevNote: '※ 開発サーバ限定の検証用。空欄なら全フレーム',
+    /** 最小〜最大。例：1.2 〜 3.4 */
+    minMax: (min: string, max: string) => `${min} 〜 ${max}`,
     rangeLabel: (start: number, end: number) =>
       `集計区間：${start.toFixed(1)} 〜 ${Number.isFinite(end) ? end.toFixed(1) : '末尾'} 秒`,
     detected: (detected: number, total: number) =>

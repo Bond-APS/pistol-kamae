@@ -67,7 +67,7 @@ export function NoiseScreen({ result, handedness, onGoLoad }: Props) {
       count: s.count,
       mean: fmt(s.mean, digits),
       sd: fmt(s.sd, digits),
-      range: s.min === null ? ja.noise.na : `${fmt(s.min, digits)} 〜 ${fmt(s.max, digits)}`,
+      range: s.min === null ? ja.noise.na : ja.noise.minMax(fmt(s.min, digits), fmt(s.max, digits)),
     };
   });
 
