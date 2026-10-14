@@ -719,7 +719,10 @@ try {
     { timeout: 20_000 },
   );
   await page.waitForTimeout(500);
-  check('重ねた表示では「静止している画像を書き出す」を押せる', await tid('compare-export-png').isEnabled());
+  check(
+    '重ねた表示では「静止している画像を書き出す」を押せる',
+    await tid('compare-export-png').isEnabled(),
+  );
   const viewBox = (await tid('still-svg').getAttribute('viewBox')).split(' ').map(Number);
   const png = await downloadBy(() => tid('compare-export-png').click(), 'compare.png');
   await waitExported('compare-export-status');
@@ -763,9 +766,10 @@ try {
   await tid('toggle-side').click();
   await page.waitForTimeout(300);
   check(
-    '「横に並べる」では PNG を押せず、理由が出る',
+    '「横に並べる」では「静止している画像を書き出す」を押せず、理由が出る',
     (await tid('compare-export-png').isDisabled()) &&
-      (await tid('png-reason').textContent()).includes('重ねた表示'),
+      (await tid('png-reason').textContent()).includes('重ねた表示') &&
+      !(await tid('png-reason').textContent()).includes('PNG'),
     await tid('png-reason').textContent(),
   );
   await tid('toggle-side').click();
