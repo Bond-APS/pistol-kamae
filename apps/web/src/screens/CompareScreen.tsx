@@ -68,18 +68,27 @@ export function CompareScreen(props: Props) {
   const base = ready ? loaded.base : null;
   const current = ready ? loaded.current : null;
 
+  // 凡例はボタンの下に、①と②を 1 行ずつ出す（スマートフォンで見切れないように。2026-10-14、開発者の決定）
   const back = (
-    <div className="row nowrap">
-      <button data-testid="compare-back" onClick={onGoLibrary}>
-        {ja.compare.backToLibrary}
-      </button>
+    <>
+      <div className="row nowrap">
+        <button data-testid="compare-back" onClick={onGoLibrary}>
+          {ja.compare.backToLibrary}
+        </button>
+      </div>
       {base && current && (
-        <span className="small grow ellipsis" data-testid="compare-pair">
-          <span className="skeleton-key base" aria-hidden="true" />
-          {ja.compare.pairLine(base.row.title, current.row.title)}
-        </span>
+        <div className="small pair-lines" data-testid="compare-pair">
+          <p>
+            <span className="skeleton-key base" aria-hidden="true" />
+            {ja.compare.pairBase(base.row.title)}
+          </p>
+          <p>
+            <span className="skeleton-key current" aria-hidden="true" />
+            {ja.compare.pairCurrent(current.row.title)}
+          </p>
+        </div>
       )}
-    </div>
+    </>
   );
 
   if (!ready) {

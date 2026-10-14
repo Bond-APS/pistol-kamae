@@ -139,7 +139,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [holding, setHolding] = useState(false);
   const [rate, setRate] = useState(1);
-  const [loop, setLoop] = useState(false);
+  // 繰り返しは入れた状態で始める（2026-10-14、開発者の決定）
+  const [loop, setLoop] = useState(true);
   /** バーの時刻（秒）。0 ＝ 撃発。開いた直後は 0 */
   const [t, setT] = useState(0);
   /**
@@ -943,9 +944,8 @@ export function CompareView({ base, current, onVideoAttached, onRecordsChanged }
               {ja.compare.rawUnavailable}
             </p>
           )}
-          <p className="muted small">
-            {mode === 'normalized' ? ja.compare.normalizedNote : ja.compare.rawNote}
-          </p>
+          {/* 「位置などを補正」の説明は出さない（2026-10-14、開発者の決定） */}
+          {mode === 'raw' && <p className="muted small">{ja.compare.rawNote}</p>}
           {mode === 'raw' && normalizable && sizeGap > SIZE_NOTICE_RATIO && (
             <div className="notice" data-testid="compare-camera-moved">
               <strong>{ja.compare.cameraMovedTitle}</strong>

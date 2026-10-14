@@ -55,9 +55,31 @@ export function TransportControls(props: Props) {
           {ja.player.nextFrame}
         </button>
       </div>
+      {/* 再生ボタンの下に左寄せで繰り返し、その下に「再生速度」と速さのボタン（2026-10-14、開発者の決定） */}
       {transport && (
         <div className="row nowrap transport">
-          <div className="seg grow" data-testid={`${props.testId}-rate`}>
+          <button
+            className="chip"
+            data-testid={`${props.testId}-loop`}
+            aria-pressed={transport.loop}
+            disabled={disabled}
+            onClick={() => transport.onLoop(!transport.loop)}
+          >
+            {ja.player.loop}
+          </button>
+        </div>
+      )}
+      {transport && (
+        <div className="row nowrap transport">
+          <span className="small" id={`${props.testId}-rate-title`}>
+            {ja.player.rateTitle}
+          </span>
+          <div
+            className="seg grow"
+            role="group"
+            aria-labelledby={`${props.testId}-rate-title`}
+            data-testid={`${props.testId}-rate`}
+          >
             {PLAYBACK_RATES.map((r) => (
               <button
                 key={r}
@@ -70,15 +92,6 @@ export function TransportControls(props: Props) {
               </button>
             ))}
           </div>
-          <button
-            className="chip"
-            data-testid={`${props.testId}-loop`}
-            aria-pressed={transport.loop}
-            disabled={disabled}
-            onClick={() => transport.onLoop(!transport.loop)}
-          >
-            {ja.player.loop}
-          </button>
         </div>
       )}
     </>

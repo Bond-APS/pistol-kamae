@@ -68,7 +68,7 @@ const freshStart = async () => {
   await tid('shooter-next').click();
   await tid('video-pick').waitFor();
 };
-/** 動画を選び、フレームレートの推定が終わって「姿勢推定を実行」が押せるまで待つ */
+/** 動画を選び、フレームレートの推定が終わって「解析開始」が押せるまで待つ */
 const pickAndWait = async () => {
   await tid('video-file').setInputFiles(videoPath);
   await tid('run-analysis').and(page.locator(':enabled')).waitFor({ timeout: 60_000 });
@@ -166,7 +166,7 @@ try {
   const proceeded = await waitFor(tid('run-analysis').and(page.locator(':enabled')), {
     timeout: 12_000,
   });
-  check('推定中にシークが止まっても、数秒で「姿勢推定を実行」が押せる状態になる', proceeded);
+  check('推定中にシークが止まっても、数秒で「解析開始」が押せる状態になる', proceeded);
 
   // 3. 解析中にシークが止まったとき、「中断」がすぐ効く
   console.log('  3. 解析中のシークの停止 → 中断');
@@ -355,7 +355,7 @@ try {
     );
     const outcomeValue = await outcome.jsonValue();
     check(
-      '長さを読み取れない動画は「長さを読み取れません」と案内し、「姿勢推定を実行」が押せない',
+      '長さを読み取れない動画は「長さを読み取れません」と案内し、「解析開始」が押せない',
       outcomeValue === 'no-duration' && (await tid('run-analysis').isDisabled()),
       `${outcomeValue}（${recorded.bytes.length} バイト、ブラウザの報告する長さ ${reported}、長さを無限大に見せて確認）`,
     );

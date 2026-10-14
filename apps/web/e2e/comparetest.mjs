@@ -231,15 +231,17 @@ try {
   check('1 件だけでは「比較する」が押せない', await tid('pick-compare').isDisabled());
   await item(a.id).locator('[data-testid=lib-pick]').click();
   check('2 件目は②', (await item(a.id).getAttribute('data-pick')) === '2');
+  // ①と②は 1 行ずつ（2026-10-14）
+  const pickLines = async () => (await tid('pick-line').locator('p').allTextContents()).join(' | ');
   check(
-    '①基準・②比較の表示',
-    (await tid('pick-line').textContent()) === '①基準：音声なし　②比較：発射音あり',
-    await tid('pick-line').textContent(),
+    '①基準・②比較の表示（1 行ずつ）',
+    (await pickLines()) === '①基準：音声なし | ②比較：発射音あり',
+    await pickLines(),
   );
   await tid('pick-swap').click();
   check(
     '⇄ で入れ替わる',
-    (await tid('pick-line').textContent()) === '①基準：発射音あり　②比較：音声なし' &&
+    (await pickLines()) === '①基準：発射音あり | ②比較：音声なし' &&
       (await item(a.id).getAttribute('data-pick')) === '1',
   );
   // もう一度押すと外れる
@@ -258,11 +260,24 @@ try {
   await tid('compare').waitFor();
   await tid('compare-bar').waitFor();
   check('入口のタブが比較では選択なし', (await page.locator('.tab.active').count()) === 0);
+  const pairLines = await tid('compare-pair').locator('p').allTextContents();
   check(
-    '見出しに①と②のタイトル',
-    (await tid('compare-pair').textContent()).includes('①発射音あり') &&
-      (await tid('compare-pair').textContent()).includes('②音声なし'),
-    await tid('compare-pair').textContent(),
+    '見出しに①と②のタイトル（1 行ずつ、凡例付き）',
+    pairLines.join(' | ') === '①発射音あり | ②音声なし' &&
+      (await tid('compare-pair').locator('.skeleton-key').count()) === 2,
+    pairLines.join(' | '),
+  );
+  check(
+    '①②の行は「← ライブラリへ」の下にある',
+    await page.evaluate(() => {
+      const back = document.querySelector('[data-testid=compare-back]').getBoundingClientRect();
+      const pair = document.querySelector('[data-testid=compare-pair]').getBoundingClientRect();
+      return pair.top >= back.bottom - 1;
+    }),
+  );
+  check(
+    '繰り返しは入った状態で始まる',
+    (await tid('compare-loop').getAttribute('aria-pressed')) === 'true',
   );
   // ブラウザの「戻る」（iPhone では画面左端からのスワイプ）でライブラリへ戻り、開き直せる（最終-10）
   await page.goBack();
@@ -466,9 +481,8 @@ try {
   );
   await tid('compare-rate-25').click();
 
-  // 繰り返し：区間の終わりで先頭に戻る
+  // 繰り返し：区間の終わりで先頭に戻る（繰り返しは最初から入っている）
   await tid('compare-rate-100').click();
-  await tid('compare-loop').click();
   await slideTo('compare-bar', max - 0.3);
   await waitBothReady();
   await tid('compare-play').click();

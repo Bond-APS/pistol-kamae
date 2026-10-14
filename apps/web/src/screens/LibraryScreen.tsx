@@ -229,6 +229,7 @@ export function LibraryScreen(props: Props) {
             </select>
           )}
           <p className="muted small">{ja.library.selectHint}</p>
+          <p className="muted small">{ja.library.detailHint}</p>
           <div className="row">
             <button
               className="chip"
@@ -356,11 +357,15 @@ export function LibraryScreen(props: Props) {
       {(pair.baseId !== null || pair.currentId !== null) && (
         <div className="pick-bar" data-testid="pick-bar">
           <div className="row nowrap">
-            <span className="small grow ellipsis" data-testid="pick-line">
-              {pair.baseId !== null && pair.currentId !== null
-                ? ja.library.pairLine(titleOf(pair.baseId), titleOf(pair.currentId))
-                : ja.library.pairOneLine(titleOf(pair.baseId ?? pair.currentId))}
-            </span>
+            {/* 動画名が長くても入るよう、①と②は 1 行ずつ（2026-10-14、開発者の決定） */}
+            <div className="small grow pair-lines" data-testid="pick-line">
+              <p>{ja.library.pairBase(titleOf(pair.baseId ?? pair.currentId))}</p>
+              <p>
+                {pair.baseId !== null && pair.currentId !== null
+                  ? ja.library.pairCurrent(titleOf(pair.currentId))
+                  : ja.library.pairCurrentNone}
+              </p>
+            </div>
             <button
               className="icon"
               data-testid="pick-swap"

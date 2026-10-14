@@ -54,7 +54,8 @@ export function RecordPlayer({ opened, mode, onClose, onChanged, backLabel, acti
   const [clip, setClip] = useState<Clip>(savedClip);
   const [valueSec, setValueSec] = useState(shot.timeSec);
   const [rate, setRate] = useState(1);
-  const [loop, setLoop] = useState(false);
+  // 繰り返しは入れた状態で始める（2026-10-14、開発者の決定）
+  const [loop, setLoop] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<

@@ -604,6 +604,18 @@ button.lib-open {
 .photo-note {
   margin: var(--space-1) 0 0;
 }
+/* ①基準・②比較を 1 行ずつ。動画名が長いときは折り返して全部出す */
+.pair-lines {
+  min-width: 0;
+}
+.pair-lines p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.pair-lines .skeleton-key {
+  margin-right: var(--space-1);
+  vertical-align: middle;
+}
 .side-by-side {
   display: grid;
   grid-template-columns: 1fr 1fr;

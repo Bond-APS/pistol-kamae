@@ -216,12 +216,6 @@ export const LoadScreen = forwardRef<LoadHandle, Props>(function LoadScreen(prop
         </div>
       )}
 
-      {!picked && (
-        <p className="muted small" data-testid="load-format-hint">
-          {ja.load.formatHint} {ja.load.formatHintIphone}
-        </p>
-      )}
-
       {/* ブラウザ本来のファイル選択欄は「ファイル未選択」の文字を消せないので、画面には出さず、
           自前のボタンから開く（2026-10-03、開発者の指摘。読み込んだあとも未選択に見えたため） */}
       <div className="field">
@@ -262,6 +256,12 @@ export const LoadScreen = forwardRef<LoadHandle, Props>(function LoadScreen(prop
         <p className="muted small" data-testid="load-trim-hint">
           {ja.load.trimHint}
         </p>
+        {/* 読める形式の案内は、トリミングの案内の下に置く（2026-10-14、開発者の決定） */}
+        {!picked && (
+          <p className="muted small" data-testid="load-format-hint">
+            {ja.load.formatHint} {ja.load.formatHintIphone}
+          </p>
+        )}
       </div>
 
       {status.kind === 'unsupported' && (

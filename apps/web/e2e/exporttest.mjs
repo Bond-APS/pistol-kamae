@@ -719,7 +719,7 @@ try {
     { timeout: 20_000 },
   );
   await page.waitForTimeout(500);
-  check('重ねた表示では「PNG で書き出す」を押せる', await tid('compare-export-png').isEnabled());
+  check('重ねた表示では「静止している画像を書き出す」を押せる', await tid('compare-export-png').isEnabled());
   const viewBox = (await tid('still-svg').getAttribute('viewBox')).split(' ').map(Number);
   const png = await downloadBy(() => tid('compare-export-png').click(), 'compare.png');
   await waitExported('compare-export-status');

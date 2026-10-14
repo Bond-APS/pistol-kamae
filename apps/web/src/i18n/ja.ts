@@ -87,8 +87,8 @@ export const ja = {
     notPicked: 'ファイル未選択',
     picked: '選択済み',
     repickHint: '動画を選び直すときは「ファイルを選択」を押してください。',
-    /** 動画の全長に姿勢推定をかけるため、長い動画は待ち時間が延びる（要件 4 章。文言は 2026-10-10、開発者の決定） */
-    trimHint: '動画は、1 回の射撃のみにトリミングしておいてください。',
+    /** 動画の全長に姿勢推定をかけるため、長い動画は待ち時間が延びる（要件 4 章。文言は 2026-10-14、開発者の決定） */
+    trimHint: '動画は事前に短くトリミングしておいてください。1分以内を推奨します。',
     pleaseWait: 'しばらくお待ちください',
     stopWaiting: 'やめる',
     formatHint:
@@ -102,7 +102,7 @@ export const ja = {
       'ブラウザで録画した WebM などは長さが分からないため扱えません。別の形式に変換するか、カメラで撮り直してください。',
     videoInfo: (w: number, h: number, sec: number, fps: number | null) =>
       `${w}×${h}、${sec.toFixed(1)} 秒${fps ? `、推定 ${fps.toFixed(0)} fps` : ''}`,
-    run: '姿勢推定を実行',
+    run: '解析開始',
     cancel: '中断',
     progress: (done: number, total: number) => `処理中… ${done} / 約 ${total} フレーム`,
     preparing: 'モデルを読み込んでいます…',
@@ -117,7 +117,7 @@ export const ja = {
   },
   clip: {
     intro:
-      '前後の余計な部分を外します。取っ手を引くか、動画を動かして「ここを開始に」「ここを終了に」を押してください。',
+      '動画の前後の不要な部分をカットします。青いブロックを移動させるか、動画を動かして「ここを開始に」「ここを終了に」を押してください。',
     handleStart: '切り抜きの開始',
     handleEnd: '切り抜きの終了',
     startAt: (sec: number) => `開始 ${sec.toFixed(1)} s`,
@@ -158,7 +158,8 @@ export const ja = {
     addChip: '＋ 新しい射手',
     registerFirst: '＋ 射手を登録',
     requiredHint: '射手を登録すると、次へ進めます。',
-    stepIntro: 'この動画の射手を選んでください。',
+    /** 射手の選択欄の読み上げ用の名前（画面には出さない。案内文は 2026-10-14、開発者の決定で外した） */
+    selectLabel: '射手',
     next: '次へ（動画を選ぶ）',
     edit: '編集',
     registerTitle: '射手を登録',
@@ -183,7 +184,8 @@ export const ja = {
     slider: '表示する時点（つまみを動かして選ぶ）',
     stageAlt: '動画と骨格',
     secLabel: (sec: number) => `${sec.toFixed(1)} s`,
-    rate: (rate: number) => (rate === 1 ? '1 倍' : rate === 0.5 ? '1/2' : '1/4'),
+    rateTitle: '再生速度',
+    rate: (rate: number) => (rate === 1 ? '× 1' : rate === 0.5 ? '× 1/2' : '× 1/4'),
     loop: '↻ 繰り返し',
     noAudio: '音声なし',
     /** 例：3.40 秒（102 / 156 コマ） */
@@ -245,12 +247,16 @@ export const ja = {
     clearFilter: '絞り込みを解除',
     back: '← 一覧へ',
     backToDetail: '← 詳細へ',
+    /** 文言は 2026-10-14、開発者の決定。2 文は改行して別の段落に出す */
     selectHint:
-      '最初に右の◯を押した動画が基準。次に◯を押した動画が基準動画と比較する動画。タイトルを押すと動画の詳細が確認できます。',
+      '姿勢を比較するときは、最初に◯を押した動画が基準、次に◯を押した動画が比較対象になります。',
+    detailHint: 'タイトルをタップすると、動画の詳細が確認できます。',
     pick: (title: string) => `「${title}」を比較に選ぶ`,
     unpick: (title: string) => `「${title}」を比較から外す`,
-    pairLine: (base: string, current: string) => `①基準：${base}\u3000②比較：${current}`,
-    pairOneLine: (base: string) => `①基準：${base}\u3000②比較：（もう 1 件選ぶ）`,
+    /** 動画名が長くても入るよう、①と②は 1 行ずつ出す（2026-10-14、開発者の決定） */
+    pairBase: (title: string) => `①基準：${title}`,
+    pairCurrent: (title: string) => `②比較：${title}`,
+    pairCurrentNone: '②比較：（もう 1 件選ぶ）',
     swap: '⇄',
     swapAria: '基準と比較を入れ替える',
     compareBoth: 'この 2 件を比較する',
@@ -346,12 +352,14 @@ export const ja = {
     base: '基準',
     current: '比較',
     backToLibrary: '← ライブラリへ',
-    pairLine: (base: string, current: string) => `①${base} ／ ②${current}`,
+    /** ①と②は 1 行ずつ、凡例（骨格の線の種類）を付けて出す（2026-10-14、開発者の決定） */
+    pairBase: (title: string) => `①${title}`,
+    pairCurrent: (title: string) => `②${title}`,
     notChosen:
       '比較する 2 件を選んでいません。ライブラリで、2 件の◯を押して「この 2 件を比較する」を押してください。',
     goLibrary: 'ライブラリを開く',
-    holdNote: '絵を押している間は基準だけを表示します。離すと比較に戻ります。',
-    baseOpacity: '基準の濃さ',
+    holdNote: '※画像をタップしている間は基準となる動画の画像だけを表示します',
+    baseOpacity: '基準動画の透過度',
     showSkeleton: '骨格を表示',
     timeSlider: '時点（つまみを動かして選ぶ。0 ＝ 撃発）',
     atShot: '撃発の瞬間',
@@ -368,14 +376,12 @@ export const ja = {
     attachFor: (role: string) => `「${role}」の動画`,
     overlayAlt: '比較の動画に、基準の動画と骨格を重ねた図',
     layoutSide: '横に並べる',
-    alignNormalized: '位置と大きさを揃える',
+    alignNormalized: '位置などを補正',
     alignRaw: '撮ったまま',
-    normalizedNote:
-      '腰の中心を重ね、体幹の長さ（腰の中心→肩の中心）が同じになるよう基準を拡大・縮小しています。',
     rawNote:
       '画面の中の位置と大きさをそのまま重ねます。カメラを動かさずに続けて撮った 2 本で、立ち位置のずれを見るときに使います。',
     sideNote: 'それぞれの写真に、それぞれの骨格。人物が同じ大きさに見えるよう寄せて表示。',
-    rawUnavailable: '画面の縦横比が違う 2 件は、「撮ったまま」では重ねられません。',
+    rawUnavailable: '縦横比が違う動画は「撮ったまま」で重ねて表示することはできません',
     normalizedUnavailable:
       '肩か腰がよく見えない動画があるため、位置と大きさを揃えられません。「撮ったまま」で重ねています。',
     cannotOverlayTitle: 'この 2 件は重ねられません',
@@ -383,7 +389,7 @@ export const ja = {
       '肩か腰がよく見えない動画があるため位置と大きさを揃えられず、画面の縦横比も違うため撮ったままでも重ねられません。「角度情報の表示」で数値で比べてください。',
     cameraMovedTitle: 'カメラの位置が違うようです',
     cameraMovedBody: (percent: number) =>
-      `人物の大きさが ${percent}% 違います。「位置と大きさを揃える」で比べてください。`,
+      `人物の大きさが ${percent}% 違います。「位置などを補正」で比べてください。`,
     fixShot: '撃発ポイントの修正',
     fixClip: '切り抜き範囲の修正',
     clipEditTitle: '切り抜き範囲の修正（①②の両方）',
@@ -407,7 +413,7 @@ export const ja = {
         : ` → ${toSec.toFixed(2)} 秒（${Math.abs(frames)} コマ${frames > 0 ? '遅く' : '早く'}）`),
     handednessTitle: '利き手が違う 2 人です',
     handednessBody: (name: string, handedness: 'right' | 'left') =>
-      `「位置と大きさを揃える」では、基準（${name}・${handednessName[handedness]}）の骨格を左右反転して重ねます。角度は、どちらも銃側を＋として比べています。`,
+      `「位置などを補正」では、基準（${name}・${handednessName[handedness]}）の骨格を左右反転して重ねます。角度は、どちらも銃側を＋として比べています。`,
     backendTitle: '姿勢推定のモデルが違う 2 件です',
     backendBody: 'モデルが違うと角度が系統的にずれるため、差は参考になりません。',
     numbersTitle: '角度情報の表示',
@@ -465,7 +471,7 @@ export const ja = {
   export: {
     json: 'JSON で書き出す',
     csv: 'CSV で書き出す',
-    png: 'PNG で書き出す',
+    png: '静止している画像を書き出す',
     all: 'すべての記録を JSON で書き出す',
     allNote:
       '控え用。動画本体は含めません（動画が要る記録は、詳細から 1 件ずつ「動画も含めて」書き出せます）。',

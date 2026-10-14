@@ -31,13 +31,12 @@ export function ShooterStep(props: Props) {
   return (
     <section data-testid="shooter-step">
       <div className="field">
-        <span id="shooter-label">{ja.shooter.stepIntro}</span>
         {shooter ? (
           <div className="row nowrap tight">
             <select
               className="grow"
               data-testid="shooter-select"
-              aria-labelledby="shooter-label"
+              aria-label={ja.shooter.selectLabel}
               value={shooter.id}
               onChange={(e) => {
                 if (e.target.value === ADD_SHOOTER) setDialog('add');

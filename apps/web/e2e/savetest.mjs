@@ -182,6 +182,10 @@ try {
   await tid('shooter-submit').click();
   await tid('shooter-select').waitFor();
   await shotPng('shooter');
+  check(
+    '射手の選択に「この動画の射手を選んでください。」は出ない（2026-10-14）',
+    !(await tid('shooter-step').textContent()).includes('この動画の射手を選んでください'),
+  );
   await tid('shooter-next').click();
   check(
     '「次へ」で「2 動画の指定」へ進む',
@@ -202,11 +206,21 @@ try {
       (await tid('video-pick-label').textContent()) === '下のボタンを押して動画を選ぶ',
     await tid('video-pick-label').textContent(),
   );
-  const TRIM_HINT = '動画は、1 回の射撃のみにトリミングしておいてください。';
+  const TRIM_HINT = '動画は事前に短くトリミングしておいてください。1分以内を推奨します。';
   check(
     '読み込む前に、トリミングの注記が「ファイルを選択」の下に出る（最終-23）',
     (await tid('load-trim-hint').count()) === 1 &&
       (await tid('load-trim-hint').textContent()) === TRIM_HINT,
+  );
+  check(
+    '形式の案内は、トリミングの注記の下に出る（2026-10-14）',
+    await page.evaluate(() => {
+      const trim = document.querySelector('[data-testid="load-trim-hint"]');
+      const fmt = document.querySelector('[data-testid="load-format-hint"]');
+      return (
+        !!trim && !!fmt && !!(trim.compareDocumentPosition(fmt) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+    }),
   );
   check(
     '読み込む前は「ファイルを選択」の右に「ファイル未選択」と出る',
@@ -261,7 +275,7 @@ try {
   );
   await tid('shooter-next').click();
   check(
-    '射手の選択から戻ってきても「選択済み」のままで、姿勢推定を実行できる',
+    '射手の選択から戻ってきても「選択済み」のままで、解析開始を押せる',
     (await tid('video-pick-state').textContent()) === '選択済み' &&
       (await tid('run-analysis').isEnabled()),
   );
@@ -281,7 +295,7 @@ try {
   check(
     '番号付きの「手順 1：」「手順 2：」は出ない',
     !(await page.locator('body').textContent()).includes('手順 1') &&
-      (await tid('run-analysis').textContent()) === '姿勢推定を実行',
+      (await tid('run-analysis').textContent()) === '解析開始',
     await tid('run-analysis').textContent(),
   );
   await tid('run-analysis').click({ timeout: 60_000 });
@@ -753,6 +767,10 @@ try {
     `${await tid('player-label').textContent()} (expected ${playExpected.n} / ${playExpected.total})`,
   );
   check('止めているときは角度表が出る', (await tid('player-table').count()) === 1);
+  check(
+    '繰り返しは入った状態で始まる',
+    (await tid('player-loop').getAttribute('aria-pressed')) === 'true',
+  );
   await shotPng('player');
   await tid('player-rate-50').click();
   await tid('player-play').click();
@@ -790,7 +808,6 @@ try {
   check('再生中の時刻の更新は 1 秒にコマ数（30）以下', updates <= 33, `${updates} 回/秒`);
   // 繰り返し：範囲の終わり（4.0 秒）で先頭（1.0 秒）に戻って続く
   await tid('player-rate-100').click();
-  await tid('player-loop').click();
   await slideTo('player-bar', 3.7);
   await waitSettled('player');
   await tid('player-play').click();
